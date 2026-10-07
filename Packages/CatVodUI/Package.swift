@@ -25,7 +25,8 @@ let package = Package(
         ),
         .testTarget(
             name: "CatVodUITests",
-            dependencies: ["CatVodUI"],
+            // 存储接线测试要直接断言 `GRDBDatabase`，显式声明依赖而不是靠传递依赖。
+            dependencies: ["CatVodUI", "CatVodStore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]

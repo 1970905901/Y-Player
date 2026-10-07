@@ -42,6 +42,7 @@ struct SettingsCacheView: View {
 
     var body: some View {
         List {
+            storageSection
             cacheSection
             Section("说明") {
                 Text("缓存的是**接口配置本身**（JSON 文本、js2p 的 bundle 与 `.md5`），用于离线回退与跳过重复下载；清理后只是下次加载要重新下载，站点清单与播放设置不受影响。详情缓存是内存缓存（M02P5），不在这里管理。")
@@ -59,6 +60,28 @@ struct SettingsCacheView: View {
             Button("取消", role: .cancel) { }
         } message: {
             Text("下次加载接口需要重新下载配置（JS 源约 6 MB）。站点与播放设置不受影响。")
+        }
+    }
+
+    /// 本地存储（M08b）：落库路径与最近失败 —— 「存不上」必须能被看到，而不是静默丢数据。
+    private var storageSection: some View {
+        let failures = model.storageFailures
+        return Section("本地存储") {
+            InfoRow(title: "收藏 / 播放进度", value: model.storageSummary)
+            if failures.isEmpty {
+                Text("最近没有存储失败。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("最近失败 \(failures.count) 次：")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                ForEach(Array(failures.suffix(3).enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 

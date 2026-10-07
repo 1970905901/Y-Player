@@ -154,8 +154,18 @@ public final class AppModel: ObservableObject {
         let base = cacheDirectory ?? Self.defaultCacheDirectory()
         self.cacheDirectory = base
         sessionTransport = URLSessionTransport()
-        progressStore = InMemoryPlaybackProgressStore()
-        favoriteStore = InMemoryFavoriteStore()
+        // 存储：优先 GRDB 落库（M08b）；打开失败退回内存实现并如实说明（不许静默）。
+        // 这里只替换构造：两个 store 都是协议类型，详情页 / 追剧页 / 播放页一行都不用改。
+        let storage = Self.openStorageDatabase()
+        storageDatabase = storage
+        if let storage {
+            progressStore = GRDBPlaybackProgressStore(database: storage)
+            favoriteStore = GRDBFavoriteStore(database: storage)
+        } else {
+            progressStore = InMemoryPlaybackProgressStore()
+            favoriteStore = InMemoryFavoriteStore()
+            storageNotice = "打开本地数据库失败：本次运行的收藏与播放进度只存在内存里，重启即丢。"
+        }
 
         configURL = defaults.string(forKey: StorageKey.configURL) ?? ""
         let storedEngine = defaults.string(forKey: StorageKey.preferredEngine)
@@ -363,6 +373,12 @@ public final class AppModel: ObservableObject {
     /// 与 ``progressStore`` 同一套做法：M2 用内存实现（进程内有效），
     /// M8 换 GRDB 实现时只替换这里的构造，「追剧」页与详情页不改。
     public let favoriteStore: FavoriteStore
+
+    /// 本地数据库（M08b）；nil 表示退回内存实现（设置页会如实说明，见 ``storageNotice``）。
+    let storageDatabase: GRDBDatabase?
+
+    /// 存储状态说明（落库路径 / 内存降级原因）。
+    @Published public private(set) var storageNotice: String = ""
 
     /// 本机同步标识（设置 → iCloud 同步 里展示的那一串）。
     ///
