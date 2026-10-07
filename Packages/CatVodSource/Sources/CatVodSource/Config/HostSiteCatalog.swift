@@ -30,9 +30,9 @@ public struct HostSiteCatalog: Sendable {
     public static let healthPath = "/health"
 
     private let transport: HTTPTransport
-    private let timeout: Int
+    private let timeout: TimeInterval
 
-    public init(transport: HTTPTransport, timeout: Int = 30) {
+    public init(transport: HTTPTransport, timeout: TimeInterval = 30) {
         self.transport = transport
         self.timeout = timeout
     }
