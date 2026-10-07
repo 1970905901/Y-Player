@@ -28,4 +28,3 @@ struct PlatformShimsTests {
         _ = Text("search").adaptiveSearchable(text: .constant(""), prompt: "搜索")
     }
 }
-

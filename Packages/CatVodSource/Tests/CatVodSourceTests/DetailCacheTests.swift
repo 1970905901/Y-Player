@@ -102,7 +102,7 @@ struct DetailCacheTests {
 
         let stats = await cache.statistics()
         #expect(stats.bypasses == 2)
-        #expect(stats.count == 0)
+        #expect(stats.isEmpty)
     }
 
     @Test("TTL 过期后视为未命中（挡板 3 的兜底）")
@@ -120,7 +120,7 @@ struct DetailCacheTests {
         #expect(expired == nil)
 
         let stats = await cache.statistics()
-        #expect(stats.count == 0)
+        #expect(stats.isEmpty)
     }
 
     @Test("失败或空结果不缓存（挡板 2）")
@@ -170,6 +170,6 @@ struct DetailCacheTests {
 
         await provider.invalidateAll()
         let stats = await provider.cacheStatistics()
-        #expect(stats.count == 0)
+        #expect(stats.isEmpty)
     }
 }

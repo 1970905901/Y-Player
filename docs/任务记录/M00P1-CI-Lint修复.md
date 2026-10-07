@@ -51,6 +51,37 @@ if !key.hasPrefix("-") {
 - 两个步骤的注解消失（作业仍为 success）；
 - 若 SwiftLint/SwiftFormat 报出**真实**问题，日志里能看到（先记录，M2 起再逐个收紧为阻断）。
 
+## 四、清掉存量 violation（SwiftLint 共 24 条：5 error + 19 warning）
+
+工具真正跑起来后，第一次就暴露了 24 条问题。全部处理如下（**这些都是真问题，不是噪音**）：
+
+| 规则（级别） | 位置 | 处理 |
+| --- | --- | --- |
+| `identifier_name`（**error**） | `Site.HomePageAliasKeys` 的 `home_page` / `web_home` | 元素名改成 Swift 风格，**raw value 保持上游 JSON 键** |
+| `empty_count`（**error** ×3） | `DetailCacheTests` 的 `stats.count == 0` | `Statistics` 增加 `isEmpty`，测试改用 `stats.isEmpty` |
+| `modifier_order`（w ×11） | `SystemPlayerEngine` / `URLSessionTransport` / `DetailCache` / `NodeRuntimeAdapter` | `public nonisolated` → `nonisolated public` |
+| `redundant_sendable`（w） | `@MainActor struct PlayerCoordinator: Sendable` | 去掉 `: Sendable`（全局 Actor 隔离类型隐式 Sendable） |
+| `redundant_type_annotation`（w） | `SpiderResult.url` | 去掉冗余类型标注 |
+| `legacy_swiftui_aspect_ratio`（w ×2） | `HomeView+Data` / `VodDetailView` | `aspectRatio(contentMode: .fill)` → `scaledToFill()` |
+| `large_tuple`（w） | `PictureFillerTests` 的 3 元组辅助函数 | 改二元组 + 自动生成名称 |
+| `trailing_newline`（w） | `PlatformShimsTests` | 去掉多余尾空行 |
+| `nesting`（w ×2） | `PlaybackURLs.Entry.CodingKeys` / `ShortNameKeys` | 配置 `nesting.type_level: 2`（两套键空间是有意为之，见注释） |
+
+## 五、仍未收敛的一项（明确记录，不掩饰）
+
+SwiftFormat 用**默认全量规则集**检查时报 `67/93 files require formatting`。原因有两类：
+
+1. **风格分歧（已处理）**：`#if os(...)` / `#available` 块内我们不额外缩进，
+   而 SwiftFormat 默认 `--ifdef indent`；已在 `.swiftformat` 显式设为 `--ifdef no-indent` 并写明理由。
+2. **尚未采纳的规则（待定）**：如 `redundantReturn`（我们保留显式 `return`）、
+   `hoistPatternLet`、`wrapIfStatementBodies`、`opaqueGenericParameters` 等。
+   要消灭这批报告，需要对全仓库跑一次 `swiftformat` 并**逐文件 review**（会产生 60+ 文件的大 diff）。
+
+**当前策略**：`--lint` 保持信息性（非阻断），日志里能看见；等 M2 收尾或 M3 开始前，
+单独开一个「全量格式化 + review」任务把它收敛成 0，再把该步骤升级为阻断。
+在此之前，任何人请不要把「lint 步骤是 success」当成「格式没问题」。
+
+
 ## 四、教训（写给未来的自己）
 
 - **"非阻断"不等于"没在检查"**：`continue-on-error` 会让失败静默，必须同时确认工具真的存在、配置真的被解析。

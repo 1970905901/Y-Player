@@ -15,10 +15,10 @@ import Foundation
 /// - **不提供强制硬解/软解开关**：`decoderMode` 仅被记录，实际由系统决定（UI 需如实说明）。
 @MainActor
 public final class AVPlayerEngine: PlayerEngine {
-    public nonisolated let kind: PlayerEngineKind = .system
-    public nonisolated let events: AsyncStream<PlayerEvent>
+    nonisolated public let kind: PlayerEngineKind = .system
+    nonisolated public let events: AsyncStream<PlayerEvent>
     /// 用户选择的解码方式（系统内核不支持强制切换，仅记录以便设置页如实展示）。
-    public nonisolated let decoderMode: DecoderMode
+    nonisolated public let decoderMode: DecoderMode
 
     // 说明：以下存储属性为模块内可见（非 private），因为就绪轮询与事件观测放在
     // `SystemPlayerEngine+Monitoring.swift`（`private` 是文件作用域，跨文件无法访问）。

@@ -118,3 +118,8 @@ type_name:
     error: 60
 
 reporter: xcode
+
+# 允许两层嵌套：PlaybackURLs.Entry.CodingKeys / ShortNameKeys 是有意为之的私有解码容器
+# （参考实现用 {n, v} 短键 + name/url 长键两套键空间，必须各自持有 CodingKey 容器）。
+nesting:
+  type_level: 2

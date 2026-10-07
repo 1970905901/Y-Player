@@ -123,7 +123,7 @@ public struct Site: Codable, Sendable, Hashable, Identifiable {
         let direct = container.lenientString(.homePage)
         if direct.isEmpty {
             let aliases = try decoder.container(keyedBy: HomePageAliasKeys.self)
-            homePage = aliases.firstNonEmptyString([.home_page, .webHome, .web_home])
+            homePage = aliases.firstNonEmptyString([.homePageSnakeCase, .webHome, .webHomeSnakeCase])
         } else {
             homePage = direct
         }
@@ -154,9 +154,12 @@ public struct Site: Codable, Sendable, Hashable, Identifiable {
     }
 
     /// `homePage` 的别名键；只用于解码，不参与编码（编码统一写 `homePage`）。
+    ///
+    /// 说明：元素名用 Swift 风格，**raw value 才是上游 JSON 键**（`home_page`/`web_home`）——
+    /// 直接拿带下划线的键当元素名会触发 SwiftLint 的 `identifier_name`（error 级）。
     enum HomePageAliasKeys: String, CodingKey {
-        case home_page
+        case homePageSnakeCase = "home_page"
         case webHome
-        case web_home
+        case webHomeSnakeCase = "web_home"
     }
 }

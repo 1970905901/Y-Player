@@ -42,9 +42,11 @@ actor PictureTransport: HTTPTransport {
 }
 
 /// 列表项 JSON（`vod_pic` 可空，用来验证补图前后的差异）。
-private func listJSON(_ items: [(id: String, name: String, pic: String)]) -> String {
+///
+/// 只用「id + 封面」二元组、名称自动生成：元组最多 2 个成员（SwiftLint `large_tuple`）。
+private func listJSON(_ items: [(id: String, pic: String)]) -> String {
     let body = items
-        .map { #"{"vod_id":"\#($0.id)","vod_name":"\#($0.name)","vod_pic":"\#($0.pic)"}"# }
+        .map { #"{"vod_id":"\#($0.id)","vod_name":"条目\#($0.id)","vod_pic":"\#($0.pic)"}"# }
         .joined(separator: ",")
     return #"{"code":0,"page":1,"list":[\#(body)]}"#
 }
@@ -62,9 +64,9 @@ struct PictureFillerTests {
     @Test("缺图比例未达阈值时不补图")
     func belowThreshold() async throws {
         let json = listJSON([
-            (id: "1", name: "有图", pic: "https://img.example.com/1.jpg"),
-            (id: "2", name: "有图", pic: "https://img.example.com/2.jpg"),
-            (id: "3", name: "缺图", pic: "")
+            (id: "1", pic: "https://img.example.com/1.jpg"),
+            (id: "2", pic: "https://img.example.com/2.jpg"),
+            (id: "3", pic: "")
         ])
         let result = try decode(json)
         let transport = PictureTransport(response: HTTPResponse(status: 200, body: Data(json.utf8)))
@@ -80,14 +82,14 @@ struct PictureFillerTests {
     @Test("缺图过半时补图，缺失封面被填上")
     func fillsMissingPictures() async throws {
         let needsFill = try decode(listJSON([
-            (id: "1", name: "缺图", pic: ""),
-            (id: "2", name: "缺图", pic: ""),
-            (id: "3", name: "有图", pic: "https://img.example.com/3.jpg")
+            (id: "1", pic: ""),
+            (id: "2", pic: ""),
+            (id: "3", pic: "https://img.example.com/3.jpg")
         ]))
         let filledJSON = listJSON([
-            (id: "1", name: "缺图", pic: "https://img.example.com/1.jpg"),
-            (id: "2", name: "缺图", pic: "https://img.example.com/2.jpg"),
-            (id: "3", name: "有图", pic: "https://img.example.com/3.jpg")
+            (id: "1", pic: "https://img.example.com/1.jpg"),
+            (id: "2", pic: "https://img.example.com/2.jpg"),
+            (id: "3", pic: "https://img.example.com/3.jpg")
         ])
         let transport = PictureTransport(response: HTTPResponse(status: 200, body: Data(filledJSON.utf8)))
         let filler = PictureFiller(client: CMSClient(transport: transport))
@@ -106,8 +108,8 @@ struct PictureFillerTests {
     @Test("补图失败时原样返回（best-effort）")
     func failureKeepsOriginal() async throws {
         let original = try decode(listJSON([
-            (id: "1", name: "缺图", pic: ""),
-            (id: "2", name: "缺图", pic: "")
+            (id: "1", pic: ""),
+            (id: "2", pic: "")
         ]))
         let transport = PictureTransport(failure: CatVodError.network(status: 502, url: "https://api.example.com", reason: "上游不可用"))
         let filler = PictureFiller(client: CMSClient(transport: transport))
@@ -119,7 +121,7 @@ struct PictureFillerTests {
 
     @Test("不支持的站点类型不补图")
     func unsupportedKinds() async throws {
-        let json = listJSON([(id: "1", name: "缺图", pic: "")])
+        let json = listJSON([(id: "1", pic: "")])
         let result = try decode(json)
         let transport = PictureTransport(response: HTTPResponse(status: 200, body: Data(json.utf8)))
         let filler = PictureFiller(client: CMSClient(transport: transport))

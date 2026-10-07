@@ -71,7 +71,7 @@ public struct VodDetailView: View {
             if let vod {
                 HStack(alignment: .top, spacing: 12) {
                     AsyncImage(url: URL(string: vod.vodPic)) { image in
-                        image.resizable().aspectRatio(contentMode: .fill)
+                        image.resizable().scaledToFill()
                     } placeholder: {
                         Color.secondary.opacity(0.15)
                     }

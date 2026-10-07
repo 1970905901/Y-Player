@@ -12,7 +12,7 @@ public struct SpiderResult: Codable, Sendable, Hashable {
     /// 以分类 ID 为键的筛选项。
     public var filters: [String: [VodFilter]] = [:]
     /// 播放地址集合。
-    public var url: PlaybackURLs = PlaybackURLs()
+    public var url = PlaybackURLs()
     /// 播放或请求 header。
     public var header: [String: String] = [:]
     /// Toast 文本；仅 `code=0` 时生效。

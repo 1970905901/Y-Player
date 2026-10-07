@@ -19,3 +19,7 @@
 --wrap-parameters before-first
 --semicolons inline
 --empty-braces spaced
+# `#if os(...)` / `#available` 块内**不额外缩进**：这是本仓库刻意的风格
+# （见 docs/UI 规范.md：版本分支收敛在 Platform/ 基础件里，靠同一缩进层级保持可读）。
+# SwiftFormat 默认是 indent（块内再缩进一级），会导致大量 indent 误报。
+--ifdef no-indent

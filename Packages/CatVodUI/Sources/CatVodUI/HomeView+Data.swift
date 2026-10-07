@@ -86,7 +86,7 @@ struct VodRow: View {
     var body: some View {
         HStack(spacing: 10) {
             AsyncImage(url: URL(string: item.vodPic)) { image in
-                image.resizable().aspectRatio(contentMode: .fill)
+                image.resizable().scaledToFill()
             } placeholder: {
                 Color.secondary.opacity(0.15)
             }
