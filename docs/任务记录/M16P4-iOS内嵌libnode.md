@@ -134,7 +134,21 @@ xcodegen generate                           # 工程已把 NodeMobile.xcframewor
 | `EmbeddedNodeHostTests` **passed**（0.346 s；从 `host starting` 到断言完成 **1.7 s**） | **第 1 项成立**：`dup2` 抓到的 stdout 里确实有就绪行 —— 能拿到 baseURL 才可能取到站点；第 2 项（env 注入）、第 5 项（容器临时目录里的脚本 node 读得到）同时成立 |
 | 预载默认开启（`prefersPreload: true`）而链路仍然通过 | libnode 接受 `-r`，预载不会破坏启动 |
 | `RealBundleHostProbeTests` **skipped** | 首次把 `YPLAYER_NODE_PROBE` 放在 shell `env:` 里 —— App 进程的环境来自**模拟器启动**，必须用 `TEST_RUNNER_` 前缀。已修（`simulator.yml`），真 bundle 待下一轮 |
-| `testMpvDependencyLinkedButEngineNotImplemented` 耗时 **13.6 s** | 可疑：`MpvAvailability.summary`（界面会调用）不该这么慢，待查是否与首次加载 MPVKit 动态库有关 |
+| `testMpvDependencyLinkedButEngineNotImplemented` 耗时 **13.6 s** | 第二轮已结案：`MpvAvailability` 与 `PlayerEngineKind` 全是**编译期常量**，源码里**没有任何 `import Libmpv`**（只有 `canImport` 判断），界面调用 `summary` 只是一次字符串插值 —— 不可能花 13.6 s。第二轮同一批 3 个用例合计 **0.003 s**，故它属测试运行器的一次性开销，与我们的代码路径无关 |
+
+### 2026-10-07 第二轮模拟器结果（真 bundle 首次绿灯）
+
+`simulator` 运行 `37629251023`（提交 `368cd53`），`TEST_RUNNER_YPLAYER_NODE_PROBE` 修复后首次真正跑到真 bundle：
+
+| 观察到的事实 | 结论 |
+| --- | --- |
+| `EmbeddedNodeHostTests` **passed**，1 个用例 0.447 s | 确定性主线继续成立（自写最小 bundle，不依赖外网） |
+| `SimulatorSmokeTests` **passed**，3 个用例 **0.003 s** | 上表 13.6 s 异常消失，结案 |
+| `RealBundleHostProbeTests` **passed**，1 个用例 **9.278 s**、0 失败 | **首次在真 iOS 运行时跑通真 bundle**：下载 6,291,879 字节 → libnode 起来 → 就绪行解析 → `/full-config` 站点断言全过。此前那次「下载完成后 13.5 秒进程消失」在预载修复后**复现不出来** |
+| 探针日志里最后一条是 `host starting` | **新发现的诊断缺口**：fd 1/2 全被 `dup2`，之后的步骤只进「宿主输出」、不进 CI 日志。已把 `NodeProbeSupport.step` 改成 **`print` + `NSLog` 双通道**（`NSLog` 走统一日志，重定向影响不到），下一轮生效 |
+
+真 bundle 探针**继续**留在 `continue-on-error`：它依赖外网与上游 bundle 是否正常，
+属于「环境 + 上游」变量，不该当主线红灯依据；主线仍由 `EmbeddedNodeHostTests` 判定。
 
 第 3 项（体积 / 冷启动 / 常驻内存 / 无 JIT 性能）与第 4 项（`child_process` / `worker_threads`）
 仍待真 bundle 探针给出：预载会把 `preload module ok/MISSING: …` 写进落盘日志，

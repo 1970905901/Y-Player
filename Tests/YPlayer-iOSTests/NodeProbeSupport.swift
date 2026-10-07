@@ -14,9 +14,17 @@ import XCTest
 ///    真 bundle 另设开关（见 `RealBundleHostProbeTests`），出问题不拖垮主线。
 enum NodeProbeSupport {
     /// 打印进度并立刻刷出（不要改成 print 了事：进程可能下一秒就没了）。
+    ///
+    /// **必须两条通道**（2026-10-07 第二轮 CI 才发现的问题）：宿主启动时会把 fd 1 与 fd 2
+    /// **一起** `dup2` 到采集管道（``NodeMobileRuntime`` 的就绪行解析就依赖它），
+    /// 因此那之后的 `print` 只留在「宿主输出」里、**不会出现在 CI 日志中** ——
+    /// 于是日志里最后一条永远是 `host starting`，看不出成功还是失败。
+    /// 上一轮真 bundle 出事时最难的地方正是「日志里看不出死在哪一步」。
+    /// `NSLog` 走统一日志系统，宿主的 fd 重定向影响不到它，xcodebuild 会把应用进程的日志打出来。
     static func step(_ text: String) {
         print("YPLAYER-PROBE: \(text)")
         fflush(stdout)
+        NSLog("YPLAYER-PROBE: %@", text)
     }
 
     /// 落盘日志尾部（进程消失后唯一还能读到的现场）。
