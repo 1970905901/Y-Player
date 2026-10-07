@@ -26,7 +26,7 @@ extension HomeView {
         defer { isLoading = false }
 
         do {
-            let home = try await model.makeCMSClient().home(site: site)
+            let home = try await model.makeSiteClient().home(site: site)
             // 补图是 best-effort：失败或站点不支持时原样返回，不打断首页。
             result = await model.makePictureFiller().fill(site: site, result: home)
             let firstCategoryID = home.categories.first?.typeID ?? ""
@@ -56,7 +56,7 @@ extension HomeView {
         defer { isLoading = false }
 
         do {
-            let category = try await model.makeCMSClient().category(
+            let category = try await model.makeSiteClient().category(
                 site: targetSite,
                 categoryID: targetCategory,
                 page: page,

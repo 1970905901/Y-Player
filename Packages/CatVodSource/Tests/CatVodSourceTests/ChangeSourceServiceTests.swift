@@ -15,7 +15,7 @@ struct ChangeSourceServiceTests {
             "other.example.com": searchResponse(["西游记"]),
             "disabled.example.com": searchResponse(["海贼王"]),
         ])
-        let service = ChangeSourceService(client: CMSClient(transport: transport))
+        let service = ChangeSourceService(client: SiteClient(transport: transport))
         let sites = [
             cmsSite("good"),
             cmsSite("other"),
@@ -42,7 +42,7 @@ struct ChangeSourceServiceTests {
             "good.example.com": searchResponse(["海贼王"]),
             // broken.example.com 没有配置响应 → 抛错
         ])
-        let service = ChangeSourceService(client: CMSClient(transport: transport))
+        let service = ChangeSourceService(client: SiteClient(transport: transport))
         let candidates = await service.candidates(
             title: "海贼王",
             sites: [cmsSite("broken"), cmsSite("good")],
@@ -59,7 +59,7 @@ struct ChangeSourceServiceTests {
             "current.example.com": searchResponse(["海贼王 剧场版", "西游记"]),
             "exact.example.com": searchResponse(["海贼王"]),
         ])
-        let service = ChangeSourceService(client: CMSClient(transport: transport))
+        let service = ChangeSourceService(client: SiteClient(transport: transport))
         let candidates = await service.candidates(
             title: "海贼王",
             sites: [cmsSite("current"), cmsSite("exact")],
@@ -78,7 +78,7 @@ struct ChangeSourceServiceTests {
             "b.example.com": searchResponse(["海贼王"]),
             "c.example.com": searchResponse(["海贼王"]),
         ])
-        let service = ChangeSourceService(client: CMSClient(transport: transport), maxSites: 1)
+        let service = ChangeSourceService(client: SiteClient(transport: transport), maxSites: 1)
         let candidates = await service.candidates(
             title: "海贼王",
             sites: [cmsSite("a"), cmsSite("b"), cmsSite("c")],
@@ -93,7 +93,7 @@ struct ChangeSourceServiceTests {
     @Test("空片名不发起任何请求")
     func emptyTitle() async {
         let transport = RoutingSearchTransport(responses: ["a.example.com": searchResponse(["x"])])
-        let service = ChangeSourceService(client: CMSClient(transport: transport))
+        let service = ChangeSourceService(client: SiteClient(transport: transport))
         let candidates = await service.candidates(title: "   ", sites: [cmsSite("a")], currentSiteKey: nil)
         let requestCount = await transport.requestedHosts().count
 

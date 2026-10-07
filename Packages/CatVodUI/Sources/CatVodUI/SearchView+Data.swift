@@ -28,7 +28,7 @@ extension SearchView {
         defer { isLoading = false }
 
         do {
-            let found = try await model.makeCMSClient().search(
+            let found = try await model.makeSiteClient().search(
                 site: site,
                 keyword: submittedKeyword,
                 page: nextPage

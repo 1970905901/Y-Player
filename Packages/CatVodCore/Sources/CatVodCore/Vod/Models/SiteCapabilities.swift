@@ -66,6 +66,9 @@ public extension Site {
     }
 
     /// 该站点在当前平台/构建中是否可运行；不可用时给出可展示的原因。
+    ///
+    /// 公开的原因：门面层（`SiteClient` 分发失败）与界面层要展示**同一句**原因，
+    /// 不允许两处各写一套文案。
     var availability: SiteAvailability {
         if key.isEmpty {
             return .unavailable(reason: "站点缺少 key")

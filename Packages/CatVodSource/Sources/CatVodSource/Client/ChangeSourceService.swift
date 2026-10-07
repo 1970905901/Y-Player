@@ -25,11 +25,14 @@ public struct ChangeSourceCandidate: Sendable, Hashable {
 /// - 单次最多查询 ``maxSites`` 个站点（换源不该把整份配置全打一遍）；
 /// - **best-effort**：某个站点搜索失败只跳过它，不影响其它站点（整体不抛错）；
 /// - 排序：匹配度降序 → 同一片名时当前站点优先（方便「换线路」）→ 其余保持配置顺序。
+///
+/// 客户端用 ``SiteClient``（门面）：CMS 与 CatSpider HTTP（js2p 宿主）站点都能搜，
+/// 这样 JS 源也能参与换源。
 public struct ChangeSourceService: Sendable {
-    public var client: CMSClient
+    public var client: SiteClient
     public var maxSites: Int
 
-    public init(client: CMSClient, maxSites: Int = 8) {
+    public init(client: SiteClient, maxSites: Int = 8) {
         self.client = client
         self.maxSites = maxSites
     }

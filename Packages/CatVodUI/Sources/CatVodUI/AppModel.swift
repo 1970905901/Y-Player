@@ -81,6 +81,19 @@ public final class AppModel: ObservableObject {
     /// 设置页提示：所选内核不可用、解码方式对所选内核无效等（如实告知，不静默处理）。
     @Published public private(set) var playbackNotice: String = ""
 
+    // MARK: - js2p 宿主（JS 源）
+
+    /// 宿主状态：界面据此显示「不可用 / 启动中 / 运行中 / 失败」，而不是一句笼统的占位文案。
+    @Published public private(set) var hostStatus: JS2PHostStatus = .idle
+
+    /// 宿主提供的站点。
+    ///
+    /// JS 源时这是站点的**唯一**来源：`LoadedSource.config` 是空配置（站点清单要由 Node 执行后给出）。
+    @Published public private(set) var hostSites: [Site] = []
+
+    /// 宿主会话（非 JS 源时为空）。
+    private var js2pHost: JS2PHostService?
+
     /// 当前播放设置。
     public var playbackSettings: PlaybackSettings {
         PlaybackSettings(engine: preferredEngine, decoderMode: decoderMode)
@@ -109,14 +122,20 @@ public final class AppModel: ObservableObject {
 
     // MARK: - 配置
 
-    /// 当前配置里可用的站点（已剔除隐藏与不可用项）。
+    /// 当前可用的站点。
+    ///
+    /// JS 源（js2p）的站点来自内嵌 Node 宿主；其余配置来自 `LoadedSource.config`。
+    /// 「可用」对宿主站点按 `Site.availability` 判定（与配置站点同一口径）。
     public var sites: [Site] {
-        state.loadedSource?.config.usableSites ?? []
+        if !hostSites.isEmpty {
+            return hostSites.filter(\.availability.isAvailable)
+        }
+        return state.loadedSource?.config.usableSites ?? []
     }
 
     /// 全部站点（含不可用，界面需要展示原因）。
     public var allSites: [Site] {
-        state.loadedSource?.config.visibleSites ?? []
+        hostSites.isEmpty ? (state.loadedSource?.config.visibleSites ?? []) : hostSites
     }
 
     /// 配置告警（含站点不可用原因、离线回退提示）。
@@ -146,6 +165,8 @@ public final class AppModel: ObservableObject {
             await detailCache.invalidateAll()
             // 接口缓存自愈：按容量上限淘汰最旧的（当前接口的缓存不动）。
             enforceSourceCacheLimit()
+            // JS 源：站点清单不在配置里，必须由内嵌 Node 宿主提供（macOS 可用，iOS 待 libnode）。
+            await refreshHost(for: loaded, forceRestart: forceRefresh)
         } catch let error as CatVodError {
             state = .failed(error.errorDescription ?? "加载失败")
         } catch {
@@ -167,6 +188,78 @@ public final class AppModel: ObservableObject {
         CMSClient(transport: transportForConfiguration())
     }
 
+    /// 站点客户端门面：按站点类型分发（CMS / CatSpider HTTP）。
+    ///
+    /// 界面统一用这个：JS 源站点是 `type=3`，`CMSClient` 会直接抛 `unsupported`。
+    public func makeSiteClient() -> SiteClient {
+        SiteClient(transport: transportForConfiguration())
+    }
+
+    // MARK: - js2p 宿主
+
+    /// 按加载结果维护宿主：JS 源启动/刷新，其它源停止。
+    private func refreshHost(for source: LoadedSource, forceRestart: Bool) async {
+        guard source.kind == .javaScript, let scriptURL = source.cachedURL else {
+            await stopHost()
+            return
+        }
+        guard JS2PHostService.isRuntimeAvailable else {
+            hostSites = []
+            js2pHost = nil
+            hostStatus = .unavailable(reason: Self.runtimeUnavailableHint)
+            return
+        }
+
+        hostStatus = .starting
+        let service = js2pHost ?? JS2PHostService(transport: sessionTransport, scriptURL: scriptURL)
+        js2pHost = service
+        do {
+            let snapshot = try await service.sites(forceRestartHost: forceRestart)
+            hostSites = snapshot.sites
+            let baseURL = await service.currentBaseURL()
+            hostStatus = .running(
+                baseURL: baseURL?.absoluteString ?? "",
+                siteCount: snapshot.sites.count,
+                disabledSiteCount: snapshot.disabledSiteCount
+            )
+            // 站点集合变了：旧详情可能属于别的站点，不能复用。
+            await detailCache.invalidateAll()
+        } catch {
+            hostSites = []
+            hostStatus = .failed(reason: userFacingMessage(error))
+        }
+    }
+
+    /// 重启宿主（接口页按钮）。
+    public func restartHost() async {
+        guard let source = state.loadedSource, source.kind == .javaScript else {
+            return
+        }
+        await refreshHost(for: source, forceRestart: true)
+    }
+
+    /// 停止宿主并清空宿主站点。
+    public func stopHost() async {
+        await js2pHost?.stop()
+        js2pHost = nil
+        hostSites = []
+        hostStatus = .idle
+    }
+
+    /// 宿主最近输出（诊断用；失败时界面可展开查看，避免「为什么没有站点」只能靠猜）。
+    public func hostDiagnostics(limit: Int = 20) async -> [String] {
+        guard let service = js2pHost else {
+            return []
+        }
+        return await service.recentOutput(limit: limit)
+    }
+
+    /// iOS 没有 libnode；macOS 需要能定位到 node 可执行文件。
+    private static let runtimeUnavailableHint = """
+    当前构建没有可用的 Node 运行时（iOS 需要 libnode，尚未接入）。\
+    macOS 可安装 node（brew install node）或设置环境变量 YPLAYER_NODE 指向 node 可执行文件。
+    """
+
     /// 列表补图（best-effort）：首页 / 分类 / 搜索拿到列表后按需补封面。
     public func makePictureFiller() -> PictureFiller {
         PictureFiller(client: makeCMSClient())
@@ -174,7 +267,7 @@ public final class AppModel: ObservableObject {
 
     /// 换源服务：按片名在其它站点搜索候选（`changeable == 0` 与本平台不可用的站点会被跳过）。
     public func makeChangeSourceService() -> ChangeSourceService {
-        ChangeSourceService(client: makeCMSClient())
+        ChangeSourceService(client: makeSiteClient())
     }
 
     /// 播放进度存储。
@@ -225,7 +318,7 @@ public final class AppModel: ObservableObject {
     /// 共享同一个 ``DetailCache``：详情页在「列表 → 详情 → 返回 → 再进」之间复用结果；
     /// `type=3` 的设置类 / Spider 站点由缓存内部挡板直接跳过（见 `DetailCache.shouldCache`）。
     public func makeDetailProvider() -> DetailProvider {
-        DetailProvider(client: makeCMSClient(), cache: detailCache)
+        DetailProvider(client: makeSiteClient(), cache: detailCache)
     }
 
     /// js2p 通道客户端：本地 Node 服务就绪后传入 baseURL（M1.6 落地）。
@@ -243,7 +336,9 @@ public final class AppModel: ObservableObject {
 
     private func refreshPlaybackNotice() {
         if case .javaScript = state.loadedSource?.kind {
-            playbackNotice = "当前是 JS 源（js2p）：站点清单需等内嵌 Node 服务就绪后加载（M1.6）"
+            // JS 源的站点由内嵌 Node 宿主提供（macOS 可用）：宿主失败的原因在「接口管理 → Node 宿主」里显示，
+            // 不再用一句「等 M1.6」把所有情况盖住。
+            playbackNotice = ""
             return
         }
         var notes: [String] = []

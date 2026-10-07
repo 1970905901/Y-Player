@@ -112,7 +112,7 @@ struct JS2PHostServiceTests {
     }
 
     private func readyRuntime(output: [String] = []) throws -> FakeNodeRuntime {
-        FakeNodeRuntime(behavior: .ready(Self.baseURL()), output: output)
+        try FakeNodeRuntime(behavior: .ready(Self.baseURL()), output: output)
     }
 
     private func makeService(

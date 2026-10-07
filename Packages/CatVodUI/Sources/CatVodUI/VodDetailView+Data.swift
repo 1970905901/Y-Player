@@ -122,7 +122,7 @@ extension VodDetailView {
         case .http:
             return "该集中转播放（type=4 的 play 接口）尚未实现（M2 后续）。"
         case .spider:
-            return "该集来自 Spider 站点（type=3）：JS 源需内嵌 Node 服务（M1.6），JAR/Python 源在 Apple 平台不支持。"
+            return "该集来自 Spider 站点（type=3）：需要调用站点的 play 接口换取地址（界面接入待 M16P3 后续）。"
         }
     }
 }

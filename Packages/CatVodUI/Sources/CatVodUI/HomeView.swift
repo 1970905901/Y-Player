@@ -4,8 +4,9 @@ import SwiftUI
 
 /// 首页：选择站点 → 分类/筛选 → 内容列表 → 进入详情。
 ///
-/// 范围（M2）：仅处理 CMS 站点（`type 0/1/2/4`）；`type=3` 的 JS/CatSpider 站点需要等 M1.6 的内嵌 Node 服务就绪，
-/// 此处在列表里明确标注而不是静默失败。数据加载逻辑见 `HomeView+Data.swift`。
+/// 站点来源：CMS（`type 0/1/2/4`）与 CatSpider HTTP（`type 3`，js2p 宿主）都能浏览，
+/// 由 `AppModel.makeSiteClient()` 按类型分发；JS 源的站点清单来自内嵌 Node 宿主（macOS 可用）。
+/// 数据加载逻辑见 `HomeView+Data.swift`。
 @MainActor
 public struct HomeView: View {
     @ObservedObject var model: AppModel
@@ -21,13 +22,16 @@ public struct HomeView: View {
         self.model = model
     }
 
-    /// 可用且走 CMS 通道的站点。
-    var cmsSites: [Site] {
-        model.sites.filter { $0.kind != .spider }
+    /// 可浏览的站点。
+    ///
+    /// 同时包含 CMS（`type 0/1/2/4`）与 CatSpider HTTP（`type 3`，js2p 宿主站点）：
+    /// 两者都由 `AppModel.makeSiteClient()` 按类型分发，界面不再需要自己区分。
+    var browsableSites: [Site] {
+        model.sites
     }
 
     var selectedSite: Site? {
-        cmsSites.first { $0.key == selectedSiteKey } ?? cmsSites.first
+        browsableSites.first { $0.key == selectedSiteKey } ?? browsableSites.first
     }
 
     var selectedCategory: VodCategory? {
@@ -43,7 +47,7 @@ public struct HomeView: View {
 
     public var body: some View {
         List {
-            if cmsSites.isEmpty {
+            if browsableSites.isEmpty {
                 Section("首页") {
                     Text(emptyHint)
                         .font(.footnote)
@@ -84,7 +88,7 @@ public struct HomeView: View {
         }
         .task {
             if selectedSiteKey.isEmpty {
-                selectedSiteKey = cmsSites.first?.key ?? ""
+                selectedSiteKey = browsableSites.first?.key ?? ""
             }
             await loadHome()
         }
@@ -106,7 +110,7 @@ public struct HomeView: View {
     private var siteSection: some View {
         Section("站点") {
             Picker("当前站点", selection: $selectedSiteKey) {
-                ForEach(cmsSites) { site in
+                ForEach(browsableSites) { site in
                     Text(site.name.isEmpty ? site.key : site.name).tag(site.key)
                 }
             }
@@ -195,8 +199,9 @@ public struct HomeView: View {
             return "还没有可用站点：请先在「接口管理」里加载配置。"
         }
         if model.loadedKind == .javaScript {
-            return "当前是 JS 源（js2p）：站点清单需等内嵌 Node 服务就绪（M1.6 落地）。"
+            // JS 源的站点来自内嵌 Node 宿主：把真实状态显示出来，而不是「等 M1.6」的占位文案。
+            return model.hostStatus.summary
         }
-        return "当前配置里没有可直接访问的 CMS 站点（type 0/1/2/4）。"
+        return "当前没有可用站点。"
     }
 }

@@ -5,11 +5,14 @@ import Foundation
 ///
 /// 用法：`AppModel.makeDetailProvider()` 持有一个共享的 ``DetailCache``，
 /// 这样「列表 → 详情 → 返回 → 再进」不会重复打站点接口。
+///
+/// 客户端用 ``SiteClient``（门面）而不是 `CMSClient`：js2p 的 JS 源站点是 `type=3`，
+/// 详情必须走 CatSpider HTTP 协议；对 CMS 站点行为与以前完全一致。
 public struct DetailProvider: Sendable {
-    public var client: CMSClient
+    public var client: SiteClient
     public var cache: DetailCache
 
-    public init(client: CMSClient, cache: DetailCache = DetailCache()) {
+    public init(client: SiteClient, cache: DetailCache = DetailCache()) {
         self.client = client
         self.cache = cache
     }

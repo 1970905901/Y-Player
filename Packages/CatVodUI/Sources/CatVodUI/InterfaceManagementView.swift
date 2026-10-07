@@ -16,6 +16,8 @@ public struct InterfaceManagementView: View {
     @FocusState private var isURLFieldFocused: Bool
     @State private var isConfirmingCacheClear = false
     @State private var cacheActionMessage = ""
+    /// 宿主最近输出（点「查看宿主输出」后填充）。
+    @State private var hostOutput: [String] = []
 
     public init(model: AppModel) {
         self.model = model
@@ -36,6 +38,9 @@ public struct InterfaceManagementView: View {
             }
             if !model.warnings.isEmpty {
                 warningsSection
+            }
+            if model.loadedKind == .javaScript {
+                hostSection
             }
             sitesSection
             playbackSection
@@ -126,12 +131,42 @@ public struct InterfaceManagementView: View {
         }
     }
 
+    // MARK: - Node 宿主（仅 JS 源）
+
+    /// 宿主状态：端口、站点数、重启入口与诊断输出。
+    ///
+    /// 以前 JS 源只有一句「等 M1.6」的占位文案，用户无法区分
+    /// 「平台不支持」「找不到 node」「宿主起来了但站点没加载出来」；这里把三者分开显示。
+    private var hostSection: some View {
+        Section("Node 宿主") {
+            Text(model.hostStatus.summary)
+                .font(.footnote)
+                .foregroundStyle(model.hostStatus.isRunning ? Color.secondary : Color.orange)
+            Button("重启宿主") {
+                hostOutput = []
+                Task {
+                    await model.restartHost()
+                    hostOutput = await model.hostDiagnostics()
+                }
+            }
+            .disabled(model.hostStatus.isBusy)
+            Button("查看宿主输出") {
+                Task { hostOutput = await model.hostDiagnostics() }
+            }
+            ForEach(Array(hostOutput.enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     // MARK: - 站点清单
 
     private var sitesSection: some View {
         Section("站点") {
             if model.allSites.isEmpty {
-                Text(model.loadedKind == .javaScript ? "JS 源待内嵌 Node 服务就绪后加载站点清单" : "暂无站点")
+                Text(model.loadedKind == .javaScript ? model.hostStatus.summary : "暂无站点")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

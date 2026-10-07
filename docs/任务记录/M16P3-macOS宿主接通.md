@@ -1,6 +1,7 @@
 # M16P3 macOS 宿主接通（js2p 真正可用）
 
-- 状态：**P3a 完成**（宿主会话层 + 单测，随 CI 验证）；**P3b 待做**（站点客户端分发 + 界面接线）
+- 状态：**P3a + P3b 均已实现**（宿主会话层 → 站点客户端分发 → 界面接线），随 CI 验证；
+  仍需**手工验收**（在 macOS 上真正点一遍，见第五节）
 - 依赖：M16P1（`NodeRuntimeAdapter`）、M16P2（`HostSiteCatalog` 与逐字实测契约）
 - 目标：让 js2p 的 `index.js` 从「只是下载到本地」变成「macOS 上真能列出站点、真能浏览」
 
@@ -56,17 +57,25 @@ P3b 一旦把 UI 与 `CatVodNode` 混进同一次提交，出问题只能靠 20 
 | macOS | 有实现：随包 `Resources/node/node`、环境变量 `YPLAYER_NODE`、或 Homebrew/系统路径 |
 | iOS | **不可用**：需要 nodejs-mobile 的 libnode 产物（M1.6 清单第 1–4 项，尚未接入）。`start()` 抛 `runtimeUnavailable`，界面必须显示原因而不是「站点为空」 |
 
-## 四、P3b 计划（下一步）
+## 四、P3b 交付（站点分发 + 界面接线）
 
-1. **`SiteClient` 分发**：按 `Site.kind` 选择客户端 —— CMS 站点走 `CMSClient`，
-   `type 3`（CatSpider HTTP）走 `CatSpiderHTTPClient`（已实现且有单测，缺的只是接线）；
-2. **`AppModel` 接线**：当前接口是 JS 源时创建 `JS2PHostService`、把宿主站点写入 `allSites`/`sites`，
-   并在接口页展示宿主状态（端口、是否探活、最近输出、重启/停止按钮）；
-3. **文案替换**：把「JS 源待内嵌 Node 服务就绪（M1.6 落地）」这类占位提示换成真实状态
-   （macOS 显示宿主状态；iOS 显示「需要 libnode，仅 macOS 支持」）；
-4. **手工验收**（需要 macOS）：
-   - `brew install node`（或设 `YPLAYER_NODE=/path/to/node`）；
-   - 接口地址填 `https://9280.kstore.vip/ceshi/index.js` → 加载；
-   - 期望：状态显示宿主端口（形如 9988）、站点清单出现约 **85** 个站点、`api` 为
-     `http://127.0.0.1:<port>/spider/<spiderKey>/<type>`；
-   - 反向用例：把 `YPLAYER_NODE` 指向不存在的路径 → 必须给出「未找到 node 可执行文件」而不是「站点为空」。
+| 改动 | 内容 |
+| --- | --- |
+| `CatVodSource/Client/SiteClient.swift` | **站点客户端门面**：按 `Site.kind` 分发 —— CMS（`type 0/1/2/4`）走 `CMSClient`，`type 3` 且 `api` 含 `/spider/` 走 `CatSpiderHTTPClient`；JAR/Python/API 形态不对的站点**在发请求之前**就抛 `unsupported` |
+| `Site.availability` 改为 public | 门面、界面、日志必须展示**同一句**原因，不允许两处各写一套文案 |
+| `DetailProvider` / `ChangeSourceService` | 客户端类型从 `CMSClient` 换成 `SiteClient`：CMS 行为不变，js2p 站点从此也能看详情、也能参与换源 |
+| `AppModel` | 宿主生命周期（`refreshHost` / `restartHost` / `stopHost` / `hostDiagnostics`）+ 发布 `hostStatus`/`hostSites`；`sites`/`allSites` 在 JS 源时改用宿主站点；删掉「等 M1.6」的播放提示 |
+| `JS2PHostStatus`（UI） | 状态机：`idle` / `unavailable`（平台不支持）/ `starting` / `running`（baseURL + 站点数 + 被禁用数）/ `failed`，并给出一句话 `summary` |
+| `HomeView` / `SearchView` | `cmsSites` → `browsableSites`（不再过滤 `type=3`）：首页与搜索现在都能用 js2p 站点；空态提示改为显示真实宿主状态 |
+| `InterfaceManagementView` | 新增「Node 宿主」区块：状态、**重启宿主**、**查看宿主输出**（诊断） |
+
+## 五、手工验收（需要 macOS，尚未执行）
+
+1. `brew install node`（或设 `YPLAYER_NODE=/path/to/node`）；
+2. 接口地址填 `https://9280.kstore.vip/ceshi/index.js` → 加载；
+3. 期望：
+   - 「接口管理 → Node 宿主」显示 `宿主运行中：http://127.0.0.1:9988，站点 85 个…`；
+   - 站点清单出现约 **85** 个站点，`api` 形如 `http://127.0.0.1:<port>/spider/<spiderKey>/<type>`；
+   - 首页/搜索能选到这些站点并返回内容（走 CatSpider HTTP 协议）；
+4. 反向用例：把 `YPLAYER_NODE` 指向不存在的路径 → 必须显示「未找到 node 可执行文件」，而不是「站点为空」；
+5. iOS 侧：应显示「内嵌 Node 宿主不可用：iOS 需要 libnode…」，同样不能显示成「暂无站点」。

@@ -42,7 +42,7 @@ private func makeProvider(
 ) -> (provider: DetailProvider, transport: DetailCountingTransport) {
     let transport = DetailCountingTransport(response: HTTPResponse(status: 200, body: Data(detailJSON.utf8)))
     let cache = DetailCache(configuration: .init(ttl: ttl, capacity: capacity))
-    return (DetailProvider(client: CMSClient(transport: transport), cache: cache), transport)
+    return (DetailProvider(client: SiteClient(transport: transport), cache: cache), transport)
 }
 
 private func decodeResult(_ json: String) throws -> SpiderResult {
