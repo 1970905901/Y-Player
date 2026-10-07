@@ -160,6 +160,11 @@ public final class AppModel: ObservableObject {
         CMSClient(transport: transportForConfiguration())
     }
 
+    /// 列表补图（best-effort）：首页 / 分类 / 搜索拿到列表后按需补封面。
+    public func makePictureFiller() -> PictureFiller {
+        PictureFiller(client: makeCMSClient())
+    }
+
     /// 详情获取（带缓存）。
     ///
     /// 共享同一个 ``DetailCache``：详情页在「列表 → 详情 → 返回 → 再进」之间复用结果；

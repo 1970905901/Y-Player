@@ -27,7 +27,8 @@ extension HomeView {
 
         do {
             let home = try await model.makeCMSClient().home(site: site)
-            result = home
+            // 补图是 best-effort：失败或站点不支持时原样返回，不打断首页。
+            result = await model.makePictureFiller().fill(site: site, result: home)
             let firstCategoryID = home.categories.first?.typeID ?? ""
             if selectedCategoryID.isEmpty {
                 selectedCategoryID = firstCategoryID
@@ -61,8 +62,9 @@ extension HomeView {
                 page: page,
                 extend: extend
             )
-            if category.hasList || category.hasCategories || category.code == 0 {
-                result = category
+            let filled = await model.makePictureFiller().fill(site: targetSite, result: category)
+            if filled.hasList || filled.hasCategories || filled.code == 0 {
+                result = filled
             }
             if selectedCategoryID != targetCategory {
                 selectedCategoryID = targetCategory

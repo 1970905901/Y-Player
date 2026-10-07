@@ -33,7 +33,7 @@ extension SearchView {
                 keyword: submittedKeyword,
                 page: nextPage
             )
-            result = found
+            result = await model.makePictureFiller().fill(site: site, result: found)
             page = nextPage
         } catch {
             errorText = userFacingMessage(error)
