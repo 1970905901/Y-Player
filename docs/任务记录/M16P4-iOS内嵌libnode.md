@@ -145,7 +145,8 @@ xcodegen generate                           # 工程已把 NodeMobile.xcframewor
 | `EmbeddedNodeHostTests` **passed**，1 个用例 0.447 s | 确定性主线继续成立（自写最小 bundle，不依赖外网） |
 | `SimulatorSmokeTests` **passed**，3 个用例 **0.003 s** | 上表 13.6 s 异常消失，结案 |
 | `RealBundleHostProbeTests` **passed**，1 个用例 **9.278 s**、0 失败 | **首次在真 iOS 运行时跑通真 bundle**：下载 6,291,879 字节 → libnode 起来 → 就绪行解析 → `/full-config` 站点断言全过。此前那次「下载完成后 13.5 秒进程消失」在预载修复后**复现不出来** |
-| 探针日志里最后一条是 `host starting` | **新发现的诊断缺口**：fd 1/2 全被 `dup2`，之后的步骤只进「宿主输出」、不进 CI 日志。已把 `NodeProbeSupport.step` 改成 **`print` + `NSLog` 双通道**（`NSLog` 走统一日志，重定向影响不到），下一轮生效 |
+| 探针日志里最后一条是 `host starting` | **新发现的诊断缺口**：fd 1/2 全被 `dup2`，之后的步骤只进「宿主输出」、不进 CI 日志。当时以为「`NSLog` 走统一日志、重定向影响不到」，于是把 `NodeProbeSupport.step` 改成 `print` + `NSLog` 双通道 |
+| 双通道**没能解决**问题（本轮实测推翻上一条的做法） | 同一轮日志里 `host starting`（启动前）两种形态都在，而 `host ready`（启动后）**一条都没有** —— `NSLog` 在 Apple 平台写的是 stderr，同样被 `dup2` 吃掉。改成**落盘**：`step` 追加写 `tmp/yplayer-probe.log`，并在 `service.stop()`（fd 已还原）之后 `dumpProbeLog()` 整段打印；失败路径把该日志拼进 `XCTFail` 信息 |
 
 真 bundle 探针**继续**留在 `continue-on-error`：它依赖外网与上游 bundle 是否正常，
 属于「环境 + 上游」变量，不该当主线红灯依据；主线仍由 `EmbeddedNodeHostTests` 判定。

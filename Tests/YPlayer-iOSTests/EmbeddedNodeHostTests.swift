@@ -60,5 +60,7 @@ final class EmbeddedNodeHostTests: XCTestCase {
         NodeProbeSupport.step("assertions done")
         // iOS 上 stop() 只断开日志采集（node_start 不可逆），这里只确认不崩。
         await service.stop()
+        // fd 还原之后再回读落盘日志：这样成功路径也能在 CI 里看到完整步骤序列。
+        NodeProbeSupport.dumpProbeLog()
     }
 }

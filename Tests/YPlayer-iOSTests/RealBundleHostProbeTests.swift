@@ -42,6 +42,8 @@ final class RealBundleHostProbeTests: XCTestCase {
                 \(output.joined(separator: "\n"))
                 --- 落盘日志（关键：模块可用性与致命错误都在这里）---
                 \(log.joined(separator: "\n"))
+                --- 探针日志（落盘；宿主启动之后的步骤进不了 CI 日志，只有这里有）---
+                \(NodeProbeSupport.probeLogText())
                 """
             )
             return
@@ -54,5 +56,6 @@ final class RealBundleHostProbeTests: XCTestCase {
         XCTAssertTrue(first.isCatSpiderHTTP, "api 应形如 http://127.0.0.1:<port>/spider/...")
 
         await service.stop()
+        NodeProbeSupport.dumpProbeLog()
     }
 }

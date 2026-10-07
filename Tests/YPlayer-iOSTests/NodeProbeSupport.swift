@@ -13,18 +13,59 @@ import XCTest
 /// 2. **要有两层**：能精确复现契约的最小 bundle 放在主线（确定性、无网络），
 ///    真 bundle 另设开关（见 `RealBundleHostProbeTests`），出问题不拖垮主线。
 enum NodeProbeSupport {
-    /// 打印进度并立刻刷出（不要改成 print 了事：进程可能下一秒就没了）。
+    /// 探针步骤的落盘文件（**唯一可靠的通道**）。
     ///
-    /// **必须两条通道**（2026-10-07 第二轮 CI 才发现的问题）：宿主启动时会把 fd 1 与 fd 2
-    /// **一起** `dup2` 到采集管道（``NodeMobileRuntime`` 的就绪行解析就依赖它），
-    /// 因此那之后的 `print` 只留在「宿主输出」里、**不会出现在 CI 日志中** ——
-    /// 于是日志里最后一条永远是 `host starting`，看不出成功还是失败。
-    /// 上一轮真 bundle 出事时最难的地方正是「日志里看不出死在哪一步」。
-    /// `NSLog` 走统一日志系统，宿主的 fd 重定向影响不到它，xcodebuild 会把应用进程的日志打出来。
+    /// 实测结论（2026-10-07 第二轮 CI，`simulator` 运行 `37632710891`）：
+    /// 宿主启动时把 fd 1 与 fd 2 **一起** `dup2` 到采集管道（``NodeMobileRuntime`` 的就绪行
+    /// 解析依赖它），于是**那之后的步骤用 `print` 和 `NSLog` 都进不了 CI 日志** ——
+    /// `NSLog` 在 Apple 平台写的是 stderr，一样被重定向吃掉。
+    /// 证据：日志里 `host starting`（启动前）两种形态都在，而 `host ready`（启动后）一条都没有。
+    ///
+    /// 所以可靠做法是**写文件**，并在 ``dumpProbeLog()`` 里于 `stop()`（fd 已还原）之后读出来 ——
+    /// 这样成功路径也能在 CI 里看到完整步骤序列；失败路径本来就会把日志尾部附进错误信息。
+    static var probeLogURL: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("yplayer-probe.log")
+    }
+
+    /// 记录一步：本地输出 + 落盘（落盘的是**唯一**能在 CI 里活下来的那份）。
     static func step(_ text: String) {
+        let stamp = ISO8601DateFormatter().string(from: Date())
         print("YPLAYER-PROBE: \(text)")
         fflush(stdout)
+        // 保留 NSLog：它证伪了「NSLog 能穿过重定向」，也是本地调试时最方便的一路。
         NSLog("YPLAYER-PROBE: %@", text)
+        append("\(stamp) YPLAYER-PROBE: \(text)\n")
+    }
+
+    /// 落盘探针日志的文本（失败时拼进错误信息用）。
+    static func probeLogText() -> String {
+        (try? String(contentsOf: probeLogURL, encoding: .utf8)) ?? ""
+    }
+
+    /// 把落盘的探针日志整段打出来。**必须在 `service.stop()` 之后调用**（那时 fd 已还原）。
+    static func dumpProbeLog() {
+        let text = probeLogText()
+        guard !text.isEmpty else {
+            print("--- 探针日志：无（预载或 step 未生效）---")
+            fflush(stdout)
+            return
+        }
+        print("--- 探针日志（落盘，按时间顺序）---\n\(text)--- 探针日志结束 ---")
+        fflush(stdout)
+    }
+
+    private static func append(_ line: String) {
+        let url = probeLogURL
+        let manager = FileManager.default
+        if !manager.fileExists(atPath: url.path) {
+            _ = manager.createFile(atPath: url.path, contents: nil)
+        }
+        guard let handle = try? FileHandle(forWritingTo: url) else {
+            return
+        }
+        defer { try? handle.close() }
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data(line.utf8))
     }
 
     /// 落盘日志尾部（进程消失后唯一还能读到的现场）。
