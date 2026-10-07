@@ -139,6 +139,8 @@ public final class AppModel: ObservableObject {
             state = .loaded(loaded)
             // 配置已变更：缓存里的详情可能对应旧站点/旧线路，直接清空。
             await detailCache.invalidateAll()
+            // 接口缓存自愈：按容量上限淘汰最旧的（当前接口的缓存不动）。
+            enforceSourceCacheLimit()
         } catch let error as CatVodError {
             state = .failed(error.errorDescription ?? "加载失败")
         } catch {
@@ -163,6 +165,42 @@ public final class AppModel: ObservableObject {
     /// 列表补图（best-effort）：首页 / 分类 / 搜索拿到列表后按需补封面。
     public func makePictureFiller() -> PictureFiller {
         PictureFiller(client: makeCMSClient())
+    }
+
+    /// 接口（源配置）缓存管理。
+    ///
+    /// 与 ``detailCache``（详情缓存）区分：这里管的是**落盘的源配置**（JSON 文本、js2p 的 6 MB bundle 与 `.md5`）。
+    public var sourceCache: SourceCacheStore {
+        SourceCacheStore(directory: cacheDirectory)
+    }
+
+    /// 接口缓存概览（接口管理页展示）；目录不可读时返回 nil。
+    public func sourceCacheSummary() -> SourceCacheStore.Summary? {
+        try? sourceCache.summary(currentURL: currentSourceURL())
+    }
+
+    /// 清空接口缓存，返回删除的文件数。
+    @discardableResult
+    public func clearSourceCache() -> Int {
+        (try? sourceCache.clear()) ?? 0
+    }
+
+    /// 清掉非当前接口的缓存残留（换接口后每个 JS 源会残留 ≈ 6 MB），返回删除的文件数。
+    @discardableResult
+    public func pruneOrphanSourceCaches() -> Int {
+        (try? sourceCache.pruneOrphans(currentURL: currentSourceURL())) ?? 0
+    }
+
+    /// 当前配置地址对应的 URL（用于区分「当前接口的缓存」与「残留」）。
+    ///
+    /// 内联 JSON 没有 URL：此时全部缓存都算残留（符合预期——用户已改用内联配置）。
+    private func currentSourceURL() -> URL? {
+        ConfigLocator.locate(configURL.trimmingCharacters(in: .whitespacesAndNewlines))?.url
+    }
+
+    /// 容量上限自愈：超过 64 MB 时淘汰最旧的缓存，**不会删除当前接口的缓存**。
+    private func enforceSourceCacheLimit() {
+        try? sourceCache.enforceLimit(currentURL: currentSourceURL())
     }
 
     /// 详情获取（带缓存）。

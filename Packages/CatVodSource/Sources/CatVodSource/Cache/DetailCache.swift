@@ -40,8 +40,10 @@ public actor DetailCache {
 
         /// 缓存是否为空。
         ///
-        /// 独立属性（而不是让调用方写 `count == 0`）：既更好读，也满足 SwiftLint 的 `empty_count`（error 级）。
+        /// 这里的 `count` 是**计数字段**而不是集合；`isEmpty` 只是给调用方（含测试）一个更可读的名字。
+        /// 因此对 `empty_count` 规则做单行豁免，而不是把语义绕成 `count < 1`。
         public var isEmpty: Bool {
+            // swiftlint:disable:next empty_count
             count == 0
         }
 

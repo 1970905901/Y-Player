@@ -14,6 +14,8 @@ import SwiftUI
 public struct InterfaceManagementView: View {
     @ObservedObject private var model: AppModel
     @FocusState private var isURLFieldFocused: Bool
+    @State private var isConfirmingCacheClear = false
+    @State private var cacheActionMessage = ""
 
     public init(model: AppModel) {
         self.model = model
@@ -37,9 +39,19 @@ public struct InterfaceManagementView: View {
             }
             sitesSection
             playbackSection
+            cacheSection
         }
         .adaptiveListStyle()
         .navigationTitle("接口管理")
+        .confirmationDialog("确定清空接口缓存？", isPresented: $isConfirmingCacheClear, titleVisibility: .visible) {
+            Button("清空全部缓存", role: .destructive) {
+                let removed = model.clearSourceCache()
+                cacheActionMessage = "已清理 \(removed) 个缓存文件"
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("下次加载接口需要重新下载配置（JS 源约 6 MB）。站点与播放设置不受影响。")
+        }
     }
 
     // MARK: - 配置输入
@@ -164,6 +176,66 @@ public struct InterfaceManagementView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    // MARK: - 接口缓存管理
+
+    /// 缓存管理：**看得见**（条目 / 占用 / 最近更新）+ **清得掉**（全部 / 仅残留）。
+    ///
+    /// 策略（详见 `docs/任务记录/M02P7-接口缓存管理.md`）：
+    /// - 容量上限 64 MB，超过后只淘汰**非当前接口**的最旧缓存；
+    /// - 「清理其他接口」用于换源后回收残留（每个 JS 源 ≈ 6 MB）；
+    /// - 清理缓存不影响站点清单与播放设置，只是下次加载要重新下载。
+    private var cacheSection: some View {
+        let summary = model.sourceCacheSummary()
+        return Section("接口缓存") {
+            if let summary, summary.entryCount > 0 {
+                InfoRow(title: "条目", value: "\(summary.entryCount)")
+                InfoRow(title: "占用", value: summary.formattedTotalSize)
+                if let latest = summary.latestModifiedAt {
+                    InfoRow(title: "最近更新", value: Self.dateText(latest))
+                }
+                if summary.currentEntryCount > 0 {
+                    InfoRow(title: "当前接口", value: "\(summary.currentEntryCount) 个文件")
+                }
+                if summary.orphanByteCount > 0 {
+                    InfoRow(title: "其他接口残留", value: summary.formattedOrphanSize)
+                }
+            } else {
+                Text("暂无缓存：首次加载接口后会把配置存到本地（JS 源约 6 MB），用于离线回退与跳过重复下载。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Button(role: .destructive) {
+                isConfirmingCacheClear = true
+            } label: {
+                Label("清空全部缓存", systemImage: "trash")
+            }
+            .disabled((summary?.entryCount ?? 0) == 0)
+
+            if (summary?.orphanByteCount ?? 0) > 0 {
+                Button {
+                    let removed = model.pruneOrphanSourceCaches()
+                    cacheActionMessage = removed > 0
+                        ? "已清理 \(removed) 个其他接口的缓存文件"
+                        : "没有需要清理的残留"
+                } label: {
+                    Label("清理其他接口的缓存", systemImage: "rectangle.stack.badge.minus")
+                }
+            }
+
+            if !cacheActionMessage.isEmpty {
+                Text(cacheActionMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// 时间显示：用系统本地化格式，不引入第三方格式化（iOS 15 起 `formatted(date:time:)` 可用）。
+    private static func dateText(_ date: Date) -> String {
+        date.formatted(date: .abbreviated, time: .shortened)
     }
 }
 
