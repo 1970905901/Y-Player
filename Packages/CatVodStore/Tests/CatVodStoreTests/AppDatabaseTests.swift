@@ -67,10 +67,12 @@ struct AppDatabaseTests {
     func playbackPosition() async throws {
         let database = InMemoryAppDatabase()
         let key = PlaybackKey(siteKey: "cat", vodID: "1001")
-        #expect(try await database.playbackPosition(vodKey: key.storageKey) == nil)
+        let initialPosition = try await database.playbackPosition(vodKey: key.storageKey)
+        #expect(initialPosition == nil)
 
         try await database.save(playbackPosition: 123.5, vodKey: key.storageKey)
-        #expect(try await database.playbackPosition(vodKey: key.storageKey) == 123.5)
+        let savedPosition = try await database.playbackPosition(vodKey: key.storageKey)
+        #expect(savedPosition == 123.5)
         #expect(key.storageKey == "cat#1001")
     }
 
@@ -81,6 +83,7 @@ struct AppDatabaseTests {
         try await database.append(searchKeyword: "火影")
         try await database.append(searchKeyword: "海贼")
 
-        #expect(try await database.searchHistory() == ["海贼", "火影"])
+        let history = try await database.searchHistory()
+        #expect(history == ["海贼", "火影"])
     }
 }

@@ -6,56 +6,57 @@ import Foundation
 /// 播放地址与解析相关字段的语义见 `docs/integration/player.md`。
 public struct SpiderResult: Codable, Sendable, Hashable {
     /// 分类列表（JSON 键为 `class`）。
-    public var categories: [VodCategory]
+    public var categories: [VodCategory] = []
     /// 条目列表。
-    public var list: [VodItem]
+    public var list: [VodItem] = []
     /// 以分类 ID 为键的筛选项。
-    public var filters: [String: [VodFilter]]
+    public var filters: [String: [VodFilter]] = [:]
     /// 播放地址集合。
-    public var url: PlaybackURLs
+    public var url: PlaybackURLs = PlaybackURLs()
     /// 播放或请求 header。
-    public var header: [String: String]
+    public var header: [String: String] = [:]
     /// Toast 文本；仅 `code=0` 时生效。
-    public var msg: String
+    public var msg: String = ""
     /// 状态码。
-    public var code: Int
+    public var code: Int = 0
     /// 弹幕源列表。
-    public var danmaku: [DanmakuSource]
+    public var danmaku: [DanmakuSource] = []
     /// 字幕列表。
-    public var subs: [SubtitleSource]
+    public var subs: [SubtitleSource] = []
     /// 播放前缀或解析指令（`json:` / `parse:{name}`）。
-    public var playUrl: String
+    public var playUrl: String = ""
     /// 播放器封面。
-    public var artwork: String
+    public var artwork: String = ""
     /// 解析来源。
-    public var jxFrom: String
+    public var jxFrom: String = ""
     /// 当前线路。
-    public var flag: String
+    public var flag: String = ""
     /// 播放描述。
-    public var desc: String
+    public var desc: String = ""
     /// 歌词。
-    public var lrc: String
+    public var lrc: String = ""
     /// 媒体 MIME。
-    public var format: String
+    public var format: String = ""
     /// WebView 点击脚本。
-    public var click: String
+    public var click: String = ""
     /// 站点 key。
-    public var key: String
+    public var key: String = ""
     /// 起播位置（毫秒）。
-    public var position: Int
+    public var position: Int = 0
     /// 总页数。
-    public var pagecount: Int
+    public var pagecount: Int = 0
     /// 解析 WebView 标记（`1` 强制解析）。
-    public var parse: Int
+    public var parse: Int = 0
     /// 需解析标记（`1` 等同需要解析）。
-    public var jx: Int
+    public var jx: Int = 0
     /// DRM 配置。
     public var drm: DrmConfig?
     /// 当前页（部分源返回）。
-    public var page: Int
+    public var page: Int = 1
     /// 结果总数（部分源返回）。
-    public var total: Int
+    public var total: Int = 0
 
+    /// 空结果（所有字段取默认值）。
     public init() {}
 
     public init(from decoder: Decoder) throws {
