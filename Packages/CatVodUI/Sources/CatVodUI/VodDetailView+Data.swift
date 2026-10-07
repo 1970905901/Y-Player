@@ -17,6 +17,66 @@ extension VodDetailView {
         progress = await model.progressStore.progress(for: progressKey)
     }
 
+    /// 读取收藏状态（工具栏的「收藏 / 已收藏」）。
+    func loadFavorite() async {
+        guard let progressKey else {
+            isFavorite = false
+            return
+        }
+        isFavorite = await model.favoriteStore.favorite(for: progressKey) != nil
+    }
+
+    /// 收藏 / 取消收藏。
+    ///
+    /// 收藏条目带上片名、封面、站源、线路与集名（``favoriteMetadata()``），
+    /// 「追剧 → 收藏记录」因此能直接渲染，不需要再请求详情。
+    func toggleFavorite() async {
+        guard let progressKey else {
+            return
+        }
+        if isFavorite {
+            await model.favoriteStore.remove(for: progressKey)
+        } else {
+            await model.favoriteStore.add(Favorite(key: progressKey, metadata: favoriteMetadata()))
+        }
+        await loadFavorite()
+    }
+
+    /// 收藏用的展示元数据：集名取「上次看到的那一集」，没有进度时取第一集。
+    func favoriteMetadata() -> PlaybackEntryMetadata {
+        let watchedEpisodeName: String
+        if let progress, episodes.indices.contains(progress.episodeIndex) {
+            watchedEpisodeName = episodes[progress.episodeIndex].displayName
+        } else {
+            watchedEpisodeName = episodes.first?.displayName ?? ""
+        }
+        return PlaybackEntryMetadata(
+            vodName: vod?.vodName ?? vodID,
+            picture: vod?.vodPic ?? "",
+            siteName: site.map { $0.name.isEmpty ? $0.key : $0.name } ?? "",
+            lineName: currentLine?.name ?? "",
+            episodeName: watchedEpisodeName
+        )
+    }
+
+    /// 播放页的进度上下文：键 + 集下标 + 展示元数据（供「追剧」列表直接渲染）。
+    func progressContext(for episode: PlaylistParser.Episode, at index: Int) -> PlaybackProgressContext? {
+        guard let site else {
+            return nil
+        }
+        return PlaybackProgressContext(
+            key: PlaybackKey(siteKey: site.key, vodID: vodID),
+            episodeIndex: index,
+            metadata: PlaybackEntryMetadata(
+                vodName: vod?.vodName ?? vodID,
+                picture: vod?.vodPic ?? "",
+                siteName: site.name.isEmpty ? site.key : site.name,
+                lineName: currentLine?.name ?? "",
+                episodeName: episode.displayName
+            )
+        )
+    }
+
     /// 换源：切到候选站点/条目并重新拉详情。
     ///
     /// 必须清空当前 `detail`/`lines`/线路选择，否则会出现「站点已换但选集还是旧的」的串数据。
@@ -28,9 +88,11 @@ extension VodDetailView {
         selectedLineIndex = 0
         errorText = ""
         progress = nil
+        isFavorite = false
         Task {
             await loadDetail(force: true)
             await loadProgress()
+            await loadFavorite()
         }
     }
 

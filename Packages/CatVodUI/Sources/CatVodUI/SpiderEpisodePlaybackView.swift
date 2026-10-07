@@ -26,6 +26,27 @@ struct SpiderEpisodePlaybackView: View {
     @State private var resource: MediaResource?
     @State private var errorText = ""
 
+    /// 进度上下文：Spider 站点的播放地址是异步换来的，但片名/线路/集名在进页面前就已确定。
+    ///
+    /// 元数据交给 ``PlaybackView`` 随进度落库，「追剧 → 播放历史」就能直接显示
+    /// 站源 / 线路 / 集名，不需要为了列表再打一次站点接口。
+    private var progressContext: PlaybackProgressContext? {
+        guard let progressKey else {
+            return nil
+        }
+        return PlaybackProgressContext(
+            key: progressKey,
+            episodeIndex: episodeIndex,
+            metadata: PlaybackEntryMetadata(
+                vodName: title,
+                picture: "",
+                siteName: site.name.isEmpty ? site.key : site.name,
+                lineName: lineName,
+                episodeName: episode.displayName
+            )
+        )
+    }
+
     var body: some View {
         Group {
             if let resource {
@@ -33,8 +54,7 @@ struct SpiderEpisodePlaybackView: View {
                     resource: resource,
                     title: episode.displayName,
                     settings: model.playbackSettings,
-                    progressKey: progressKey,
-                    progressEpisodeIndex: episodeIndex,
+                    progressContext: progressContext,
                     progressStore: model.progressStore
                 )
             } else if errorText.isEmpty {

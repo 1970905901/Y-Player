@@ -20,6 +20,22 @@ public struct PlaybackProgress: Sendable, Hashable {
     /// 说明：M2 只记录「线路内下标」——跨线路/跨站的集身份对齐（用集名或 url 匹配）留给 M8 一起做。
     public var episodeIndex: Int
     public var updatedAt: Date
+    /// 展示元数据（片名 / 封面 / 站源 / 线路 / 集名）：供「追剧（播放历史）」列表直接渲染，
+    /// 不必再请求详情。老记录（未带元数据）各字段为空串，界面按空值降级显示。
+    public var metadata: PlaybackEntryMetadata
+
+    /// 影片名（`metadata` 的透传，列表与详情页用）。
+    public var vodName: String { metadata.vodName }
+    /// 站点展示名。
+    public var siteName: String { metadata.siteName }
+    /// 线路名（协议里的 `flag`）。
+    public var lineName: String { metadata.lineName }
+    /// 集名。
+    public var episodeName: String { metadata.episodeName }
+    /// 封面图地址。
+    public var picture: String { metadata.picture }
+    /// 列表展示用的片名：片名为空时回退到 `vodID`。
+    public var displayName: String { metadata.vodName.isEmpty ? key.vodID : metadata.vodName }
 
     public init(
         key: PlaybackKey,
@@ -27,7 +43,8 @@ public struct PlaybackProgress: Sendable, Hashable {
         duration: Double = 0,
         isFinished: Bool = false,
         episodeIndex: Int = -1,
-        updatedAt: Date = Date()
+        updatedAt: Date = Date(),
+        metadata: PlaybackEntryMetadata = PlaybackEntryMetadata()
     ) {
         self.key = key
         self.position = max(position, 0)
@@ -35,6 +52,7 @@ public struct PlaybackProgress: Sendable, Hashable {
         self.isFinished = isFinished
         self.episodeIndex = episodeIndex
         self.updatedAt = updatedAt
+        self.metadata = metadata
     }
 
     /// 续播位置。

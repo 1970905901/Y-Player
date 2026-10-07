@@ -78,7 +78,7 @@ public struct HomeView: View {
             }
         }
         .adaptiveListStyle()
-        .navigationTitle("首页")
+        .navigationTitle("发现")
         .adaptiveToolbar {
             NavigationLink {
                 SearchView(model: model)
@@ -161,11 +161,46 @@ public struct HomeView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            ForEach(result.list) { item in
-                NavigationLink {
-                    VodDetailView(model: model, site: selectedSite, vodID: item.vodID)
-                } label: {
-                    VodRow(item: item)
+            // 展示方式来自「设置 → 首页 → 展示方式」（`AppModel.homeLayout`）：
+            // 纵向是一列内容行（默认，等同 M2 的观感），横向是海报网格。
+            // 两种布局都用同一份 `result.list`，分类 / 筛选 / 分页逻辑完全不变。
+            switch model.homeLayout {
+            case .vertical:
+                verticalList
+            case .horizontal:
+                posterGrid
+            }
+        }
+    }
+
+    private var verticalList: some View {
+        ForEach(result.list) { item in
+            NavigationLink {
+                VodDetailView(model: model, site: selectedSite, vodID: item.vodID)
+            } label: {
+                VodRow(item: item)
+            }
+        }
+    }
+
+    /// 横向展示：每行固定 ``posterColumnCount`` 张海报卡片（末行由 `posterRows` 补空位）。
+    ///
+    /// 不用 `LazyVGrid`：它嵌在 `List` 行里的布局行为在各系统版本上并不一致，
+    /// 这里用最朴素的 `HStack`（观感与交互仍交给系统控件），换行由 `posterRows` 切好。
+    private var posterGrid: some View {
+        ForEach(Array(posterRows.enumerated()), id: \.offset) { _, row in
+            HStack(alignment: .top, spacing: 8) {
+                ForEach(Array(row.enumerated()), id: \.offset) { _, item in
+                    if let item {
+                        NavigationLink {
+                            VodDetailView(model: model, site: selectedSite, vodID: item.vodID)
+                        } label: {
+                            PosterCard(item: item)
+                        }
+                    } else {
+                        // 空位：只占宽度，撑住这一行的排版。
+                        Color.clear.frame(maxWidth: .infinity)
+                    }
                 }
             }
         }
@@ -206,7 +241,7 @@ public struct HomeView: View {
             return "接口加载失败：\(reason)"
         }
         if model.allSites.isEmpty {
-            return "还没有可用站点：请先在「接口管理」里加载配置。"
+            return "还没有可用站点：请先在「设置 → 源地址」里加载配置。"
         }
         if model.loadedKind == .javaScript {
             // JS 源的站点来自内嵌 Node 宿主：把真实状态显示出来，而不是「等 M1.6」的占位文案。

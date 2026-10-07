@@ -51,6 +51,8 @@ public final class AppModel: ObservableObject {
         static let configURL = "yplayer.configURL"
         static let preferredEngine = "yplayer.preferredEngine"
         static let decoderMode = "yplayer.decoderMode"
+        static let homeLayout = "yplayer.homeLayout"
+        static let syncIdentifier = "yplayer.syncIdentifier"
     }
 
     // MARK: - 输出状态
@@ -80,6 +82,15 @@ public final class AppModel: ObservableObject {
 
     /// 设置页提示：所选内核不可用、解码方式对所选内核无效等（如实告知，不静默处理）。
     @Published public private(set) var playbackNotice: String = ""
+
+    /// 首页展示方式（设置 → 首页 → 展示方式）：纵向列表 / 横向海报网格。
+    ///
+    /// 与内核/解码方式同一套做法：**用户手动选择 + 落 `UserDefaults`**，不随数据自动变化。
+    @Published public var homeLayout: HomeLayout {
+        didSet {
+            UserDefaults.standard.set(homeLayout.rawValue, forKey: StorageKey.homeLayout)
+        }
+    }
 
     // MARK: - js2p 宿主（JS 源）
 
@@ -118,12 +129,16 @@ public final class AppModel: ObservableObject {
         self.cacheDirectory = base
         sessionTransport = URLSessionTransport()
         progressStore = InMemoryPlaybackProgressStore()
+        favoriteStore = InMemoryFavoriteStore()
 
         configURL = defaults.string(forKey: StorageKey.configURL) ?? ""
         let storedEngine = defaults.string(forKey: StorageKey.preferredEngine)
         preferredEngine = storedEngine.flatMap(PlayerEngineKind.init(rawValue:)) ?? .system
         let storedDecoder = defaults.string(forKey: StorageKey.decoderMode)
         decoderMode = storedDecoder.flatMap(DecoderMode.init(rawValue:)) ?? .hardware
+        let storedLayout = defaults.string(forKey: StorageKey.homeLayout)
+        homeLayout = storedLayout.flatMap(HomeLayout.init(rawValue:)) ?? .vertical
+        localSyncIdentifier = Self.storedSyncIdentifier(defaults: defaults)
         refreshPlaybackNotice()
     }
 
@@ -316,6 +331,18 @@ public final class AppModel: ObservableObject {
     /// 详情页与播放页按协议编写、不感知底层实现。
     public let progressStore: PlaybackProgressStore
 
+    /// 收藏存储。
+    ///
+    /// 与 ``progressStore`` 同一套做法：M2 用内存实现（进程内有效），
+    /// M8 换 GRDB 实现时只替换这里的构造，「追剧」页与详情页不改。
+    public let favoriteStore: FavoriteStore
+
+    /// 本机同步标识（设置 → iCloud 同步 里展示的那一串）。
+    ///
+    /// 只是**本机**的稳定标识：iCloud 同步尚未落地（先落库 M8，再谈同步），
+    /// 但先把它生成并固定下来，将来启用同步时不必再换一套身份。
+    public let localSyncIdentifier: String
+
     /// 接口（源配置）缓存管理。
     ///
     /// 与 ``detailCache``（详情缓存）区分：这里管的是**落盘的源配置**（JSON 文本、js2p 的 6 MB bundle 与 `.md5`）。
@@ -389,6 +416,16 @@ public final class AppModel: ObservableObject {
             notes.append("\(decoderMode.displayName)对\(preferredEngine.displayName)无效：系统播放器由系统自行决定解码方式")
         }
         playbackNotice = notes.joined(separator: "\n")
+    }
+
+    /// 本机同步标识：首次启动生成一次（`_` + 32 位十六进制），之后固定不变。
+    private static func storedSyncIdentifier(defaults: UserDefaults) -> String {
+        if let existing = defaults.string(forKey: StorageKey.syncIdentifier), !existing.isEmpty {
+            return existing
+        }
+        let identifier = "_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        defaults.set(identifier, forKey: StorageKey.syncIdentifier)
+        return identifier
     }
 
     private static func defaultCacheDirectory() -> URL {

@@ -5,7 +5,13 @@ import SwiftUI
 
 /// 应用根视图。
 ///
-/// 当前阶段（M2）：两个原生 Tab —— 「接口」负责加载/管理源，加载完成后「首页」用于浏览与播放。
+/// 三个原生 Tab（对齐 `docs/任务记录/M02P11-设置页与追剧页.md` 的参考图信息架构）：
+/// - 「发现」= ``HomeView``：浏览与播放（原来的首页）；
+/// - 「追剧」= ``LibraryView``：播放历史 / 收藏记录；
+/// - 「设置」= ``SettingsView``：源地址、首页展示方式、播放（内核/解码/弹幕解析）、
+///   数据（下载/缓存/日志）、iCloud 同步。
+///
+/// 原来的「接口管理」页不再是独立 Tab，而是「设置 → 源地址」的详情页（``InterfaceManagementView``）。
 ///
 /// UI 约定：导航/列表/工具栏一律通过 ``AdaptiveNavigationContainer``、``adaptiveListStyle()``、
 /// ``adaptiveToolbar(leading:trailing:)`` 获取**当前系统的原生外观**，业务视图不写版本分支。
@@ -22,22 +28,29 @@ public struct RootView: View {
     public var body: some View {
         TabView {
             AdaptiveNavigationContainer {
-                InterfaceManagementView(model: model)
-            }
-            .tabItem {
-                Label("接口", systemImage: "antenna.radiowaves.left.and.right")
-            }
-
-            AdaptiveNavigationContainer {
                 HomeView(model: model)
             }
             .tabItem {
-                Label("首页", systemImage: "house")
+                Label("发现", systemImage: "play.rectangle")
+            }
+
+            AdaptiveNavigationContainer {
+                LibraryView(model: model)
+            }
+            .tabItem {
+                Label("追剧", systemImage: "heart")
+            }
+
+            AdaptiveNavigationContainer {
+                SettingsView(model: model)
+            }
+            .tabItem {
+                Label("设置", systemImage: "gearshape")
             }
         }
         .task {
-            // 冷启动恢复：本地保存了接口地址就自动加载一次，不必先去「接口」页手动点「加载」；
-            // 加载完成会自增 `siteCatalogRevision`，首页/搜索据此拿到站点（见 M02P9）。
+            // 冷启动恢复：本地保存了接口地址就自动加载一次，不必先去「设置 → 源地址」手动点「加载」；
+            // 加载完成会自增 `siteCatalogRevision`，首页/搜索/追剧据此拿到站点（见 M02P9）。
             await model.loadSavedSourceIfNeeded()
         }
     }

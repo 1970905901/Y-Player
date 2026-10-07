@@ -160,7 +160,7 @@ public struct SearchView: View {
             return "接口加载失败：\(reason)"
         }
         if model.allSites.isEmpty {
-            return "还没有可用站点：请先在「接口管理」里加载配置。"
+            return "还没有可用站点：请先在「设置 → 源地址」里加载配置。"
         }
         if model.loadedKind == .javaScript {
             return model.hostStatus.summary

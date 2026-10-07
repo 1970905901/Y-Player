@@ -74,4 +74,33 @@ struct PlaybackProgressStoreTests {
     func storageKeyShape() {
         #expect(key("cat", "100").storageKey == "cat#100")
     }
+
+    @Test("展示元数据随进度一起保存（「追剧」列表直接渲染，不需再请求详情）")
+    func storeKeepsMetadata() async {
+        let store = InMemoryPlaybackProgressStore()
+        let target = key("cat", "100")
+        let metadata = PlaybackEntryMetadata(
+            vodName: "完美世界",
+            picture: "https://img/cover.jpg",
+            siteName: "「盘」木偶",
+            lineName: "UC 无限",
+            episodeName: "02 [2.11GB]"
+        )
+        await store.save(PlaybackProgress(key: target, position: 635, duration: 2165, metadata: metadata))
+
+        let loaded = await store.progress(for: target)
+        #expect(loaded?.displayName == "完美世界")
+        #expect(loaded?.siteName == "「盘」木偶")
+        #expect(loaded?.lineName == "UC 无限")
+        #expect(loaded?.episodeName == "02 [2.11GB]")
+        #expect(loaded?.picture == "https://img/cover.jpg")
+    }
+
+    @Test("没有元数据的老记录：displayName 回退到 vodID")
+    func metadataFallback() {
+        let record = PlaybackProgress(key: key("cat", "100"), position: 10, duration: 100)
+        #expect(record.displayName == "100")
+        #expect(record.vodName.isEmpty)
+        #expect(record.siteName.isEmpty)
+    }
 }

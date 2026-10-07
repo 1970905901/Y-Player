@@ -26,6 +26,8 @@ public struct VodDetailView: View {
     @State private var isShowingChangeSource = false
     /// 本片进度：`+Data.swift` 里的 `loadProgress()` / `switchSource(to:)` 也要读写，因此**不能是 private**。
     @State var progress: PlaybackProgress?
+    /// 是否已收藏：`+Data.swift` 里的 `loadFavorite()` / `toggleFavorite()` 读写，因此不能是 private。
+    @State var isFavorite = false
 
     public init(model: AppModel, site: Site?, vodID: String) {
         self.model = model
@@ -78,7 +80,12 @@ public struct VodDetailView: View {
             await loadProgress()
         }
         .adaptiveToolbar {
-            EmptyView()
+            Button {
+                Task { await toggleFavorite() }
+            } label: {
+                Label(isFavorite ? "已收藏" : "收藏", systemImage: isFavorite ? "heart.fill" : "heart")
+            }
+            .disabled(progressKey == nil)
         } trailing: {
             Button {
                 isShowingChangeSource = true
@@ -100,10 +107,14 @@ public struct VodDetailView: View {
         .task {
             await loadDetail()
             await loadProgress()
+            await loadFavorite()
         }
         .onAppear {
-            // 从播放页返回时刷新「上次看到这里」标记。
-            Task { await loadProgress() }
+            // 从播放页返回时刷新「上次看到这里」标记与收藏状态。
+            Task {
+                await loadProgress()
+                await loadFavorite()
+            }
         }
     }
 
@@ -237,8 +248,7 @@ public struct VodDetailView: View {
                 resource: resource,
                 title: episode.displayName,
                 settings: model.playbackSettings,
-                progressKey: progressKey,
-                progressEpisodeIndex: index,
+                progressContext: progressContext(for: episode, at: index),
                 progressStore: model.progressStore
             )
         } else if let site, isSpiderPlayable(site) {

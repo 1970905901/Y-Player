@@ -5,6 +5,29 @@ import SwiftUI
 // 首页的数据加载逻辑（与视图分离，便于单测与复用）。
 
 extension HomeView {
+    /// 「横向展示」每行的海报张数。
+    static let posterColumnCount = 3
+
+    /// 「横向展示」用的换行切片：每 ``posterColumnCount`` 张一行，**末尾补 `nil` 占满**。
+    ///
+    /// 为什么在数据里补齐：这样每行固定 3 个格子，最后一行的卡片不会被拉宽，
+    /// 视图里也不必写 `ForEach(0 ..< n)` 这种**非常量范围**（SwiftUI 不推荐）。
+    var posterRows: [[VodItem?]] {
+        var rows: [[VodItem?]] = []
+        var index = 0
+        let items = result.list
+        while index < items.count {
+            var row: [VodItem?] = []
+            for offset in 0 ..< Self.posterColumnCount {
+                let itemIndex = index + offset
+                row.append(itemIndex < items.count ? items[itemIndex] : nil)
+            }
+            rows.append(row)
+            index += Self.posterColumnCount
+        }
+        return rows
+    }
+
     /// 筛选器绑定：未选择时使用上游给的初始值。
     func binding(for filter: VodFilter) -> Binding<String> {
         Binding(
@@ -174,5 +197,37 @@ struct VodRow: View {
                 }
             }
         }
+    }
+}
+
+/// 海报卡片：首页「横向展示」用（封面 + 片名 + 备注）。
+///
+/// 与 ``VodRow`` 同源同数据，只是换了排布；高度固定，保证同一行里的卡片底部对齐。
+struct PosterCard: View {
+    let item: VodItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            AsyncImage(url: URL(string: item.vodPic)) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Color.secondary.opacity(0.15)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 132)
+            .clipShape(RoundedRectangle(cornerRadius: PlatformShims.cardCornerRadius))
+
+            Text(item.vodName.isEmpty ? item.vodID : item.vodName)
+                .font(.caption)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+            if !item.vodRemarks.isEmpty {
+                Text(item.vodRemarks)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

@@ -24,6 +24,10 @@
 `.scrollContentBackground`（iOS 16+）、`Grid`/`.gridCellColumns`（iOS 16+）、
 系统设置页风格（iOS 的 `Form` + 分组；macOS 的 `Settings` 场景）。
 
+> 已落地：**设置页**（M02P11）用 `List` + `adaptiveListStyle()`（iOS 的 `insetGrouped` / macOS 的 `inset`）
+> 呈现系统设置那种分组形态，**不用 `Form`**：`Form` 在 macOS 上会退化成另一套观感，
+> 与本规范「各系统用各自原生外观」的目标重复。
+
 ## 三、禁止事项
 
 - ❌ 用 `UIDevice` 型号判断代替系统外观判断。

@@ -16,10 +16,11 @@ public struct PlaybackView: View {
     let title: String
     /// 播放设置（内核 + 解码方式）：来自设置页，**运行时严格遵循，不自动降级**。
     let settings: PlaybackSettings
-    /// 进度记录键；nil 表示不记录进度（例如从搜索页直接播放的临时场景）。
-    let progressKey: PlaybackKey?
-    /// 当前集在线路内的下标（`-1` 表示未知），仅用于详情页「上次看到这里」标记与进度落库。
-    let progressEpisodeIndex: Int
+    /// 进度上下文（键 + 集下标 + 展示元数据）；nil 表示不记录进度（例如从搜索页直接播放的临时场景）。
+    ///
+    /// 展示元数据（片名/封面/站源/线路/集名）随进度一起落库，「追剧（播放历史）」列表
+    /// 就能直接渲染，不必再请求一次详情（见 ``PlaybackEntryMetadata``）。
+    let progressContext: PlaybackProgressContext?
     /// 进度存储；nil 表示不记录。
     let progressStore: PlaybackProgressStore?
 
@@ -42,15 +43,13 @@ public struct PlaybackView: View {
         resource: MediaResource,
         title: String,
         settings: PlaybackSettings = PlaybackSettings(),
-        progressKey: PlaybackKey? = nil,
-        progressEpisodeIndex: Int = -1,
+        progressContext: PlaybackProgressContext? = nil,
         progressStore: PlaybackProgressStore? = nil
     ) {
         self.resource = resource
         self.title = title
         self.settings = settings
-        self.progressKey = progressKey
-        self.progressEpisodeIndex = progressEpisodeIndex
+        self.progressContext = progressContext
         self.progressStore = progressStore
     }
 
@@ -189,7 +188,7 @@ extension PlaybackView {
 
     /// 续播资源：有进度记录时把 `startPosition` 换成上次位置。
     func resumableResource() async -> MediaResource {
-        guard let progressKey, let progressStore, let saved = await progressStore.progress(for: progressKey) else {
+        guard let progressContext, let progressStore, let saved = await progressStore.progress(for: progressContext.key) else {
             return resource
         }
         let resume = saved.resumePosition()
@@ -204,7 +203,7 @@ extension PlaybackView {
 
     /// 落一次进度（节流；`force` 用于暂停 / 播放结束 / 离开页面）。
     func persist(force: Bool) async {
-        guard let progressKey, let progressStore, latestPosition > 0 else {
+        guard let progressContext, let progressStore, latestPosition > 0 else {
             return
         }
         let now = Date()
@@ -214,12 +213,13 @@ extension PlaybackView {
         lastPersistAt = now
         await progressStore.save(
             PlaybackProgress(
-                key: progressKey,
+                key: progressContext.key,
                 position: latestPosition,
                 duration: latestDuration,
                 isFinished: isFinished,
-                episodeIndex: progressEpisodeIndex,
-                updatedAt: now
+                episodeIndex: progressContext.episodeIndex,
+                updatedAt: now,
+                metadata: progressContext.metadata
             )
         )
     }
@@ -229,8 +229,8 @@ extension PlaybackView {
         latestPosition = 0
         isFinished = false
         resumedFromText = ""
-        if let progressKey, let progressStore {
-            await progressStore.clear(for: progressKey)
+        if let progressContext, let progressStore {
+            await progressStore.clear(for: progressContext.key)
         }
         guard let engine else {
             return

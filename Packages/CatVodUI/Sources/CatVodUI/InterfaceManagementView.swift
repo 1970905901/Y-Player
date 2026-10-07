@@ -3,7 +3,10 @@ import CatVodPlayer
 import CatVodSource
 import SwiftUI
 
-/// 接口管理页：粘贴/导入配置地址 → 加载 → 展示站点清单与告警。
+/// 源管理页：粘贴/导入配置地址 → 加载 → 展示站点清单与告警。
+///
+/// 入口位置变了（对齐参考图的「设置 → 源地址」）：这个页面本身功能没变，
+/// 仍然是「接口地址 + 加载/强制刷新 + 状态 + 告警 + 站点清单 + 宿主状态 + 播放设置 + 接口缓存」。
 ///
 /// UI 约定（见 `docs/UI 规范.md`）：使用系统原生 `List` 与控件，
 /// 通过 ``adaptiveListStyle()`` / ``AdaptiveNavigationContainer`` 获取各系统版本的原生外观，视图内不写版本分支。
@@ -47,7 +50,7 @@ public struct InterfaceManagementView: View {
             cacheSection
         }
         .adaptiveListStyle()
-        .navigationTitle("接口管理")
+        .navigationTitle("源地址")
         .confirmationDialog("确定清空接口缓存？", isPresented: $isConfirmingCacheClear, titleVisibility: .visible) {
             Button("清空全部缓存", role: .destructive) {
                 let removed = model.clearSourceCache()
@@ -178,39 +181,10 @@ public struct InterfaceManagementView: View {
 
     // MARK: - 播放内核
 
+    /// 播放设置区块：与「设置 → 播放 → 播放器」共用同一份实现（``PlaybackSettingsSection``），
+    /// 避免两个页面各写一份内核 Picker 而出现不一致。
     private var playbackSection: some View {
-        let resolution = model.resolvePlayback()
-        return Section("播放设置") {
-            Picker("播放内核", selection: $model.preferredEngine) {
-                ForEach(PlayerEngineKind.allCases, id: \.self) { kind in
-                    Text(kind.displayName + (kind.isAvailable ? "" : "（未接入）")).tag(kind)
-                }
-            }
-            Picker("解码方式", selection: $model.decoderMode) {
-                ForEach(DecoderMode.allCases, id: \.self) { mode in
-                    Text(mode.displayName).tag(mode)
-                }
-            }
-            switch resolution {
-            case let .ready(kind):
-                InfoRow(title: "将使用", value: kind.displayName)
-            case let .unavailable(kind, reason):
-                InfoRow(title: "不可用", value: kind.displayName)
-                Text(reason)
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-            }
-            if !model.playbackSettings.isDecoderModeEffective {
-                Text("提示：系统播放器不支持强制硬解/软解，该选项对当前内核无效（切到 MPV / 自研 FFmpeg 内核后生效）。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            if !model.playbackNotice.isEmpty {
-                Text(model.playbackNotice)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
+        PlaybackSettingsSection(model: model)
     }
 
     // MARK: - 接口缓存管理
