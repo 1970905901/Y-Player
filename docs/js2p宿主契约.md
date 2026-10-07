@@ -130,7 +130,9 @@ let x = await e.db.get("/config/sites/list", []);
 
 ## 五、M1.6 PoC 验证清单（须在 macOS/真机完成）
 
-1. **iOS 内嵌可行性**：nodejs-mobile **v18.20.4**（iPhone arm64 + 模拟器 arm64/x86_64）随包集成，`node::Start` 在独立后台线程启动；确认 `worker_threads`、`http2`、`dns`、`tls`、`zlib`、`fs` 在 iOS 沙盒内可用（不可用项需确认是否在关键路径）。
+1. **iOS 内嵌可行性**：nodejs-mobile **v18.20.4**（iPhone arm64 + 模拟器 arm64/x86_64）随包集成，`node::Start` 在独立后台线程启动；
+   → **已实现**（`M16P4-iOS内嵌libnode.md`：`NodeMobile.xcframework` + `node_start` + 就绪行解析复用）；
+   仍待真机确认 `worker_threads`、`http2`、`dns`、`tls`、`zlib`、`fs` 在 iOS 沙盒内可用（不可用项需确认是否在关键路径）。
 2. **体积**：libnode 带来的 ipa/app 体积增量（webhtv 注明 Android `.so` 约 60MB）。
 3. **性能**：冷启动（下载 6.29MB + 执行 + 监听）、常驻内存、首屏搜索耗时（iOS 无 JIT，必须实测）。
 4. **端口**：注入 `PORT`/`HOST`，解析就绪行取实际端口，覆盖 `EADDRINUSE` 自增场景。

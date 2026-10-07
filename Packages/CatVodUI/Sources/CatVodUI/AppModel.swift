@@ -206,7 +206,7 @@ public final class AppModel: ObservableObject {
         guard JS2PHostService.isRuntimeAvailable else {
             hostSites = []
             js2pHost = nil
-            hostStatus = .unavailable(reason: Self.runtimeUnavailableHint)
+            hostStatus = .unavailable(reason: JS2PHostService.runtimeUnavailableReason)
             return
         }
 
@@ -253,12 +253,6 @@ public final class AppModel: ObservableObject {
         }
         return await service.recentOutput(limit: limit)
     }
-
-    /// iOS 没有 libnode；macOS 需要能定位到 node 可执行文件。
-    private static let runtimeUnavailableHint = """
-    当前构建没有可用的 Node 运行时（iOS 需要 libnode，尚未接入）。\
-    macOS 可安装 node（brew install node）或设置环境变量 YPLAYER_NODE 指向 node 可执行文件。
-    """
 
     /// 列表补图（best-effort）：首页 / 分类 / 搜索拿到列表后按需补封面。
     public func makePictureFiller() -> PictureFiller {

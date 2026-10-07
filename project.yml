@@ -54,6 +54,10 @@ targets:
       - package: CatVodPlayer
       - package: CatVodStore
       - package: CatVodUI
+      # 内嵌 Node 运行时（iOS）：随包 NodeMobile.xcframework。
+      # 该产物不入库，先跑 `python Scripts/fetch_nodejs_mobile.py` 取回（CI 已内置该步骤）。
+      - framework: ThirdParty/nodejs-mobile/NodeMobile.xcframework
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.YPlayer.cat

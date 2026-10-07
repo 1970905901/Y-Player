@@ -22,7 +22,7 @@ Packages/             SwiftPM 本地包
   CatVodCore/         协议模型、宽松解码、播放列表/URL 规则（仅 Foundation，可跨平台单测）
   CatVodNet/          HTTP 传输抽象、请求管线、本地 HTTP 服务
   CatVodSource/       站点客户端、CatSpider 协议、js2p 宿主与 JS 运行时、解析与嗅探
-  CatVodNode/         内嵌 Node 运行时的宿主适配（js2p 契约落码；macOS 进程链路，iOS 待 libnode）
+  CatVodNode/         内嵌 Node 运行时的宿主适配（iOS 用随包 NodeMobile.xcframework / libnode，macOS 用 node 可执行文件）
   CatVodPlayer/       播放内核抽象 + MpvEngine + FFmpegEngine
   CatVodStore/        持久化（站点/收藏/历史/进度）
   CatVodUI/           跨端 SwiftUI 组件与平台 shim

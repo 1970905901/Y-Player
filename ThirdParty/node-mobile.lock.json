@@ -1,0 +1,34 @@
+{
+  "name": "nodejs-mobile（iOS 内嵌 Node 运行时 / libnode）",
+  "kind": "apple-xcframework",
+  "version": "v18.20.4",
+  "nodeVersion": "18.20.4",
+  "artifact": {
+    "file": "nodejs-mobile-v18.20.4-ios.zip",
+    "url": "https://github.com/nodejs-mobile/nodejs-mobile/releases/download/v18.20.4/nodejs-mobile-v18.20.4-ios.zip",
+    "bytes": 51492431,
+    "sha256": "8c5ca3a0d1e38de7f182a5642593e82593b820efd375a14b3ecafc4bcfee620e"
+  },
+  "unpacked": {
+    "root": "ThirdParty/nodejs-mobile/NodeMobile.xcframework",
+    "libraries": [
+      "ios-arm64 → NodeMobile.framework（NodeMobile 二进制 54959120 B）",
+      "ios-arm64_x86_64-simulator → NodeMobile.framework（NodeMobile 二进制 115463536 B）"
+    ]
+  },
+  "api": {
+    "module": "NodeMobile",
+    "moduleMap": "framework module NodeMobile { umbrella header \"NodeMobile.h\" }",
+    "header": "NodeMobile.h",
+    "function": "int node_start(int argc, char *argv[]);",
+    "minimumOSVersion": "13.0"
+  },
+  "license": "MIT：Copyright Node.js contributors；Modifications copyright (c) Janea Systems, Inc.",
+  "notes": [
+    "为什么不进 git：解压后 device 54.9 MB + simulator fat 115.4 MB，入库会让仓库臃肿；改为脚本按 sha256 取产物（Scripts/fetch_nodejs_mobile.py）。",
+    "启动方式与参考实现 nodejs-mobile-cordova 的 src/ios/NodeJSRunner.mm 一致：独立后台线程（2 MB 栈）里调 node_start。",
+    "argv 约定：[\"node\", \"<script>\"] —— 与 bundle 的自启动条件一致（process.argv[1] 必须以 index.js 结尾）。",
+    "硬约束：每进程只能起一个 Node 实例；无 child_process；iOS 无 JIT；必须跑在独立线程。",
+    "Android 侧同一版本产物为 57 MB（nodejs-mobile-v18.20.4-android.zip），本仓库只做 iOS/macOS，故不取。"
+  ]
+}

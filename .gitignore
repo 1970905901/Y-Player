@@ -1,3 +1,8 @@
+# 内嵌 Node 运行时（nodejs-mobile）按需下载，不入库：
+# 解压后 device 54.9 MB + simulator fat 115.4 MB，用脚本按 sha256 取同一个产物。
+ThirdParty/nodejs-mobile/
+ThirdParty/.cache/
+
 # === macOS ===
 .DS_Store
 .AppleDouble

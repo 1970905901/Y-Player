@@ -83,8 +83,15 @@ jobs:
         run: sudo xcode-select -switch /Applications/Xcode_${{ env.XCODE_VERSION }}.app
       - name: Install XcodeGen
         run: command -v xcodegen >/dev/null || brew install xcodegen
-      - name: Generate Xcode project
-        run: xcodegen generate
+      - name: Cache nodejs-mobile (embedded Node runtime)
+        uses: actions/cache@v4
+        with:
+          path: ThirdParty/.cache
+          key: nodejs-mobile-v18.20.4-8c5ca3a0d1e38de7
+      - name: Fetch embedded Node runtime (iOS) and generate project
+        run: |
+          python3 Scripts/fetch_nodejs_mobile.py
+          xcodegen generate
       - name: Cache SwiftPM
         uses: actions/cache@v4
         with:
@@ -122,8 +129,15 @@ jobs:
         run: sudo xcode-select -switch /Applications/Xcode_${{ env.XCODE_VERSION }}.app
       - name: Install XcodeGen
         run: command -v xcodegen >/dev/null || brew install xcodegen
-      - name: Generate Xcode project
-        run: xcodegen generate
+      - name: Cache nodejs-mobile (embedded Node runtime)
+        uses: actions/cache@v4
+        with:
+          path: ThirdParty/.cache
+          key: nodejs-mobile-v18.20.4-8c5ca3a0d1e38de7
+      - name: Fetch embedded Node runtime (iOS) and generate project
+        run: |
+          python3 Scripts/fetch_nodejs_mobile.py
+          xcodegen generate
       - name: Archive iOS (unsigned)
         run: |
           xcodebuild archive \

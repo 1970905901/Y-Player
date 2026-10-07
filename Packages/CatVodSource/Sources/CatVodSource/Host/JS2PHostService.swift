@@ -23,9 +23,14 @@ public actor JS2PHostService {
     private let catalog: HostSiteCatalog
     private let runtime: any NodeRuntimeLaunching
     private var startedBaseURL: URL?
-    /// 当前平台/构建是否具备 Node 运行时（macOS 上取决于能否定位到 node 可执行文件）。
+    /// 当前平台/构建是否具备 Node 运行时（macOS：能否定位 node；iOS：是否随包链接了 NodeMobile）。
     nonisolated public static var isRuntimeAvailable: Bool {
-        NodeRuntimeAdapter.isRuntimeAvailable
+        NodeRuntimeEnvironment.isRuntimeAvailable
+    }
+
+    /// 运行时不可用的具体原因（界面直接展示，避免各处各写一套文案）。
+    nonisolated public static var runtimeUnavailableReason: String {
+        NodeRuntimeEnvironment.unavailableReason
     }
 
     /// 运行时配置（界面展示脚本路径与期望端口用）。
@@ -51,7 +56,7 @@ public actor JS2PHostService {
         )
         self.configuration = configuration
         catalog = HostSiteCatalog(transport: transport)
-        self.runtime = runtime ?? NodeRuntimeAdapter(configuration: configuration)
+        self.runtime = runtime ?? NodeRuntimeEnvironment.makeRuntime(configuration: configuration)
     }
 
     /// 启动宿主（幂等）并返回 baseURL。
