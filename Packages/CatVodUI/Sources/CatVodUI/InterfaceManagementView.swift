@@ -7,6 +7,10 @@ import SwiftUI
 ///
 /// UI 约定（见 `docs/UI 规范.md`）：使用系统原生 `List` 与控件，
 /// 通过 ``adaptiveListStyle()`` / ``AdaptiveNavigationContainer`` 获取各系统版本的原生外观，视图内不写版本分支。
+///
+/// 标注 `@MainActor`：本视图全程读写 `AppModel`（同样是 `@MainActor` 隔离），
+/// 显式标注后在不同 Swift 语言模式（5 / 6）下都能正确编译。
+@MainActor
 public struct InterfaceManagementView: View {
     @ObservedObject private var model: AppModel
     @FocusState private var isURLFieldFocused: Bool
@@ -191,7 +195,7 @@ struct SiteRow: View {
     }
 
     private var subtitle: String {
-        let kind = site.kind.map(String.init(describing:)) ?? "未知类型"
+        let kind = site.kind.map { String(describing: $0) } ?? "未知类型"
         let runtime = site.spiderRuntimeKind == .unsupported ? "" : "· \(site.spiderRuntimeKind.rawValue)"
         return "\(site.key) · \(kind)\(runtime)"
     }

@@ -40,6 +40,14 @@ public actor AVPlayerEngine: PlayerEngine {
         state
     }
 
+    /// 供系统播放器 UI（`AVKit.VideoPlayer`）绑定的 `AVPlayer` 实例。
+    ///
+    /// 说明：返回非 Sendable 的 `AVPlayer` 属于“UI 层直接持有系统播放器”的必要妥协；
+    /// 自研内核（M3/M4）会改为导出像素缓冲/渲染视图，不再暴露播放器对象。
+    public func systemPlayer() -> AVPlayer {
+        player
+    }
+
     // MARK: - 命令
 
     public func load(_ resource: MediaResource) async throws {
