@@ -15,7 +15,8 @@ struct GRDBStoreTests {
 
     @Test("收藏：写入 / 读取 / 计数 / 按时间倒序")
     func favoriteRoundTrip() async throws {
-        let store = GRDBFavoriteStore(database: try makeDatabase())
+        let database = try makeDatabase()
+        let store = GRDBFavoriteStore(database: database)
         let older = Favorite(
             key: key("1"),
             vodName: "老片",
@@ -55,7 +56,8 @@ struct GRDBStoreTests {
 
     @Test("收藏：单条删除与批量删除")
     func favoriteDeletion() async throws {
-        let store = GRDBFavoriteStore(database: try makeDatabase())
+        let database = try makeDatabase()
+        let store = GRDBFavoriteStore(database: database)
         for index in 1 ... 3 {
             await store.add(Favorite(key: key("\(index)"), vodName: "片\(index)"))
         }
@@ -79,7 +81,8 @@ struct GRDBStoreTests {
 
     @Test("进度：写入 / 读取（含元数据 JSON 往返）/ 清除 / 排序")
     func progressRoundTrip() async throws {
-        let store = GRDBPlaybackProgressStore(database: try makeDatabase())
+        let database = try makeDatabase()
+        let store = GRDBPlaybackProgressStore(database: database)
         let metadata = PlaybackEntryMetadata(
             vodName: "片名",
             picture: "https://img/x.jpg",

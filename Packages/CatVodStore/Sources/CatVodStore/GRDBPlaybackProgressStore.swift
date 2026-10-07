@@ -31,10 +31,10 @@ public struct GRDBPlaybackProgressStore: PlaybackProgressStore {
 
     public func save(_ progress: PlaybackProgress) async {
         let sql = """
-            INSERT OR REPLACE INTO playbackProgress
-            (vodKey, siteKey, vodID, position, duration, isFinished, episodeIndex, updatedAt, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
+        INSERT OR REPLACE INTO playbackProgress
+        (vodKey, siteKey, vodID, position, duration, isFinished, episodeIndex, updatedAt, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
         let metadata = Self.encode(progress.metadata)
         database.write { db in
             try db.execute(

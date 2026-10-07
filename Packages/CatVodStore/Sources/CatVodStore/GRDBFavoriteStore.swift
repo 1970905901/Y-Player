@@ -41,10 +41,10 @@ public struct GRDBFavoriteStore: FavoriteStore {
 
     public func add(_ favorite: Favorite) async {
         let sql = """
-            INSERT OR REPLACE INTO favorite
-            (vodKey, siteKey, vodID, vodName, picture, siteName, lineName, episodeName, addedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
+        INSERT OR REPLACE INTO favorite
+        (vodKey, siteKey, vodID, vodName, picture, siteName, lineName, episodeName, addedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
         database.write { db in
             try db.execute(
                 sql: sql,
