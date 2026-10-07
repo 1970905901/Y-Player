@@ -105,7 +105,7 @@ extension NodeMobileRuntime {
     /// 预载是**诊断增强**，不是启动前提：写不出脚本也要照常启动，
     /// 否则一个日志功能会把整条链路拖死。
     func makeLaunchPlan() -> (NodeMobileLaunchPlan, URL?) {
-        var configuration = self.configuration
+        var configuration = configuration
         guard configuration.prefersPreload else {
             return (NodeMobileLaunchPlan(configuration: configuration), nil)
         }
