@@ -79,10 +79,19 @@ struct SourceCacheCleanupTests {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("yplayer-missing-\(UUID().uuidString)", isDirectory: true)
         let store = SourceCacheStore(directory: directory)
-        #expect(try store.entries().isEmpty)
-        #expect(try store.summary().entryCount == 0)
-        #expect(try store.clear() == 0)
-        #expect(try store.pruneOrphans(currentURL: cacheTestJSURL) == 0)
-        #expect(try store.enforceLimit(currentURL: cacheTestJSURL) == 0)
+
+        // 注意：`try` 不能写在 `#expect(...)` 宏参数里（Swift Testing 限制，与 `await` 同类），
+        // 必须先把结果取到局部变量再断言。
+        let entries = try store.entries()
+        let summary = try store.summary()
+        let cleared = try store.clear()
+        let pruned = try store.pruneOrphans(currentURL: cacheTestJSURL)
+        let enforced = try store.enforceLimit(currentURL: cacheTestJSURL)
+
+        #expect(entries.isEmpty)
+        #expect(summary.entryCount == 0)
+        #expect(cleared == 0)
+        #expect(pruned == 0)
+        #expect(enforced == 0)
     }
 }
