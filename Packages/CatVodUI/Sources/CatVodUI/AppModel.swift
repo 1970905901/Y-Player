@@ -107,13 +107,19 @@ public final class AppModel: ObservableObject {
     }
 
     /// 本机服务的状态说明（端口 / 失败原因）：设置页如实展示，不静默失败。
-    @Published public private(set) var localProxyNotice: String = ""
+    ///
+    /// setter 是 `internal(set)` 而不是 `private(set)`：写入点在**同模块的扩展文件**
+    /// `AppModel+LocalProxy.swift` 里，`private(set)` 只对声明所在文件开放，跨文件赋值会编译失败
+    /// （CI 报过 `cannot assign to property: 'localProxyNotice' setter is inaccessible`）。
+    @Published public internal(set) var localProxyNotice: String = ""
 
     /// 本机服务端口；未启动为 nil。
     ///
     /// 在 AppModel 里留一份而不是每次去问 actor：``proxiedMediaResource(_:)`` 是**同步**判定，
     /// 而 `LocalHTTPServer.port` 是 actor 属性，读它必须 await。
-    @Published public private(set) var localProxyPort: UInt16?
+    ///
+    /// setter 理由同 ``localProxyNotice``：启停逻辑在 `AppModel+LocalProxy.swift`。
+    @Published public internal(set) var localProxyPort: UInt16?
 
     /// 本地代理服务实例；由 ``ensureLocalServer()`` 创建并启动（见 `AppModel+LocalProxy.swift`）。
     var localServer: LocalHTTPServer?
