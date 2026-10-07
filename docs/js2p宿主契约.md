@@ -106,6 +106,11 @@ let x = await e.db.get("/config/sites/list", []);
 - 每个 spider 注册两组前缀：`/spider/<key>/<type>` 与 `/spider/<key>`，方法为 **POST**（`/init`、`/support`、`/home`、`/homeVod`…）。
 - 与参考实现 `CatSpider.java` 一致：站点 `api` = `http://127.0.0.1:<port>/spider/<key>`，随后 `POST <api>/init|/home|/category|/detail|/search|/play`。
   → 本项目已实现的 `CatSpiderHTTPClient` 与之匹配（`api.contains("/spider/")` + POST JSON + `page` 为整数）。
+- **`/init` 是生命周期的一部分，不是可选装饰**：参考实现的 `Spider.init` 就是
+  `post("/init", new JsonObject())`，宿主框架在建 spider 实例时先调它，之后才轮到内容接口。
+  本项目由 `CatSpiderInitializer` 按 `api` 全路径记忆并**只发一次**（并发合并、失败不阻断也不重试），
+  `SiteClient` 的 `home/category/detail/search/play` 之前都会先确保该站点已 init；
+  详见 `docs/任务记录/M16P6-站点初始化对齐.md`。
 - **站点清单入口（已实测，M1.6）**：`GET /full-config`（`GET /config` 返回**同一载荷**，19114 字节）。
   - 形状：`{"video":{"sites":[…]},"read":{…},"comic":{…},"music":{…},"pan":{…},"color":[…]}`，真实环境 `video.sites` **85 条**（`type` ∈ {3,4}，无 JAR 站点）；
   - 站点形如：`{"key":"nodejs_douban","name":"豆瓣|首页","type":3,"indexs":1,"enable":true,"searchable":1,"quickSearch":1,"filterable":1,"api":"/spider/douban/3"}`；

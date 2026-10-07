@@ -58,7 +58,7 @@ struct SiteClientDispatchTests {
         #expect(request?.url.absoluteString == "http://127.0.0.1:9988/spider/douban/3/home")
     }
 
-    @Test("搜索 / 分类 / 详情按类型分发到对应路由")
+    @Test("搜索 / 分类 / 详情按类型分发到对应路由（且首个请求是生命周期 init）")
     func routesDispatch() async throws {
         let recorder = recorder()
         let client = SiteClient(transport: recorder)
@@ -70,7 +70,9 @@ struct SiteClientDispatchTests {
 
         let requests = await recorder.requests
         let paths = requests.map(\.url.lastPathComponent)
-        #expect(paths == ["search", "category", "detail"])
+        // 首个 `/init` 是**契约的一部分**，不是噪声：参考实现 CatSpider.java 的
+        // `Spider.init` 会 `post("/init", {})`，宿主在动作之前调用它；详情见 CatSpiderInitializer。
+        #expect(paths == ["init", "search", "category", "detail"])
         let allPost = requests.allSatisfy { $0.method == .post }
         #expect(allPost)
     }

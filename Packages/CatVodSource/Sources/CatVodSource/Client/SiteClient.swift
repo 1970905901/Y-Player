@@ -14,11 +14,23 @@ import Foundation
 /// | `type 3` + 其它 | JAR / Python / 未知 | 直接抛 ``CatVodError/unsupported(feature:reason:)``，**不发请求** |
 ///
 /// 不可用原因直接复用 `Site.availability`，保证门面、界面、日志三处口径一致。
+///
+/// CatSpider 站点还有一个**生命周期**要求：动作之前需要 `POST /init`（对齐参考实现
+/// `CatSpider.java` 的 `Spider.init`），由 ``CatSpiderInitializer`` 按站点记忆并只发一次。
 public struct SiteClient: Sendable {
     public var transport: HTTPTransport
+    /// js2p 站点的一次性 init 记忆。
+    ///
+    /// ⚠️ 调用方要**共享同一个实例**：每次 `makeSiteClient()` 都新建一个的话，
+    /// 「只 init 一次」就退化成「每次动作都 init」。
+    public var initializer: CatSpiderInitializer
 
-    public init(transport: HTTPTransport) {
+    public init(
+        transport: HTTPTransport,
+        initializer: CatSpiderInitializer = CatSpiderInitializer()
+    ) {
         self.transport = transport
+        self.initializer = initializer
     }
 
     /// 分发结果。
@@ -46,6 +58,7 @@ public struct SiteClient: Sendable {
         case let .cms(client):
             return try await client.home(site: site)
         case let .catSpider(client):
+            await initializer.ensureInitialized(client)
             return try await client.home()
         }
     }
@@ -61,6 +74,7 @@ public struct SiteClient: Sendable {
         case let .cms(client):
             return try await client.category(site: site, categoryID: categoryID, page: page, extend: extend)
         case let .catSpider(client):
+            await initializer.ensureInitialized(client)
             return try await client.category(id: categoryID, page: page, filters: extend)
         }
     }
@@ -71,6 +85,7 @@ public struct SiteClient: Sendable {
         case let .cms(client):
             return try await client.detail(site: site, vodID: vodID)
         case let .catSpider(client):
+            await initializer.ensureInitialized(client)
             return try await client.detail(id: vodID)
         }
     }
@@ -86,6 +101,7 @@ public struct SiteClient: Sendable {
         case let .cms(client):
             return try await client.search(site: site, keyword: keyword, page: page, quick: quick)
         case let .catSpider(client):
+            await initializer.ensureInitialized(client)
             return try await client.search(keyword: keyword, page: page)
         }
     }
@@ -103,6 +119,7 @@ public struct SiteClient: Sendable {
                 reason: "CMS 站点的播放地址来自详情的线路/选集，不需要单独的 play 接口"
             )
         case let .catSpider(client):
+            await initializer.ensureInitialized(client)
             return try await client.play(flag: flag, id: id)
         }
     }

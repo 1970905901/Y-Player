@@ -94,6 +94,13 @@ public final class AppModel: ObservableObject {
     /// 宿主会话（非 JS 源时为空）。
     private var js2pHost: JS2PHostService?
 
+    /// js2p 站点的一次性 `POST /init` 记忆。
+    ///
+    /// **必须由 AppModel 持有**：`makeSiteClient()` 每次都会新建一个 `SiteClient`，
+    /// 若让每个 `SiteClient` 自带一份记忆，就变成「每次动作都 init」
+    /// （参考实现 `CatSpider.java` 是每个 spider 实例只 init 一次）。
+    private let spiderInitializer = CatSpiderInitializer()
+
     /// 当前播放设置。
     public var playbackSettings: PlaybackSettings {
         PlaybackSettings(engine: preferredEngine, decoderMode: decoderMode)
@@ -192,7 +199,7 @@ public final class AppModel: ObservableObject {
     ///
     /// 界面统一用这个：JS 源站点是 `type=3`，`CMSClient` 会直接抛 `unsupported`。
     public func makeSiteClient() -> SiteClient {
-        SiteClient(transport: transportForConfiguration())
+        SiteClient(transport: transportForConfiguration(), initializer: spiderInitializer)
     }
 
     // MARK: - js2p 宿主
