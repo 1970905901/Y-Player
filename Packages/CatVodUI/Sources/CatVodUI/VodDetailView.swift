@@ -23,7 +23,8 @@ public struct VodDetailView: View {
     @State var isLoading = false
     @State var errorText = ""
     @State private var isShowingChangeSource = false
-    @State private var progress: PlaybackProgress?
+    /// 本片进度：`+Data.swift` 里的 `loadProgress()` / `switchSource(to:)` 也要读写，因此**不能是 private**。
+    @State var progress: PlaybackProgress?
 
     public init(model: AppModel, site: Site?, vodID: String) {
         self.model = model

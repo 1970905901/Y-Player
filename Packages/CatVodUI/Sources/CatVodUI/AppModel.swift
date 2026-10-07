@@ -2,6 +2,7 @@ import CatVodCore
 import CatVodNet
 import CatVodPlayer
 import CatVodSource
+import CatVodStore
 import Combine
 import Foundation
 import SwiftUI
@@ -215,7 +216,8 @@ public final class AppModel: ObservableObject {
 
     /// 容量上限自愈：超过 64 MB 时淘汰最旧的缓存，**不会删除当前接口的缓存**。
     private func enforceSourceCacheLimit() {
-        try? sourceCache.enforceLimit(currentURL: currentSourceURL())
+        // `try?` 会把 @discardableResult 变成 `Int?`，必须显式丢弃，否则是「结果未使用」警告。
+        _ = try? sourceCache.enforceLimit(currentURL: currentSourceURL())
     }
 
     /// 详情获取（带缓存）。
