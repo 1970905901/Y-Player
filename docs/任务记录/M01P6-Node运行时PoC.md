@@ -1,7 +1,8 @@
 # M01P6 Node 运行时 PoC（js2p 主接口落地）
 
 - 状态：**部分完成** —— 宿主侧（契约落码 + macOS 进程链路 + 单测）已完成，见 `M16P1-Node宿主适配.md`；
-  仍需 macOS/真机的是「真实 bundle 端到端」与「iOS libnode 接入」
+  宿主**契约层**已用真 bundle 实测验证（见 `M16P2-宿主站点清单实测.md`）；
+  仍需 macOS/真机的是「真机端到端」与「iOS libnode 接入」
 - 依赖结论：`docs/js2p宿主契约.md`（M1.5 已判定必须随包内嵌真 Node）
 - 目标：在 iOS 与 macOS 上跑通「内嵌 Node 执行 bundle → 起本地服务 → 调 `/spider` 路由」
 

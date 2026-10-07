@@ -106,8 +106,15 @@ let x = await e.db.get("/config/sites/list", []);
 - 每个 spider 注册两组前缀：`/spider/<key>/<type>` 与 `/spider/<key>`，方法为 **POST**（`/init`、`/support`、`/home`、`/homeVod`…）。
 - 与参考实现 `CatSpider.java` 一致：站点 `api` = `http://127.0.0.1:<port>/spider/<key>`，随后 `POST <api>/init|/home|/category|/detail|/search|/play`。
   → 本项目已实现的 `CatSpiderHTTPClient` 与之匹配（`api.contains("/spider/")` + POST JSON + `page` 为整数）。
-- **站点清单入口**：bundle 内部使用 KV 键 `/config/sites/list`（同文件还有 `/settings/livetovod/url`、`/siteCookie/bili/cookie`、`/diy/emby/servers`）。
-  → 站点列表的准确路由属 **M1.6 待实测项**，候选：`/config/sites/list`、`/sites/list`、`/spider/list`、`/config`。
+- **站点清单入口（已实测，M1.6）**：`GET /full-config`（`GET /config` 返回**同一载荷**，19114 字节）。
+  - 形状：`{"video":{"sites":[…]},"read":{…},"comic":{…},"music":{…},"pan":{…},"color":[…]}`，真实环境 `video.sites` **85 条**（`type` ∈ {3,4}，无 JAR 站点）；
+  - 站点形如：`{"key":"nodejs_douban","name":"豆瓣|首页","type":3,"indexs":1,"enable":true,"searchable":1,"quickSearch":1,"filterable":1,"api":"/spider/douban/3"}`；
+  - ⚠️ **`api` 是相对路径**（`/spider/<spiderKey>/<type>`），宿主模式必须补成 `http://127.0.0.1:<port>/…`：见 `HostSiteCatalog.absoluteAPI(_:baseURL:)`；
+  - 补充接口：精简视图 `GET /website/api/sites`（同 85 条，**不含 `api`**）、探活 `GET /health` → `{"ok":true,"name":"CatVodSpiderios"}`；
+  - `/config/sites/list` 是 bundle 内部 **KV 键**（`e.db.get(...)`），**不是路由** —— 直接请求返回 404（此前把它当候选路由是错的）。
+- **站点 key 是动态注册的**：spider 只有在启动配置里被加载后才有路由。实测启动加载 13 个（`wogg,huajuan,muou,guanying,duoduo,huban,leijing,123pan,shayang,jutou,qiwei,libvio,panku`），而 `/full-config` 的 `nodejs_*` 是内置 JS 站点；**未加载的 key（如 `csp_AppYsV2`）所有动作一律 404**。
+  - 实测：`POST /spider/wogg/init` → `200 {"siteUrl":"https://www.wogg.net"}`；`POST /spider/wogg/home` → 路由存在、真实回源被上游 `403`（说明「宿主 → spider → 上游」整链可用）。
+- **完整注册路由表**（静态提取 123 条，节选）：`POST /spider/<key>[/<type>]/{init,support,home,homeVod,homeVideo,category,detail,play,search}`、`GET /health`、`GET /check`、`GET /config`、`GET /full-config`、`GET /website/api/{sites,status,remote-wex,db,…}`、`GET /proxy/*`、`GET /proxy/hls/*`（实测 501 未实现）、`GET /imageProxy`（缺 `url` 时 400）、`/danmu*`、`/lrcproxy/:token`。
 
 ## 四、宿主要提供的运行环境
 
@@ -127,7 +134,9 @@ let x = await e.db.get("/config/sites/list", []);
 2. **体积**：libnode 带来的 ipa/app 体积增量（webhtv 注明 Android `.so` 约 60MB）。
 3. **性能**：冷启动（下载 6.29MB + 执行 + 监听）、常驻内存、首屏搜索耗时（iOS 无 JIT，必须实测）。
 4. **端口**：注入 `PORT`/`HOST`，解析就绪行取实际端口，覆盖 `EADDRINUSE` 自增场景。
-5. **站点清单路由**：实测确定候选路由，确定 `sites[].api` 的实际形态。
+5. **站点清单路由**：~~实测确定候选路由，确定 `sites[].api` 的实际形态。~~
+   → **已完成**（Windows + 便携 Node + 真 bundle，见 `docs/任务记录/M16P2-宿主站点清单实测.md`）：
+   路由为 `GET /full-config`，`sites[].api` 为**相对路径** `/spider/<spiderKey>/<type>`，宿主须补全为全路径。
 6. **端到端**：`/init → /home → /category → /detail → /search → /play`（复用 `CatSpiderHTTPClient`）。
 7. **macOS 路径**：随包 `node` 可执行文件（或自编译 libnode）+ `Process` 启动；记录 Gatekeeper 处理方式并写入分发文档。
 

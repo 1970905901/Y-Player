@@ -4,8 +4,9 @@
 # 说明：opt_in 规则集合刻意保持精简，只在能稳定通过的前提下启用；
 # 后续里程碑（M2 起）再逐步收紧，避免首次 CI 因风格问题红掉。
 #
-# CI 注意：lint 作业会 `brew install swiftlint`（不依赖镜像是否自带），
-# 且步骤带 `|| true`：结论目前**非阻断**，但必须真的跑起来（见 docs/任务记录/M00P1-CI-Lint修复.md）。
+# CI 注意：lint 作业会 `brew install swiftlint swiftformat`（不依赖镜像是否自带），
+# 并且**是阻断项**：SwiftLint 必须 0 违规、SwiftFormat 必须 0 文件待格式化
+# （见 docs/任务记录/M00P1-CI-Lint修复.md、M00P2-全量格式化.md、docs/构建与分发.md）。
 
 included:
   - Apps
