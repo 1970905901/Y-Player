@@ -190,7 +190,7 @@ public final class AppModel: ObservableObject {
             await detailCache.invalidateAll()
             // 接口缓存自愈：按容量上限淘汰最旧的（当前接口的缓存不动）。
             enforceSourceCacheLimit()
-            // JS 源：站点清单不在配置里，必须由内嵌 Node 宿主提供（macOS 可用，iOS 待 libnode）。
+            // JS 源：站点清单不在配置里，必须由内嵌 Node 宿主提供（macOS 进程 / iOS libnode）。
             await refreshHost(for: loaded, forceRestart: forceRefresh)
         } catch let error as CatVodError {
             state = .failed(error.errorDescription ?? "加载失败")

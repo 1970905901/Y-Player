@@ -5,7 +5,7 @@ import SwiftUI
 /// 首页：选择站点 → 分类/筛选 → 内容列表 → 进入详情。
 ///
 /// 站点来源：CMS（`type 0/1/2/4`）与 CatSpider HTTP（`type 3`，js2p 宿主）都能浏览，
-/// 由 `AppModel.makeSiteClient()` 按类型分发；JS 源的站点清单来自内嵌 Node 宿主（macOS 可用）。
+/// 由 `AppModel.makeSiteClient()` 按类型分发；JS 源的站点清单来自内嵌 Node 宿主（macOS 进程 / iOS libnode，见 M16P4）。
 /// 数据加载逻辑见 `HomeView+Data.swift`。
 @MainActor
 public struct HomeView: View {

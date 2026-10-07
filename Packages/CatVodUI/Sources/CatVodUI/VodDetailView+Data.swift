@@ -127,7 +127,7 @@ extension VodDetailView {
             }
             return "该集地址无效"
         case .http:
-            return "该集中转播放（type=4 的 play 接口）尚未实现（M2 后续）。"
+            return "该集需要经 `type=4` 的 `play` 接口中转（尚未实现）。"
         case .spider:
             // 走到这里说明不是可用的 CatSpider HTTP 站点（JAR / Python / api 形态不对）。
             let reason = site.availability.reason ?? "当前平台不支持该 Spider 运行方式"
@@ -155,7 +155,6 @@ public struct UnsupportedPlaybackView: View {
                     .foregroundStyle(.secondary)
             }
             Section("相关计划") {
-                Text("M1.6：内嵌 Node 运行时（js2p 的 JS 源站点）")
                 Text("M5：解析链（parse/jx、Web 嗅探、聚合解析）")
             }
         }

@@ -5,7 +5,7 @@ import SwiftUI
 /// 搜索页：选站点 → 关键词 → 结果 → 详情。
 ///
 /// 站点来源：CMS 与 CatSpider HTTP（js2p 宿主）都能搜，由 `AppModel.makeSiteClient()` 分发；
-/// JS 源的站点清单来自内嵌 Node 宿主（macOS 可用，iOS 待 libnode）。
+/// JS 源的站点清单来自内嵌 Node 宿主（macOS 进程 / iOS libnode，见 M16P4）。
 /// 数据加载逻辑见 `SearchView+Data.swift`。
 @MainActor
 public struct SearchView: View {

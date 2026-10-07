@@ -11,9 +11,9 @@ import Foundation
 /// - 就绪：stdout 出现 `CatVodSpiderios listening on http://127.0.0.1:<port>`。
 ///
 /// 平台现状（**如实说明，不假装可用**）：
-/// - **macOS**：随包 `node` 可执行文件 + `Process`，已实现（见 `+Start.swift`）；
-/// - **iOS**：需要 nodejs-mobile 的 libnode 产物（`NodeMobile.start`），本仓库尚未包含 →
-///   `start()` 抛 `.runtimeUnavailable`，UI 应提示「M1.6 未完成」。
+/// - **macOS**：本类型 + `Process`（见 `+Start.swift`）；
+/// - **iOS**：由 ``NodeMobileRuntime`` 承载随包 libnode（见 M16P4）；`NodeRuntimeEnvironment.makeRuntime`
+///   在 iOS 不会返回本类型，而直接构造它并 `start()` 仍会抛 `.runtimeUnavailable`。
 public actor NodeRuntimeAdapter {
     /// 运行时状态快照。
     public struct Status: Sendable, Equatable {
@@ -60,7 +60,7 @@ public actor NodeRuntimeAdapter {
     /// 定位 node 可执行文件。
     ///
     /// 顺序：环境变量 `YPLAYER_NODE`（调试）→ 随包 `Resources/node/node` → Homebrew / 系统路径。
-    /// iOS 返回 nil（需要 libnode，M1.6 未接入）。
+    /// iOS 返回 nil：iOS 走随包 libnode（``NodeMobileRuntime``），不需要可执行文件。
     nonisolated public static func locateNodeExecutable() -> URL? {
         #if os(macOS)
         var candidates: [String] = []

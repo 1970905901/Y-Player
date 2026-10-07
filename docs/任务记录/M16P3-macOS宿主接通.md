@@ -55,7 +55,7 @@ P3b 一旦把 UI 与 `CatVodNode` 混进同一次提交，出问题只能靠 20 
 | 平台 | 现状 |
 | --- | --- |
 | macOS | 有实现：随包 `Resources/node/node`、环境变量 `YPLAYER_NODE`、或 Homebrew/系统路径 |
-| iOS | **不可用**：需要 nodejs-mobile 的 libnode 产物（M1.6 清单第 1–4 项，尚未接入）。`start()` 抛 `runtimeUnavailable`，界面必须显示原因而不是「站点为空」 |
+| iOS | ~~**不可用**：需要 nodejs-mobile 的 libnode 产物（M1.6 清单第 1–4 项，尚未接入）。`start()` 抛 `runtimeUnavailable`，界面必须显示原因而不是「站点为空」~~ → **已由 M16P4 取代**：libnode 随包内嵌，iOS 走 `NodeMobileRuntime`（就绪解析/超时/早退与 macOS 同一套），真机第 1–4 项通过 |
 
 ## 四、P3b 交付（站点分发 + 界面接线）
 

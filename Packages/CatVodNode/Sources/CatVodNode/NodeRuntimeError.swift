@@ -4,7 +4,7 @@ import Foundation
 ///
 /// 原则：**每种失败都要能对用户/日志说清是什么问题**，不允许用「启动失败」一笔带过。
 public enum NodeRuntimeError: Error, Equatable, LocalizedError {
-    /// 当前平台/构建没有 Node 运行时（iOS 需要 M1.6 的 libnode 产物）。
+    /// 当前平台/构建没有 Node 运行时（iOS 需要随包 `NodeMobile.xcframework`，见 M16P4）。
     case runtimeUnavailable(reason: String)
     /// 进程无法创建（可执行文件不可执行、参数不合法等）。
     case launchFailed(reason: String)
