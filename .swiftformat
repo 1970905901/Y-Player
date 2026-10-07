@@ -33,4 +33,9 @@
 #   opaqueGenericParameters    —— 会改公开 API 的泛型形态（如 Adaptve* 容器），属于设计决策不该由格式化工具决定
 #   docComments                —— 我们有意识地混用 `///`（公开 API）与 `//`（实现说明），不让工具重写
 #   swiftTestingTestCaseNames  —— 测试函数名保持 ASCII 驼峰，便于检索与工具处理
---disable wrapPropertyBodies,redundantReturn,hoistPatternLet,wrapIfStatementBodies,conditionalAssignment,opaqueGenericParameters,docComments,swiftTestingTestCaseNames
+#   modifierOrder              —— 与 SwiftLint 的 modifier_order 打架：SwiftLint 要 `nonisolated` 在 `public` 前，
+#                                 SwiftFormat 默认相反。**唯一权威定为 SwiftLint**，故关掉格式化器的这条。
+#   preferKeyPath              —— 会把 `{ $0.x }` 改成 `\.x`；而 `#expect(x.allSatisfy(\.x))` 这类
+#                                 「rethrows 调用 + key-path 参数」在 Swift Testing 宏展开时会报 “call can throw”。
+#                                 保留闭包可读性换掉这个便利，避免反复被格式化带崩测试。
+--disable wrapPropertyBodies,redundantReturn,hoistPatternLet,wrapIfStatementBodies,conditionalAssignment,opaqueGenericParameters,docComments,swiftTestingTestCaseNames,modifierOrder,preferKeyPath

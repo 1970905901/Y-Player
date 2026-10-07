@@ -20,6 +20,7 @@ excluded:
   - "**/.swiftpm"
 
 disabled_rules:
+  - opening_brace       # 多行 if 条件的 `{` 由 SwiftFormat 放在下一行（其默认风格），不与之对抗
   - todo                # TODO 允许，但由 docs/任务记录 追踪
   - trailing_comma      # 多行集合尾逗号交给 SwiftFormat 统一
   - explicit_type_interface

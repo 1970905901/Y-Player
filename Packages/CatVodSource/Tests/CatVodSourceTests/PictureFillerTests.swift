@@ -116,8 +116,11 @@ struct PictureFillerTests {
         let filler = PictureFiller(client: CMSClient(transport: transport))
 
         let filled = await filler.fill(site: cmsSite(), result: original)
+        // `allSatisfy` 是 rethrows：即使写成 key-path（SwiftFormat 会把闭包改成 `\.vodPic.isEmpty`），
+        // 放进 `#expect` 宏也会炸 —— 必须在宏外算好。
+        let allEmpty = filled.list.allSatisfy(\.vodPic.isEmpty)
         #expect(filled.list.count == 2)
-        #expect(filled.list.allSatisfy(\.vodPic.isEmpty))
+        #expect(allEmpty)
     }
 
     @Test("不支持的站点类型不补图")
