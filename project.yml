@@ -128,13 +128,47 @@ targets:
           NSAllowsArbitraryLoadsInWebContent: true
         NSLocalNetworkUsageDescription: 用于局域网投屏与远程托管功能。
 
+  # iOS 单元测试 target：**在模拟器里真的跑起来**，而不只是编译。
+  #
+  # 为什么必须有它：CI 只编译时会漏掉两类问题 ——
+  #   1) 动态库没被正确嵌入（App 启动即 `dyld: Library not loaded`）；
+  #   2) 内嵌 Node（libnode）在真实 iOS 运行时里能否起来、能否打印就绪行。
+  # 这两件事「运行」才知道，而 GitHub 的 macOS runner 自带 iOS 模拟器。
+  YPlayer-iOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Tests/YPlayer-iOSTests
+    dependencies:
+      - target: YPlayer-iOS
+      - package: CatVodCore
+      - package: CatVodNet
+      - package: CatVodSource
+      - package: CatVodNode
+      - package: CatVodPlayer
+      - package: CatVodStore
+      - package: CatVodUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.YPlayer.cat.tests
+        # 宿主 App：单元测试在 App 进程里跑，因此 App 启动失败（缺 dylib）测试也会失败 —— 这正是我们要的信号。
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/YPlayer.app/YPlayer"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        CODE_SIGN_STYLE: Automatic
+
 schemes:
   YPlayer-iOS:
     build:
       targets:
         YPlayer-iOS: all
+        YPlayer-iOSTests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - YPlayer-iOSTests
     archive:
       config: Release
   YPlayer-macOS:
