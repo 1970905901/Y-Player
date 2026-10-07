@@ -1,9 +1,16 @@
 name: simulator
 
 # 为什么独立于 build.yml：
-# iOS 模拟器测试要构建 App、启动模拟器、在模拟器里下载 6.29 MB bundle 并启动 libnode，
+# iOS 模拟器测试要构建 App、启动模拟器、在模拟器里真的把 libnode 跑起来，
 # 每次推送都跑会明显拖慢主流程。它验证的是「只编译会漏掉」的那类问题
 # （动态库嵌入 / 内嵌 Node 能否就绪 / 内核可用性语义），适合按需或定期跑。
+#
+# 两个层次，别混：
+# - **确定性探针**（主线红灯依据）：冒烟 + 自写最小 bundle，能精确回答
+#   「libnode 起得来吗 / stdout 抓得到就绪行吗 / 容器里的脚本读得到吗」，不依赖外网；
+# - **真 bundle 探针**（`continue-on-error`）：下载 6.29 MB 的 index.js 端到端跑一次。
+#   它曾让测试进程在下载完成后 13.5 秒凭空消失（`Restarting after unexpected exit, crash,
+#   or test timeout`），所以只当信息用，不挡主线。
 # 真机验证优先：未签名 IPA 由 build.yml 的 `ipa` 作业产出，Windows 上即可侧载。
 
 on:
@@ -18,6 +25,7 @@ concurrency:
 env:
   XCODE_VERSION: "16.4"
   SCHEME_IOS: YPlayer-iOS
+  TEST_TARGET: YPlayer-iOSTests
 
 jobs:
   simulator-tests:
@@ -38,7 +46,7 @@ jobs:
         run: |
           python3 Scripts/fetch_nodejs_mobile.py
           xcodegen generate
-      - name: Run tests on an iPhone simulator
+      - name: Smoke tests + deterministic embedded-Node probe (no network)
         run: |
           DEVICE_ID=$(bash Scripts/pick_simulator.sh)
           echo "simulator=$DEVICE_ID"
@@ -46,4 +54,18 @@ jobs:
             -project YPlayer.xcodeproj \
             -scheme "$SCHEME_IOS" \
             -destination "id=$DEVICE_ID" \
+            -only-testing:"$TEST_TARGET/SimulatorSmokeTests" \
+            -only-testing:"$TEST_TARGET/EmbeddedNodeHostTests" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+      - name: Real bundle probe (6.29 MB download; informational — never fails the run)
+        continue-on-error: true
+        env:
+          YPLAYER_NODE_PROBE: real-bundle
+        run: |
+          DEVICE_ID=$(bash Scripts/pick_simulator.sh)
+          xcodebuild test \
+            -project YPlayer.xcodeproj \
+            -scheme "$SCHEME_IOS" \
+            -destination "id=$DEVICE_ID" \
+            -only-testing:"$TEST_TARGET/RealBundleHostProbeTests" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""

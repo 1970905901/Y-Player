@@ -2,71 +2,63 @@ import CatVodNet
 import CatVodSource
 import XCTest
 
-/// 内嵌 Node（libnode）在**真实 iOS 运行时**里的端到端验证。
+/// 内嵌 Node（libnode）在**真实 iOS 运行时**里的确定性验证 —— M16P4 第 1、2、5 项。
 ///
-/// 这是 M16P4 里最关键的未知项：`dup2` 抓到的 stdout 是否真的包含就绪行。
-/// 若这套探针不成立，失败信息里会带宿主最近输出 —— 便于直接切到备选方案
-/// （`-r <preload>` 预载脚本 + bridge 回传就绪行）。
+/// 为什么不再拿 6.29 MB 的真 bundle 当主线：它把「libnode 能不能用」和
+/// 「远端 bundle 今天是否正常 + 它用到的 Node API iOS 版是否支持」混在一个用例里，
+/// 一旦出事只会以「进程消失」呈现，无法定位。改成自写的最小 bundle 后，
+/// 这条用例只回答一个问题：**我们的宿主链路在真 iOS 上能不能跑通**。
+///
+/// 顺带回答另外两件事：
+/// - 环境变量真的注入了吗？最小 bundle 的端口**只**来自 `DEV_HTTP_PORT`；
+/// - 容器临时目录里的脚本 node 读得到吗？（真机 Bundle 不可写，脚本必须落在容器里）
 final class EmbeddedNodeHostTests: XCTestCase {
-    /// 真的起一次宿主：下载 bundle → 启动 → 等就绪 → 取站点清单。
-    ///
-    /// 网络不可达时 **skip**（与 CI 的 js2p 契约作业同一策略：环境问题不该判成契约失败）。
-    func testHostStartsAndReturnsSites() async throws {
-        let scriptURL = try await Js2PBundleFixture.localIndexJS()
+    func testHostStartsServesCatalogAndCapturesReadiness() async throws {
+        let scriptURL = try MiniBundleScript.materialize()
+        NodeProbeSupport.step("mini bundle written: \(scriptURL.path)")
 
         let service = JS2PHostService(
             transport: URLSessionTransport(),
             scriptURL: scriptURL,
-            readinessTimeout: 90
+            readinessTimeout: 30
         )
 
+        NodeProbeSupport.step("host starting")
         let snapshot: HostConfigSnapshot
         do {
             snapshot = try await service.sites()
         } catch {
-            let output = await service.recentOutput(limit: 20)
-            XCTFail("内嵌 Node 未能就绪：\(error)\n--- 宿主输出 ---\n\(output.joined(separator: "\n"))")
+            let output = await service.recentOutput(limit: 40)
+            let log = await NodeProbeSupport.logTail(of: service)
+            XCTFail(
+                """
+                内嵌 Node 未能就绪：\(error)
+                --- 宿主输出 ---
+                \(output.joined(separator: "\n"))
+                --- 落盘日志 ---
+                \(log.joined(separator: "\n"))
+                """
+            )
             return
         }
+        NodeProbeSupport.step("host ready")
 
-        XCTAssertGreaterThan(snapshot.sites.count, 0, "应至少解析出一个站点")
-        let first = try XCTUnwrap(snapshot.sites.first)
-        XCTAssertFalse(first.key.isEmpty)
-        XCTAssertFalse(first.api.isEmpty, "站点 api 必须被补成绝对地址")
-        XCTAssertTrue(first.isCatSpiderHTTP, "api 应形如 http://127.0.0.1:<port>/spider/...")
+        // 站点清单能取到，就证明「就绪行 -> 端口 -> baseURL -> HTTP」整条链是通的。
+        XCTAssertEqual(snapshot.sites.count, 1, "最小 bundle 只声明一个站点")
+        let site = try XCTUnwrap(snapshot.sites.first)
+        XCTAssertEqual(site.key, "nodejs_probe")
+        XCTAssertTrue(site.isCatSpiderHTTP, "相对 api 必须被补成含 /spider/ 的绝对地址")
+        XCTAssertTrue(site.api.hasPrefix("http://127.0.0.1:"), "宿主模式下 api 必须指向本机宿主")
 
+        // 就绪行本身也要能从捕获到的 stdout 里看到（文案与 docs/js2p宿主契约.md 一致）。
+        let output = await service.recentOutput(limit: 40)
+        XCTAssertTrue(
+            output.contains { $0.contains("CatVodSpiderios listening on") },
+            "stdout 捕获里应包含就绪行；最近输出：\(output.suffix(6))"
+        )
+
+        NodeProbeSupport.step("assertions done")
         // iOS 上 stop() 只断开日志采集（node_start 不可逆），这里只确认不崩。
         await service.stop()
-    }
-}
-
-/// bundle 准备：下载 6.29 MB 的 `index.js`（文件名本身是自启动条件的一部分）。
-enum Js2PBundleFixture {
-    static let remoteURL = "https://9280.kstore.vip/ceshi/index.js"
-
-    static func localIndexJS() async throws -> URL {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("js2p", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        // 必须是 index.js：bundle 的自启动条件要求 argv[1] 以它结尾。
-        let target = directory.appendingPathComponent("index.js")
-        if FileManager.default.fileExists(atPath: target.path) {
-            return target
-        }
-        guard let url = URL(string: remoteURL) else {
-            throw XCTSkip("bundle 地址无法解析")
-        }
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            guard status == 200, data.count > 1_000_000 else {
-                throw XCTSkip("bundle 下载异常：status=\(status) bytes=\(data.count)")
-            }
-            try data.write(to: target, options: .atomic)
-            return target
-        } catch let skip as XCTSkip {
-            throw skip
-        } catch {
-            throw XCTSkip("bundle 不可达（\(error.localizedDescription)）—— 环境问题，跳过而非判失败")
-        }
     }
 }

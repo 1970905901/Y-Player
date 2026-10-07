@@ -14,6 +14,18 @@ public protocol NodeRuntimeLaunching: Sendable {
     func stop() async
     /// 最近输出（诊断用，最多保留 200 行）。
     func recentOutput(limit: Int) async -> [String]
+    /// 宿主**落盘**日志路径（进程消失后仍可读取）。没有落盘能力的实现返回 nil。
+    ///
+    /// 为什么进协议：内嵌 node 崩溃会带走整个进程，此时捕获在内存里的输出也一起消失，
+    /// 落盘日志是唯一还能带回现场的来源（见 ``NodePreloadScript``）。
+    func persistentLogPath() async -> URL?
+}
+
+public extension NodeRuntimeLaunching {
+    /// 默认没有落盘日志（macOS 的进程方式由调用方自己重定向即可）。
+    func persistentLogPath() async -> URL? {
+        nil
+    }
 }
 
 /// 真正的进程实现天然满足协议（`stop()` 虽是 actor 内同步方法，也能满足 `async` 要求）。

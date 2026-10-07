@@ -22,6 +22,12 @@ public struct NodeRuntimeConfiguration: Sendable, Equatable {
     public var suppressBundleLogging: Bool
     /// 指定可执行文件（默认自动定位 node；测试或自定义 libnode 时用）。
     public var executableOverride: URL?
+    /// 是否注入 ``NodePreloadScript``（内嵌运行时专用；macOS 的进程方式忽略它）。
+    ///
+    /// 默认为真：没有它，内嵌 node 的致命错误会把宿主 App 一起带走且不留证据。
+    /// 之所以留开关：预载依赖 `-r` 被 libnode 的选项解析接受，
+    /// 万一某个版本不接受，可以关掉它先恢复可用性（见 M16P4 记录）。
+    public var prefersPreload: Bool
 
     public init(
         scriptURL: URL,
@@ -30,7 +36,8 @@ public struct NodeRuntimeConfiguration: Sendable, Equatable {
         environment: [String: String] = [:],
         readinessTimeout: TimeInterval = 30,
         suppressBundleLogging: Bool = true,
-        executableOverride: URL? = nil
+        executableOverride: URL? = nil,
+        prefersPreload: Bool = true
     ) {
         self.scriptURL = scriptURL
         self.preferredPort = preferredPort
@@ -39,6 +46,7 @@ public struct NodeRuntimeConfiguration: Sendable, Equatable {
         self.readinessTimeout = readinessTimeout
         self.suppressBundleLogging = suppressBundleLogging
         self.executableOverride = executableOverride
+        self.prefersPreload = prefersPreload
     }
 
     /// 契约里的自启动前置条件：`argv[1]` 以 `index.js` 结尾（JS 侧为正则且忽略大小写）。

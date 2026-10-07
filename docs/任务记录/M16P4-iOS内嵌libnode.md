@@ -1,7 +1,7 @@
 # M16P4 iOS 内嵌 libnode（nodejs-mobile / NodeMobile.xcframework）
 
-- 状态：**代码与工程接线完成**（取产物脚本已实测通过、启动参数有单测、CI 会拉产物并编译 iOS）；
-  **真机运行未验证** —— 需要在 Mac 上跑一次（见第五节）
+- 状态：**代码与工程接线完成，并在 iOS 模拟器上跑出了第一手数据**（见第七节）；
+  **真机运行仍未验证** —— 需要你的设备（Windows 上侧载未签名 IPA 即可，见 `M03P2-实机验证清单.md`）
 - 依赖：M1.5（路线 B：必须内嵌真 Node）、M16P1（宿主适配）、M16P3（宿主会话与界面接线）
 - 目标：让 iOS 也走「安卓同一套」—— 把 libnode 随包内嵌，由 `node_start` 启动，而不是只能靠 macOS 的外部 node 进程
 
@@ -39,6 +39,7 @@ python Scripts/fetch_nodejs_mobile.py --check  # 只校验
 | `CatVodNode/NodeMobileLaunchPlan.swift` | **纯计算**层：`argv` 与要 `setenv` 的键值 + C 指针封装（`withCArguments`）；平台无关，可单测 |
 | `CatVodNode/NodeMobileRuntime.swift` | `#if canImport(NodeMobile)` 的运行时：后台线程（2 MB 栈）跑 `node_start`、fd 1/2 重定向到管道、按行解析就绪信号；与 macOS 的 `NodeRuntimeAdapter` **同一套规则** |
 | `CatVodNode/NodeRuntimeEnvironment.swift` | 平台选择集中在一处：iOS 用 libnode（`canImport(NodeMobile)`），macOS 用进程；`isRuntimeAvailable` + 可读的不可用原因 |
+| `CatVodNode/NodePreloadScript.swift` | **预载脚本**（`-r` 注入）：把运行环境与致命错误**落盘**，并拦截 `process.exit`/`uncaughtException`/`unhandledRejection`。内嵌 node 是进程内嵌，崩了会把宿主一起带走 —— 没有它连证据都不剩（第七节） |
 | `CatVodSource/JS2PHostService.swift` | 改用 `NodeRuntimeEnvironment`；新增 `runtimeUnavailableReason` 供界面直接展示 |
 | `project.yml` | iOS target 链接并嵌入 `ThirdParty/nodejs-mobile/NodeMobile.xcframework` |
 | `.github/workflows/build.yml` | build/release 两个作业：先缓存并拉取产物，再 `xcodegen generate`（这样 CI 真的会**链接并编译** libnode） |
@@ -66,6 +67,10 @@ python Scripts/fetch_nodejs_mobile.py --check  # 只校验
 | 4 | 单实例、无 `child_process` 是否影响 bundle 关键路径 | bundle 若依赖 worker/child 会失败 | 查是否有环境变量可关（M01P6 风险表已列） |
 | 5 | bundle 在 iOS 的**可写目录**里能否正常读写（当前落在 Caches 目录，iOS 不控制 cwd） | bundle 会写自己的缓存/配置；目录不可写会启动即失败 | 需要时把 bundle 与工作目录挪到 Application Support，并在启动前 `chdir` 过去 |
 
+> **2026-10-07 补充**：上表第 1、2、5 项现在由**确定性探针**在 iOS 模拟器上直接判定
+> （`Tests/YPlayer-iOSTests/EmbeddedNodeHostTests.swift`：自写最小 bundle，复刻就绪行/`/health`/`/full-config`/相对 `api`，
+> **不依赖外网**）；第 4 项由预载脚本逐模块登记（日志里的 `preload module ok/MISSING: child_process|worker_threads`）。
+
 ## 五、Mac 上的验证步骤
 
 ```bash
@@ -90,4 +95,38 @@ xcodegen generate                           # 工程已把 NodeMobile.xcframewor
 - 只想跑 macOS：不取产物即可（`canImport(NodeMobile)` 为假 → 自动走进程分支）；
 - 彻底回退 iOS：删掉 `project.yml` 里那两行 framework 依赖 + `Scripts/fetch_nodejs_mobile.py` 的 CI 调用，
   再把 `NodeRuntimeEnvironment` 的 iOS 分支改回「不可用」即可；其余代码（会话层/界面）不受影响。
+
+## 七、模拟器实测（CI，2026-10-07）与由此产生的改动
+
+第一次在 iOS 模拟器上真跑（`simulator` 作业）得到两条结论，一好一坏。
+
+**好：App 与内嵌运行时在真 iOS 运行时上都没问题。** `SimulatorSmokeTests` 三条全过 ——
+能执行到测试体本身就说明 MPVKit 与 `NodeMobile.framework` 的动态库**都加载成功**（没有 `dyld` 缺库），
+并且 iOS 上 `JS2PHostService.isRuntimeAvailable == true`、未实装的内核如实报不可用。
+
+**坏：真 bundle 那条用例把测试进程一起带走了。** 时间线（取自作业日志）：
+
+| 时刻 | 现象 |
+| --- | --- |
+| 12:41:33.217 | `Test Case 'testHostStartsAndReturnsSites' started.` |
+| 12:41:33.814 / 34.436 | App 进程发出两次网络连接（6.29 MB bundle 下载开始） |
+| — | 此后**没有任何** `passed` / `failed` 行 |
+| 12:41:46.720 | `Restarting after unexpected exit, crash, or test timeout`（距开始 13.5 秒） |
+
+13.5 秒不是超时（XCTest 默认 600 秒），也没有任何断言输出 —— 这是**进程级消失**：
+内嵌 node 一旦遇到致命错误或 `process.exit()`，由于它是**进程内嵌**，宿主 App 会跟着一起死，
+而 `dup2` 抓到的 stdout 缓冲也随进程蒸发，事后无从取证。
+
+**所以这一轮的改动是三件事，而不是「把那条用例关掉」：**
+
+1. `NodePreloadScript`（新增）经 `-r` 注入：把 node 版本、`argv`、`cwd`、`DEV_HTTP_PORT`/`HOST`、
+   **各核心模块可用性**与所有致命错误**逐行追加到落盘日志**，并拦截
+   `process.exit` / `uncaughtException` / `unhandledRejection` —— 崩溃从「闪退」变成
+   「界面上的宿主未就绪 + 可回读的日志尾部」（`JS2PHostService.hostLogPath()`，报错信息里自动附尾部）；
+2. 探针分两层：`EmbeddedNodeHostTests`（自写最小 bundle、**不依赖外网**，判定第 1/2/5 项）作为主线红灯依据；
+   `RealBundleHostProbeTests`（真 bundle，需 `YPLAYER_NODE_PROBE=real-bundle`）在 CI 里 `continue-on-error`，只作信息；
+3. 每一步 `print` 后立刻 `fflush`：下次若再出现进程消失，日志里能直接看出死在**哪一步**。
+
+预载依赖 libnode 的选项解析接受 `-r`。若某个版本不接受（症状同样是启动即消失），
+可用 `NodeRuntimeConfiguration(prefersPreload: false)` 关掉它 —— 开关与理由都写在类型注释里。
 

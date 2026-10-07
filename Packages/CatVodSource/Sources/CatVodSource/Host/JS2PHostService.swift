@@ -16,8 +16,9 @@ import Foundation
 /// 为什么要「二次探活」：就绪行只说明 `listen` 成功。实测中 bundle 会先拉远端配置，
 /// 期间服务已经在监听；`/health` 才是「应用层可用」的证据。
 ///
-/// 平台现状（**如实说明**）：iOS 无 libnode 产物 → `start()` 抛 ``JS2PHostError/runtimeUnavailable``，
-/// 界面应提示「仅 macOS 支持」而不是显示成「站点为空」。
+/// 平台现状（**如实说明**）：iOS 走随包内嵌的 libnode（`NodeMobile.xcframework`），
+/// macOS 走独立进程；两者共用同一条就绪契约。某平台既无 node 也无 libnode 时，
+/// `start()` 抛 ``JS2PHostError/runtimeUnavailable``，界面应提示原因而不是显示成「站点为空」。
 public actor JS2PHostService {
     private let configuration: NodeRuntimeConfiguration
     private let catalog: HostSiteCatalog
@@ -76,12 +77,12 @@ public actor JS2PHostService {
         do {
             baseURL = try await runtime.start()
         } catch {
-            let diagnostics = await runtime.recentOutput(limit: 6)
+            let diagnostics = await hostDiagnostics()
             throw JS2PHostError.runtimeUnavailable(Self.describe(error, diagnostics: diagnostics))
         }
 
         guard await catalog.health(baseURL: baseURL) else {
-            let diagnostics = await runtime.recentOutput(limit: 6)
+            let diagnostics = await hostDiagnostics()
             throw JS2PHostError.hostNotReady(
                 "就绪行已出现（\(baseURL.absoluteString)），但 GET /health 未通过。"
                     + Self.diagnosticsSuffix(diagnostics)
@@ -98,7 +99,7 @@ public actor JS2PHostService {
         do {
             return try await catalog.config(baseURL: baseURL)
         } catch {
-            let diagnostics = await runtime.recentOutput(limit: 6)
+            let diagnostics = await hostDiagnostics()
             throw JS2PHostError.sitesUnavailable(Self.describe(error, diagnostics: diagnostics))
         }
     }
@@ -121,6 +122,13 @@ public actor JS2PHostService {
         await runtime.recentOutput(limit: limit)
     }
 
+    /// 宿主**落盘**日志路径（无落盘能力时为 nil）。
+    ///
+    /// 界面可以据此提供「查看/导出宿主日志」；内嵌 node 崩溃后，这是唯一还能读到的现场。
+    public func hostLogPath() async -> URL? {
+        await runtime.persistentLogPath()
+    }
+
     /// 停止宿主。
     public func stop() async {
         await runtime.stop()
@@ -128,6 +136,33 @@ public actor JS2PHostService {
     }
 
     // MARK: - 诊断文本
+
+    /// 诊断行：内存里的最近输出 + **落盘日志尾部**。
+    ///
+    /// 内嵌 node 崩溃会把进程一起带走，内存输出随之消失，落盘日志是唯一还能读到的现场
+    /// （见 ``NodePreloadScript``）。两者都附上，避免「宿主未就绪」变成无线索的提示。
+    private func hostDiagnostics(limit: Int = 6) async -> [String] {
+        var lines = await runtime.recentOutput(limit: limit)
+        if let logURL = await runtime.persistentLogPath(),
+           let tail = Self.readTail(of: logURL, lines: 12)
+        {
+            lines.append("--- 落盘日志尾部（\(logURL.path)）---")
+            lines.append(contentsOf: tail)
+        }
+        return lines
+    }
+
+    /// 读文件尾部若干行；不存在或为空都返回 nil（缺日志不是错误，不该改变失败原因）。
+    private static func readTail(of url: URL, lines: Int) -> [String]? {
+        guard lines > 0,
+              let text = try? String(contentsOf: url, encoding: .utf8),
+              !text.isEmpty
+        else {
+            return nil
+        }
+        let all = text.split(whereSeparator: \.isNewline).map(String.init)
+        return Array(all.suffix(lines))
+    }
 
     private static func describe(_ error: Error, diagnostics: [String]) -> String {
         let reason = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -139,6 +174,7 @@ public actor JS2PHostService {
         guard !diagnostics.isEmpty else {
             return ""
         }
-        return "\n宿主最近输出：\n" + diagnostics.suffix(6).joined(separator: "\n")
+        // 上限 24 行：够看清「模块缺失 / 致命错误 / 进程被谁带走」，又不至于淹没界面。
+        return "\n宿主最近输出：\n" + diagnostics.suffix(24).joined(separator: "\n")
     }
 }

@@ -36,6 +36,8 @@ public actor NodeMobileRuntime: NodeRuntimeLaunching {
     private var pipeReadFD: Int32 = -1
     private var savedStdoutFD: Int32 = -1
     private var savedStderrFD: Int32 = -1
+    /// 落盘日志路径（仅当预载成功注入时非空；诊断时附给调用方）。
+    private var preloadLogURL: URL?
 
     public init(configuration: NodeRuntimeConfiguration) {
         self.configuration = configuration
@@ -62,7 +64,8 @@ public actor NodeMobileRuntime: NodeRuntimeLaunching {
 
         try startStdoutCapture()
 
-        let plan = NodeMobileLaunchPlan(configuration: configuration)
+        let (plan, logURL) = makeLaunchPlan()
+        preloadLogURL = logURL
         for (key, value) in plan.environment {
             setenv(key, value, 1)
         }
@@ -88,6 +91,33 @@ public actor NodeMobileRuntime: NodeRuntimeLaunching {
 
     public func recentOutput(limit: Int = 40) -> [String] {
         Array(output.suffix(max(limit, 0)))
+    }
+
+    /// 落盘日志路径（进程消失后仍可读）—— 见 ``NodePreloadScript``。
+    public func persistentLogPath() async -> URL? {
+        preloadLogURL
+    }
+}
+
+extension NodeMobileRuntime {
+    /// 组装启动参数：注入 ``NodePreloadScript`` 并把落盘日志路径告诉它。
+    ///
+    /// 预载是**诊断增强**，不是启动前提：写不出脚本也要照常启动，
+    /// 否则一个日志功能会把整条链路拖死。
+    func makeLaunchPlan() -> (NodeMobileLaunchPlan, URL?) {
+        var configuration = self.configuration
+        guard configuration.prefersPreload else {
+            return (NodeMobileLaunchPlan(configuration: configuration), nil)
+        }
+        do {
+            let preloadURL = try NodePreloadScript.materialize()
+            let logURL = NodePreloadScript.logURL()
+            configuration.environment[NodePreloadScript.logEnvironmentKey] = logURL.path
+            return (NodeMobileLaunchPlan(configuration: configuration, preloadURL: preloadURL), logURL)
+        } catch {
+            output.append("预载脚本写入失败（继续启动，本次没有落盘日志）：\(error)")
+            return (NodeMobileLaunchPlan(configuration: configuration), nil)
+        }
     }
 }
 
