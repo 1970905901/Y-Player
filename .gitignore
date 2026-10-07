@@ -10,6 +10,8 @@ Icon?
 *.xcodeproj/
 *.xcworkspace/
 !*.xcworkspace/contents.xcworkspacedata
+# Info.plist 同样由 XcodeGen 的 info: 段生成
+Apps/*/Info.plist
 xcuserdata/
 *.xcuserstate
 *.moved-aside

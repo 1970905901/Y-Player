@@ -52,6 +52,27 @@ def fetch_log(token: str, repo: str, job_id: int, out_path: str) -> tuple[int, i
     return result.returncode, size
 
 
+def wait_for_completion(token: str, repo: str, run_id: int, out_dir: str, timeout_seconds: int = 1500) -> dict:
+    """Poll until the run completes; write the raw run JSON each time so progress is observable."""
+    import time
+
+    deadline = time.time() + timeout_seconds
+    latest: dict = {}
+    path = os.path.join(out_dir, "gh-wait.txt")
+    while time.time() < deadline:
+        status, run = api(token, f"/repos/{repo}/actions/runs/{run_id}")
+        latest = run
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(
+                f"run {run_id} | status={run.get('status')} | conclusion={run.get('conclusion')} | "
+                f"sha={(run.get('head_sha') or '')[:8]}\n"
+            )
+        if run.get("status") == "completed":
+            return run
+        time.sleep(20)
+    return latest
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print("usage: python Tools/gh_actions_report.py <token> [owner/repo] [run-id]")
@@ -79,6 +100,12 @@ def main() -> int:
     if not run_id:
         write(lines, out_dir)
         return 0
+
+    if "--wait" in sys.argv:
+        completed = wait_for_completion(token, repo, run_id, out_dir)
+        lines.append(
+            f"\nwaited: status={completed.get('status')} conclusion={completed.get('conclusion')}"
+        )
 
     status, jobs = api(token, f"/repos/{repo}/actions/runs/{run_id}/jobs?per_page=50")
     lines.append(f"\njobs for run {run_id} -> {status}")
