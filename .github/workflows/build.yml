@@ -61,6 +61,10 @@ jobs:
         run: swift test --package-path Packages/CatVodPlayer
       - name: CatVodStore tests
         run: swift test --package-path Packages/CatVodStore
+      # CatVodUI 没有单测目标，只靠 Xcode 构建把关会漏掉缺 import 之类的低级错误，
+      # 这里加一次编译（macOS 平台）作为快速信号。
+      - name: CatVodUI (build only)
+        run: swift build --package-path Packages/CatVodUI
 
   build:
     name: Build apps (unsigned)

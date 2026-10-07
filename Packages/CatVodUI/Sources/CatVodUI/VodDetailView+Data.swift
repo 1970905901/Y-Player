@@ -1,5 +1,6 @@
 import CatVodCore
 import CatVodNet
+import CatVodPlayer
 import CatVodSource
 import SwiftUI
 

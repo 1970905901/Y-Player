@@ -23,8 +23,8 @@ public enum PlayerEngineKind: String, Sendable, CaseIterable {
 
     /// 该内核在当前构建中是否可用。
     ///
-    /// M3 启用 MPVKit 之前 `mpv` 返回 false；M4 完成前 `ffmpeg` 返回 false；
-    /// 此时 UI 与协调器会退回 `.system`。
+    /// M3 启用 MPVKit 之前 `mpv` 返回 false；M4 完成前 `ffmpeg` 返回 false。
+    /// **策略（M02P3）**：不可用时由 UI 明确提示并引导用户改设置，**不自动退回 `.system`**。
     public var isAvailable: Bool {
         switch self {
         case .system:
@@ -116,9 +116,11 @@ public struct MediaResource: Sendable, Hashable {
 /// 播放内核统一接口。
 ///
 /// 约定：
-/// - 实现必须自己保证线程安全（推荐用 `actor`，UI 只从主线程调用命令方法）；
+/// - 实现必须自己保证线程安全：与 AVFoundation 强绑定的内核用 `@MainActor` 类
+///   （iOS 18 起 `AVPlayer` 受主线程约束），纯 C-API 内核用 `actor`；
 /// - 事件通过 `events` 异步序列下发，避免 UI 层轮询；
-/// - `state` 用 `currentState()` 异步读取：内核多以 actor 实现，同步属性无法满足 `Sendable` 协议要求。
+/// - `state` 用 `currentState()` 异步读取：内核多以 actor/全局 Actor 实现，同步属性无法满足 `Sendable` 要求。
+/// - **内核选择由用户在设置里手动指定，运行时不自动降级**（见 ``PlayerCoordinator``）。
 public protocol PlayerEngine: AnyObject, Sendable {
     var kind: PlayerEngineKind { get }
     var events: AsyncStream<PlayerEvent> { get }
