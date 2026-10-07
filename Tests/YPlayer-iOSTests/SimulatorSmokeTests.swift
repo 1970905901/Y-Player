@@ -1,7 +1,7 @@
 import CatVodCore
 import CatVodNet
-@testable import CatVodPlayer
-@testable import CatVodSource
+import CatVodPlayer
+import CatVodSource
 import XCTest
 
 /// iOS 模拟器冒烟测试：**在真实 iOS 运行时里把代码跑起来**，而不是只编译。

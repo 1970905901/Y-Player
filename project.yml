@@ -142,13 +142,13 @@ targets:
       - path: Tests/YPlayer-iOSTests
     dependencies:
       - target: YPlayer-iOS
+      # 只列测试里**真正 import** 的包产品：
+      # `CatVodNode` 不在这里 —— 它既没被测试直接引用，也没在根 `packages:` 里声明，
+      # 直接写会让 XcodeGen 报 "invalid package dependency"（CI 抓过一次 ✗）。
       - package: CatVodCore
       - package: CatVodNet
       - package: CatVodSource
-      - package: CatVodNode
       - package: CatVodPlayer
-      - package: CatVodStore
-      - package: CatVodUI
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.YPlayer.cat.tests

@@ -1,5 +1,5 @@
 import CatVodNet
-@testable import CatVodSource
+import CatVodSource
 import XCTest
 
 /// 内嵌 Node（libnode）在**真实 iOS 运行时**里的端到端验证。
