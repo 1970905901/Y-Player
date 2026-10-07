@@ -1,0 +1,31 @@
+{
+  "$schema": "YPlayer 第三方依赖锁定记录（人工维护，CI 校验用）",
+  "purpose": "记录依赖的版本与来源，保证构建可复现；任何升级都必须同步更新本文件并在 docs/任务记录 中留痕。",
+  "entries": [
+    {
+      "name": "FlyingFox",
+      "kind": "swiftpm-source",
+      "url": "https://github.com/swhitty/FlyingFox.git",
+      "ref": "0.27.1",
+      "pin": "exact（Package.swift 里 .package(url:exact:)）",
+      "license": "MIT",
+      "platforms": [
+        "iOS 13+",
+        "macOS 10.15+",
+        "tvOS 13+",
+        "watchOS 8+"
+      ],
+      "requiredBy": "CatVodNet（M6：本地 HTTP 服务）",
+      "provides": {
+        "FlyingFox": "HTTPServer / HTTPHandler / HTTPRequest / HTTPResponse / HTTPHeaders",
+        "FlyingSocks": "Socket / SocketAddress（回环地址构造 sockaddr_in.inet(ip4:port:)）"
+      },
+      "notes": [
+        "只用于本机回环服务：播放侧 header 注入（M6）与 M5c 的 Web 嗅探入口；站点请求仍走既有 URLSessionTransport。",
+        "官方说明：iOS 进入后台会断开监听 socket，回到前台需重新 start()——LocalHTTPServer.start() 幂等，可直接再次调用。",
+        "MIT 许可不要求本项目开源修改；仍应在应用内「关于」页展示依赖名、许可与来源（与 MPVKit 同一处维护）。"
+      ],
+      "verification": "CI 的 SwiftPM tests 会真的起本地服务并做端到端请求（Packages/CatVodNet/Tests/CatVodNetTests/LocalHTTPServerTests.swift）。"
+    }
+  ]
+}

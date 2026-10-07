@@ -19,6 +19,8 @@ public enum CatVodError: Error, Sendable, Equatable {
     case parseFailed(flag: String, reason: String)
     /// 播放失败。
     case playback(reason: String)
+    /// 本机服务（M6 的本地 HTTP 服务/代理）不可用或转发失败。
+    case localServer(reason: String)
     /// JSON 结构与协议不符。
     case decoding(path: String, reason: String)
 }
@@ -40,6 +42,8 @@ extension CatVodError: LocalizedError {
             "解析失败（\(flag)）：\(reason)"
         case let .playback(reason):
             "播放失败：\(reason)"
+        case let .localServer(reason):
+            "本机服务不可用：\(reason)"
         case let .decoding(path, reason):
             "协议解析失败（\(path)）：\(reason)"
         }
