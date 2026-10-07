@@ -3,10 +3,17 @@ name: js2p contract
 # 为什么独立于 build.yml：
 # 本作业要出网下载 6.29 MB 的 js2p bundle，而且 bundle 启动时会去拉**上游站点配置**。
 # 上游抖动不该把正常 PR 判红，所以这里只在「手动触发 + 每周定时」跑，**不挂在 push/PR 上**。
-# 作业的断言也分级：就绪行/`/health` 是硬断言，站点数/`spider init` 只作证据记录。
+# 作业的断言也分级：就绪行/`/health` 是硬断言，站点数/`spider init` 只作证据记录，
+# 而「连 bundle 都下不来」（DNS/网络）在探针里被明确归为 ENVIRONMENT SKIP（退出码 0 + 警告），
+# 因为那是环境问题、不是契约破坏。
 
 on:
   workflow_dispatch:
+    inputs:
+      bundle_url:
+        description: "覆盖 bundle 地址（留空使用默认的 9280.kstore.vip）"
+        required: false
+        default: ""
   schedule:
     - cron: "0 3 * * 1"
 
@@ -30,7 +37,12 @@ jobs:
         run: node --version
 
       - name: "Contract probe (hard asserts: ready line + /health)"
-        run: python3 Tools/js2p_contract_probe.py
+        run: |
+          if [ -n "${{ inputs.bundle_url }}" ]; then
+            python3 Tools/js2p_contract_probe.py "${{ inputs.bundle_url }}"
+          else
+            python3 Tools/js2p_contract_probe.py
+          fi
 
       # 刻意不缓存 bundle：每次都验证「当前线上版本」的契约，才能发现上游契约漂移。
       - name: Evidence

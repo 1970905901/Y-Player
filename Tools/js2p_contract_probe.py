@@ -10,6 +10,9 @@ M16P2 的手动实测已证明该路径可行，这里把它变成可重复的�
 - **软断言**（只报告，不影响退出码）：站点数、`/spider/<key>/init` 探活。
   它们依赖 bundle 启动时拉取的**远端配置**（`RemoteWexConfig`），远端抖动
   不应该把正常的 PR / 定时任务判成「契约破坏」，因此只记录证据。
+- **环境跳过**（退出码 0 + GitHub 警告）：连 bundle 都下不来（DNS/网络/上游不可达）。
+  这是环境问题而非契约问题；作业本身是手动/定时的非阻断检查，
+  让它在网络抖动时变红只会让人开始忽略它 —— 报告里会留 `ENVIRONMENT SKIP` 证据。
 
 用法：
     python Tools/js2p_contract_probe.py [bundle-url]
@@ -90,7 +93,18 @@ def main() -> int:
     url = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("JS2P_BUNDLE_URL", DEFAULT_URL)
     node = os.environ.get("JS2P_NODE", "node")
 
-    bundle = ensure_bundle(url)
+    try:
+        bundle = ensure_bundle(url)
+    except Exception as error:  # noqa: BLE001
+        # 环境问题（DNS/网络/上游不可达）**不算契约破坏**。
+        # 本作业是手动/定时的非阻断检查：网络抖动时变红只会让人开始忽略它，
+        # 所以记录醒目的 SKIPPED、发一条 GitHub 警告，并以 0 退出（证据仍然上传）。
+        message = f"ENVIRONMENT SKIP: 无法获取 bundle（{type(error).__name__}: {error}）"
+        log(message)
+        write_report()
+        print(f"::warning::{message}")
+        return 0
+
     stdout_lines: list[str] = []
 
     try:
