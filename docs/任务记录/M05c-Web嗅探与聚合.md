@@ -1,6 +1,6 @@
 # M05c Web 嗅探与聚合解析（第一阶段：规则、计划、JSON 侧竞速）
 
-- 状态：代码与单测已推送（见「验证记录」）；**WebKit 载体与播放侧接线属第二阶段**（下一轮）
+- 状态：第一、二阶段均已完成并推送（CI 结果见「验证记录」）
 - 时间：2026-10-07
 - 范围：M5 第三步 —— `type=0`（Web 嗅探）与 `type=4`（聚合解析）里**与平台无关**的全部判定与调度
 - 前置：M5a（解析链契约）、M5b（`type=1` JSON 解析）、M6a（本地 `/proxy`：Web 嗅探拿到的地址同样需要注入 header）
@@ -53,13 +53,25 @@
 4. **非法正则退化为「不命中」**：上游会抛 `PatternSyntaxException` 被上层吞掉；
    这里显式退化并在文档里写明，避免规则写错时表现为「整页嗅探不到」而无线索。
 
-## 五、明确未做（第二阶段）
+## 五、第二阶段：WebKit 载体与播放侧接线（已完成）
 
-1. WebKit 载体：`WKWebView` + 注入 JS（拦截 `fetch`/`XHR`/`MediaSource`）+ 导航回调 + 消息通道，
-   把候选地址交给 ``SniffRules`` 判定；`CDN 人机验证`（上游遇到 `/cdn-cgi/challenge-platform/` 时弹窗）需要真人交互，Apple 侧只做提示。
-2. `ParsePlaybackView` 的 `type=0` / `type=4` 接线（目前这两类仍显示里程碑说明文案）。
-3. `type=2/3`（JAR）在 Apple 平台仍不可用（与 M5a 结论一致）。
+| 件 | 说明 |
+| --- | --- |
+| `CatVodUI/WebSniffSession.swift` | `@MainActor` 的 `WKWebView` 嗅探会话。三条通道合起来逼近 Android 的「拦截每个子请求」：① **导航回调**（每次导航当候选地址，带该请求的 header）② **注入 JS**（包 `XMLHttpRequest.open` / `window.fetch` / `HTMLMediaElement.src`，经 `WKScriptMessageHandler` 上报）③ **页面加载完**扫 `<video>/<audio>/<source>/<iframe>` 并顺序执行规则脚本。广告 host 直接 `cancel`；命中 `PLAYER` 再开一层（`SniffedPageList` 去重、内层 `detect=false`）；`/cdn-cgi/challenge-platform/` 把人机验证页面**显示出来**让用户自己过（上游此时弹对话框） |
+| `CatVodUI/WebSniffWebView.swift` | `UIViewRepresentable` / `NSViewRepresentable` 双端承载：平时缩到 1pt（WebKit 对不在视图层级里的 WebView 会降频，必须挂在层级上），人机验证时放大到 320pt |
+| `CatVodUI/ParsePlaybackView.swift` | 按 `type` 分派三条通道：`type=1` JSON、`type=0` 单页嗅探、`type=4` JSON 并发 + Web 并行（**谁先成功算谁**）；两条通道都失败才给结论，并把两边原因合并展示 |
 
-## 六、验证记录
+平台差异（已在代码里逐条注明，不藏在实现里）：
+- Apple 侧看不到「图片 / 普通脚本」这类子请求 —— 它们本来也不会通过媒体判定，实际影响有限；
+- 内层播放页的 WebView 不进视图层级（iOS 可能降频）；
+- `WKURLSchemeHandler` 只对自定义 scheme 生效，所以**不能**照搬上游「拦截一切请求」的写法。
+
+## 六、仍未做
+
+1. `type=2/3`（JAR）在 Apple 平台仍不可用（与 M5a 结论一致）。
+2. `parse/jx = 1` 的第二层解析：等真实源验证过「Web 嗅探返回完整 `Result`」再启用第二层。
+3. 内层播放页的可视化（上游为它弹独立窗口）：目前只在后台跑；若真机发现某些源必须在**可见**窗口里才播，再补可见子窗口。
+
+## 七、验证记录
 
 （CI 结果与人工清单在第二阶段一并补齐；本阶段的自动化验证是 4 个 Core 套件 + 1 个 Source 套件。）
