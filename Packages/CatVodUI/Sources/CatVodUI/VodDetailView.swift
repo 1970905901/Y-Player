@@ -5,11 +5,12 @@ import SwiftUI
 
 /// 详情页：影片信息 → 线路 → 选集 → 播放。
 ///
-/// 播放能力边界（M2）：
+/// 播放能力边界：
 /// - 直链且无需解析的集（`parse = 0`）可直接用系统播放器播放；
-/// - 需要解析的集（`parse/jx = 1`）依赖 M5 的解析链；
-/// - `type=3` 的 JS / CatSpider 站点依赖 M1.6 的内嵌 Node 服务。
-/// 以上情况都会进入 ``UnsupportedPlaybackView`` 并说明原因，不静默失败。
+/// - js2p / CatSpider HTTP 站点（`type=3` 且 `api` 含 `/spider/`）走 ``SpiderEpisodePlaybackView``：
+///   先用 `POST /play` 换取地址（需要宿主就绪，见 `docs/任务记录/M16P3-macOS宿主接通.md`）；
+/// - 需要解析的集（`parse/jx = 1`）依赖 M5 的解析链；JAR / Python Spider 在 Apple 平台不支持。
+/// 以上不可播放的情况都会进入 ``UnsupportedPlaybackView`` 并说明原因，不静默失败。
 @MainActor
 public struct VodDetailView: View {
     @ObservedObject var model: AppModel
@@ -198,7 +199,7 @@ public struct VodDetailView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        if makeResource(for: episode) == nil {
+                        if makeResource(for: episode) == nil, !(site.map(isSpiderPlayable) ?? false) {
                             Image(systemName: "exclamationmark.triangle")
                                 .foregroundStyle(.orange)
                         }
@@ -239,6 +240,17 @@ public struct VodDetailView: View {
                 progressKey: progressKey,
                 progressEpisodeIndex: index,
                 progressStore: model.progressStore
+            )
+        } else if let site, isSpiderPlayable(site) {
+            // js2p / CatSpider 站点：播放地址要用 `POST /play` 换，因此走异步入口。
+            SpiderEpisodePlaybackView(
+                model: model,
+                site: site,
+                episode: episode,
+                title: vod?.vodName ?? "",
+                lineName: currentLine?.name ?? "",
+                episodeIndex: index,
+                progressKey: progressKey
             )
         } else {
             UnsupportedPlaybackView(reason: unsupportedReason(for: episode))

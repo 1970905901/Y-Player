@@ -68,6 +68,8 @@ P3b 一旦把 UI 与 `CatVodNode` 混进同一次提交，出问题只能靠 20 
 | `JS2PHostStatus`（UI） | 状态机：`idle` / `unavailable`（平台不支持）/ `starting` / `running`（baseURL + 站点数 + 被禁用数）/ `failed`，并给出一句话 `summary` |
 | `HomeView` / `SearchView` | `cmsSites` → `browsableSites`（不再过滤 `type=3`）：首页与搜索现在都能用 js2p 站点；空态提示改为显示真实宿主状态 |
 | `InterfaceManagementView` | 新增「Node 宿主」区块：状态、**重启宿主**、**查看宿主输出**（诊断） |
+| `SpiderEpisodePlaybackView`（UI，新文件） | Spider 站点的**播放入口**：`POST /play {flag, id}` 换地址后再进 `PlaybackView`；失败给可读原因。单开一层的原因：这一步是异步的，塞不进同步的 `@ViewBuilder` 目标 |
+| `VodDetailView` / `+Data` | 选集目标改为三分支（直链 → Spider → 说明原因）；选集行的警告图标不再对可播放的 Spider 集误报；不可播放原因改用 `Site.availability` 的统一文案 |
 
 ## 五、已知小瑕疵（如实记录，未修）
 
@@ -84,5 +86,9 @@ P3b 一旦把 UI 与 `CatVodNode` 混进同一次提交，出问题只能靠 20 
    - 「接口管理 → Node 宿主」显示 `宿主运行中：http://127.0.0.1:9988，站点 85 个…`；
    - 站点清单出现约 **85** 个站点，`api` 形如 `http://127.0.0.1:<port>/spider/<spiderKey>/<type>`；
    - 首页/搜索能选到这些站点并返回内容（走 CatSpider HTTP 协议）；
-4. 反向用例：把 `YPLAYER_NODE` 指向不存在的路径 → 必须显示「未找到 node 可执行文件」，而不是「站点为空」；
-5. iOS 侧：应显示「内嵌 Node 宿主不可用：iOS 需要 libnode…」，同样不能显示成「暂无站点」。
+   - 进详情、选一集 → 应短暂显示「正在向站点请求播放地址…」后开始播放（走 `POST /play`）；
+5. 反向用例（每一项都必须给出可读原因，不能静默失败）：
+   - 把 `YPLAYER_NODE` 指向不存在的路径 → 「未找到 node 可执行文件」；
+   - 宿主未启动时点选播放 → 播放页显示宿主不可用原因，而不是空白或一直转圈；
+   - `csp_*.jar` 站点：选集行显示警告图标，进入后说明「需要 JVM，Apple 平台不支持」；
+6. iOS 侧：应显示「内嵌 Node 宿主不可用：iOS 需要 libnode…」，同样不能显示成「暂无站点」。

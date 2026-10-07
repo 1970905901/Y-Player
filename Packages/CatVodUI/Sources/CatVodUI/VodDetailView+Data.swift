@@ -100,6 +100,13 @@ extension VodDetailView {
         )
     }
 
+    /// 该站点能否走 CatSpider 的 `play` 接口（js2p 宿主站点）。
+    ///
+    /// 只说明「协议形态对」；宿主没起来时 `play` 会失败并给出可读原因。
+    func isSpiderPlayable(_ site: Site) -> Bool {
+        site.isCatSpiderHTTP
+    }
+
     /// 不可直接播放的原因（必须能说明，不能静默失败）。
     func unsupportedReason(for episode: PlaylistParser.Episode) -> String {
         guard let site else {
@@ -122,7 +129,9 @@ extension VodDetailView {
         case .http:
             return "该集中转播放（type=4 的 play 接口）尚未实现（M2 后续）。"
         case .spider:
-            return "该集来自 Spider 站点（type=3）：需要调用站点的 play 接口换取地址（界面接入待 M16P3 后续）。"
+            // 走到这里说明不是可用的 CatSpider HTTP 站点（JAR / Python / api 形态不对）。
+            let reason = site.availability.reason ?? "当前平台不支持该 Spider 运行方式"
+            return "该集来自 Spider 站点（\(site.spiderRuntimeKind.rawValue)）：\(reason)"
         }
     }
 }
