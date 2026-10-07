@@ -1,5 +1,6 @@
-import Foundation
 import CatVodCore
+import CatVodNet
+import Foundation
 
 /// CatSpider HTTP 协议客户端。
 ///

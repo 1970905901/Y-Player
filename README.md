@@ -78,6 +78,28 @@ xcodebuild build -project YPlayer.xcodeproj -scheme YPlayer-macOS \
 逐字段的支持状态见 [`docs/协议兼容矩阵.md`](docs/协议兼容矩阵.md)。
 js2p（JS 源）宿主契约见 [`docs/js2p宿主契约.md`](docs/js2p宿主契约.md)。
 
+## 工具（Tools/）
+
+仓库自带几个与 CI / js2p 分析相关的小工具（均为 Python 3，Windows 与 macOS 通用）：
+
+| 脚本 | 用途 |
+| --- | --- |
+| `analyze_js2p.py` | 下载 js2p bundle、校验 `index.js.md5`、抽取 `require` 清单与宿主契约上下文，产出 `Tools/out/js2p-report.txt` |
+| `github_bootstrap.py` | 创建 GitHub 仓库（幂等，已存在则跳过）、推送本地提交、把 `origin` 重置为不含 token 的干净地址 |
+| `gh_probe.py` | 查询仓库工作流状态、最近运行、指定提交的 check-runs |
+| `gh_actions_report.py` | 列出运行与作业步骤，抓取失败作业日志并抽取关键错误行 |
+
+用法示例：
+
+```bash
+python Tools/analyze_js2p.py
+python Tools/gh_probe.py <token> <owner>/<repo> [sha]
+python Tools/gh_actions_report.py <token> <owner>/<repo> [run-id]
+```
+
+> 安全约定：token 仅作为命令行参数传入，**不写入任何文件、不提交、不进 remote 配置**；脚本会把日志中的 token 替换为 `***`。
+> 日志与缓存目录 `Tools/out/`、`Tools/.cache/` 已在 `.gitignore` 中。
+
 ## 许可与免责声明
 
 - 本项目以 **GPL-3.0** 发布（跟随上游生态），第三方依赖许可见 `ThirdParty/LICENSES`。
