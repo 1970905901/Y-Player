@@ -1,16 +1,21 @@
 # YPlayer SwiftFormat 配置
-# 与 .swiftlint.yml 互补：格式化交给 SwiftFormat，静态检查交给 SwiftLint。
+#
+# 语法（SwiftFormat 0.63）：每行一个「--选项名 值」，选项名以 0.63.0 的
+# `Sources/OptionDescriptor.swift` 的 `argumentName` 为准（已逐条核对过）。
+#
+# ⚠️ 踩过的坑（不要写回去）：0.63 里这些写法都**不存在**，写了会导致
+# `error: Unknown option 'xxx' in configuration file.` 并使 SwiftFormat 直接退出（exit 70）：
+#   indent = 4（indent 现在是 String 类型的缩进字符串，默认 "    "，不需要设置）
+#   maxwidth / swiftversion / trimwhitespace / stripunusedargs / wraparguments /
+#   wrapparameters / emptybraces / numbers
+# 正确写法见下方；缩进宽度保持默认 4 空格；`exclude` 由命令行传入（见 CI）。
 
-indent = 4
-maxwidth = 140
-swiftversion = 6.0
-linebreaks = lf
-trimwhitespace = always
-stripunusedargs = closure-only
-wraparguments = beforefirst
-wrapparameters = beforefirst
-semicolons = inline
-emptybraces = spaced
-numbers = skip
-
-exclude = .build,DerivedData,ThirdParty,Tools/.cache,Packages/*/.build
+--swift-version 6.0
+--max-width 140
+--linebreaks lf
+--trim-whitespace always
+--strip-unused-args closure-only
+--wrap-arguments before-first
+--wrap-parameters before-first
+--semicolons inline
+--empty-braces spaced

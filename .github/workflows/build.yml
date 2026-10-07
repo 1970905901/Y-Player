@@ -28,12 +28,23 @@ jobs:
           swift --version
           swiftlint version || true
           swiftformat --version || true
+      - name: Install linters
+        run: |
+          brew install swiftformat swiftlint
+          swiftformat --version
+          swiftlint version
+      # 说明：两步都用 `|| true` + continue-on-error —— lint 结论目前**非阻断**（M2 起才收紧），
+      # 但必须**真正跑起来**：以前 runner 上没有 swiftlint（command not found → 127）、
+      # 且 .swiftformat 用了 0.63 不识别的键（exit 70），两步都只是报错却什么也没检查。
       - name: SwiftFormat (lint only, 非阻断)
         continue-on-error: true
-        run: swiftformat --lint . --config .swiftformat
+        run: |
+          swiftformat --lint . --config .swiftformat \
+            --exclude .build,DerivedData,ThirdParty,Tools,.swiftpm,Packages/*/.build \
+            || true
       - name: SwiftLint (非阻断，M2 起收紧为 --strict)
         continue-on-error: true
-        run: swiftlint lint --config .swiftlint.yml
+        run: swiftlint lint --config .swiftlint.yml || true
 
   core-tests:
     name: SwiftPM tests
