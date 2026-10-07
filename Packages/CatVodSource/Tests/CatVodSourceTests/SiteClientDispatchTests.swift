@@ -17,17 +17,28 @@ struct SiteClientDispatchTests {
         Site(key: key, name: "豆瓣|首页", type: 3, api: api)
     }
 
-    @Test("type 1（JSON CMS）：走 CMSClient，GET 且带 ac")
+    @Test("type 1（JSON CMS）：走 CMSClient，首页裸 GET、分类带 ac/t/pg")
     func cmsSiteUsesCMSClient() async throws {
         let recorder = recorder()
         let client = SiteClient(transport: recorder)
         let site = Site(key: "cms", name: "CMS", type: 1, api: "https://cms.example.com/api.php/provide/vod")
 
         _ = try await client.home(site: site)
+        _ = try await client.category(site: site, categoryID: "1", page: 2)
 
-        let request = await recorder.lastRequest()
-        #expect(request?.method == .get)
-        #expect(request?.url.absoluteString.contains("ac=") == true)
+        let requests = await recorder.requests
+        #expect(requests.count == 2)
+
+        // 首页：类型 0/1/2 不带参数（逐行对齐 SiteApi.java），因此 url 就是站点 api。
+        let home = try #require(requests.first)
+        #expect(home.method == .get)
+        #expect(home.url.absoluteString == "https://cms.example.com/api.php/provide/vod")
+
+        // 分类：ac=detail + t=<分类ID> + pg=<页码>。
+        let categoryURL = try #require(requests.last?.url.absoluteString)
+        #expect(categoryURL.contains("ac=detail"))
+        #expect(categoryURL.contains("t=1"))
+        #expect(categoryURL.contains("pg=2"))
     }
 
     @Test("type 3 且 api 含 /spider/（js2p 宿主站点）：走 CatSpiderHTTPClient，POST 到 /home")
