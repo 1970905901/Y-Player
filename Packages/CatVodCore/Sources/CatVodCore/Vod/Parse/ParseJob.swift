@@ -25,6 +25,8 @@ public struct ParseJob: Sendable, Hashable {
         case sitePrefix
         /// 结果需要解析时，配置里的默认解析器（`config.parse`）。
         case defaultParser
+        /// `type=4` 聚合解析里的一个成员（上游 `superParse` 挑出来的解析器）。
+        case aggregateMember
 
         /// 界面/日志用的一句话说明。
         public var summary: String {
@@ -34,6 +36,7 @@ public struct ParseJob: Sendable, Hashable {
             case .webPage: "裸地址（Web 解析页）"
             case .sitePrefix: "站点级 playUrl 前缀（结果级为空时回退）"
             case .defaultParser: "配置里的默认解析器"
+            case .aggregateMember: "聚合解析（type=4）挑中的解析器"
             }
         }
     }
