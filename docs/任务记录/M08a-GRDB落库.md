@@ -1,6 +1,6 @@
 # M08a GRDB 落库（收藏与播放进度）
 
-- 状态：待 CI 验证
+- 状态：Lint ✅；SwiftPM tests 的修复过程见 `M08b-存储接线.md` 的「验证记录」
 - 时间：2026-10-07
 - 范围：M8 第一步 —— 用 GRDB（SQLite）替换 M2 的内存实现，让收藏与播放进度**跨重启留存**；本轮不动 UI 接线
 - 前置：M02（`FavoriteStore` / `PlaybackProgressStore` 协议）、M02P8（进度落库节流）
