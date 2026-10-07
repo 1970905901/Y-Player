@@ -1,8 +1,8 @@
 import CatVodCore
 import CatVodNet
+@testable import CatVodSource
 import Foundation
 import Testing
-@testable import CatVodSource
 
 /// 按 URL 前缀路由的假传输层：聚合解析的每个成员地址都不同，单一响应不够用。
 private actor RouterTransport: HTTPTransport {

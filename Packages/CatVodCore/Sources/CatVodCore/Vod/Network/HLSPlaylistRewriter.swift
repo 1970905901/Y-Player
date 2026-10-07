@@ -57,8 +57,11 @@ public enum HLSPlaylistRewriter {
 
     /// 把一条地址解析成绝对地址（等价上游 `HttpUrl.resolve`）：
     /// 相对路径按清单地址解析，`//host/x` 这类协议相对地址也会补上 scheme；解析失败时原样返回。
+    ///
+    /// 基准地址**必须带 scheme** 才算可用：`URL(string:)` 对 `"not a url"` 这种文本也返回非 nil，
+    /// 拿它当基准会把 `seg.ts` 解析成 `//seg.ts`（CI 实测过一个断言）。没有 scheme 就没有可解析的上下文。
     public static func resolve(_ value: String, against baseURL: String) -> String {
-        guard let base = URL(string: baseURL) else {
+        guard let base = URL(string: baseURL), base.scheme != nil else {
             return value
         }
         return URL(string: value, relativeTo: base)?.absoluteString ?? value
