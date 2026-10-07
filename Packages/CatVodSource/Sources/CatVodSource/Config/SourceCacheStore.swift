@@ -106,18 +106,21 @@ public struct SourceCacheStore {
         let currentNames = Self.cacheFileNames(for: currentURL)
         return names
             .filter { !$0.hasPrefix(".") }
-            .compactMap { name in
+            .compactMap { name -> Entry? in
                 let url = directory.appendingPathComponent(name)
                 guard let attributes = try? fileManager.attributesOfItem(atPath: url.path) else {
                     return nil
                 }
-                let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+                let isDirectory = (attributes[.type] as? FileAttributeType) == .typeDirectory
+                let size = isDirectory
+                    ? Self.byteCount(ofDirectory: url, fileManager: fileManager)
+                    : (attributes[.size] as? NSNumber)?.int64Value ?? 0
                 let modified = (attributes[.modificationDate] as? Date) ?? .distantPast
                 return Entry(
                     fileName: name,
                     byteCount: size,
                     modifiedAt: modified,
-                    isDigest: name.hasSuffix(ConfigLocator.digestSuffix),
+                    isDigest: !isDirectory && name.hasSuffix(ConfigLocator.digestSuffix),
                     isCurrent: currentNames.contains(name)
                 )
             }
@@ -138,15 +141,30 @@ public struct SourceCacheStore {
         )
     }
 
-    /// 当前接口对应的缓存文件名（`ConfigLocator` 是唯一的命名来源，避免两处规则漂移）。
+    /// 当前接口对应的缓存条目名（`ConfigLocator` 是唯一的命名来源，避免两处规则漂移）。
+    ///
+    /// JS 源的缓存**是一个目录**（`bundle-<md5(url)>/`，内含 `index.js` 与 `index.js.md5`）：
+    /// 参考实现同样把运行目录固定成「一个 bundle 一个目录」，我们照此对齐，
+    /// 这样清理与淘汰都只需按目录名进行。
     public static func cacheFileNames(for url: URL?) -> Set<String> {
-        guard let url, let source = ConfigLocator.locate(url.absoluteString) else {
+        guard let url, let source = ConfigLocator.locate(url.absoluteString),
+              let configURL = source.url
+        else {
             return []
         }
-        var names: Set<String> = [source.cacheFileName]
         if source.kind == .javaScript {
-            names.insert(source.cacheFileName + ConfigLocator.digestSuffix)
+            return [ConfigLocator.scriptCacheDirectoryName(for: configURL)]
         }
-        return names
+        return [source.cacheFileName]
+    }
+
+    /// 目录占用（JS 源的缓存目录里是 bundle + 摘要，根目录层级够用）。
+    private static func byteCount(ofDirectory url: URL, fileManager: FileManager) -> Int64 {
+        let names = (try? fileManager.contentsOfDirectory(atPath: url.path)) ?? []
+        return names.reduce(0) { total, name in
+            let child = url.appendingPathComponent(name)
+            let size = (try? fileManager.attributesOfItem(atPath: child.path))?[.size] as? NSNumber
+            return total + (size?.int64Value ?? 0)
+        }
     }
 }

@@ -20,7 +20,13 @@ public struct ConfigSource: Sendable, Hashable {
     /// 与 `url` 同目录的 `.md5` 校验地址；JSON 配置通常没有。
     public var digestURL: URL?
     public var kind: Kind
-    /// 本地缓存文件名（按 URL 摘要生成，避免同名冲突）。
+    /// 本地缓存**相对路径**（相对缓存根目录）。
+    ///
+    /// - JSON：`config-<md5(url)>.json`；
+    /// - JS 源：`bundle-<md5(url)>/index.js` —— **文件名必须是 `index.js`**，
+    ///   因为 bundle 的自启动条件是 `process.argv[1]` 以 `index.js` 结尾
+    ///   （见 `NodeRuntimeConfiguration.satisfiesAutoStartContract`）。
+    ///   参考实现（webhtv `NodeBundle`）同样固定用 `index.js`。
     public var cacheFileName: String
 
     public init(url: URL?, digestURL: URL?, kind: Kind, cacheFileName: String) {
@@ -33,8 +39,10 @@ public struct ConfigSource: Sendable, Hashable {
 
 public enum ConfigLocator {
     public static let jsonCacheExtension = "json"
-    public static let scriptCacheExtension = "js"
     public static let digestSuffix = ".md5"
+    /// JS 源的 bundle 文件名。**必须是 `index.js`**：bundle 靠 `argv[1]` 的结尾判断是否自启动
+    /// （参考实现 webhtv `NodeBundle` 同样固定用它，运行目录就是 `…/bundle/index.js`）。
+    public static let scriptFileName = "index.js"
 
     /// 解析用户输入的配置地址。
     ///
@@ -60,12 +68,25 @@ public enum ConfigLocator {
             return nil
         }
 
+        // 参考实现（webhtv `NodeBundle`）的头注释逐字写明：
+        // **「用户填的是 .../index.js.md5 —— 那个地址返回 32 位校验值，真正的 bundle 在去掉 .md5 后缀的地址上」**。
+        // 所以 `.js.md5` 是**正规输入**，不是误填：这里静默归一化成它的 `.js` 地址，
+        // 不产生任何告警（用户不该为正规写法看到告警）。
+        if let scriptURL = javascriptURLDroppingDigestSuffix(url) {
+            return ConfigSource(
+                url: scriptURL,
+                digestURL: digestURL(for: scriptURL),
+                kind: .javaScript,
+                cacheFileName: scriptCacheFileName(for: scriptURL)
+            )
+        }
+
         if isJavaScriptConfig(url) {
             return ConfigSource(
                 url: url,
                 digestURL: digestURL(for: url),
                 kind: .javaScript,
-                cacheFileName: cacheFileName(for: url, extension: scriptCacheExtension)
+                cacheFileName: scriptCacheFileName(for: url)
             )
         }
 
@@ -80,6 +101,27 @@ public enum ConfigLocator {
     /// 是否为 JS 源配置。
     public static func isJavaScriptConfig(_ url: URL) -> Bool {
         url.pathExtension.lowercased() == "js"
+    }
+
+    /// 输入是 JS 源的 `.md5` 校验文件时，返回它对应的 JS 地址；否则 nil。
+    ///
+    /// **这是正规输入**：参考实现明确写着「用户填的是 `.../index.js.md5`」。
+    /// 判定基于**完整文件名**（`…js.md5`），不只看扩展名：普通的 `x.md5` 也可能是别的校验文件，
+    /// 不能想当然当成 JS 源。
+    public static func javascriptURLDroppingDigestSuffix(_ url: URL) -> URL? {
+        let name = url.lastPathComponent
+        guard name.lowercased().hasSuffix(digestSuffix) else {
+            return nil
+        }
+        let baseName = String(name.dropLast(digestSuffix.count))
+        guard baseName.lowercased().hasSuffix(".js") else {
+            return nil
+        }
+        let text = url.absoluteString
+        guard text.hasSuffix(digestSuffix) else {
+            return nil
+        }
+        return URL(string: String(text.dropLast(digestSuffix.count)))
     }
 
     /// JS 源对应的校验地址：`index.js` → `index.js.md5`。
@@ -101,9 +143,19 @@ public enum ConfigLocator {
         return URL(string: text, relativeTo: base)?.absoluteURL
     }
 
-    /// 缓存文件名：`config-<md5(url)>.<ext>`。
+    /// 缓存文件名：`config-<md5(url)>.<ext>`（JSON 与内联配置用）。
     public static func cacheFileName(for url: URL, extension ext: String) -> String {
         "config-\(MD5.hexDigest(of: url.absoluteString)).\(ext)"
+    }
+
+    /// JS 源的缓存目录名：一个接口一个目录，避免不同 bundle 互相覆盖。
+    public static func scriptCacheDirectoryName(for url: URL) -> String {
+        "bundle-\(MD5.hexDigest(of: url.absoluteString))"
+    }
+
+    /// JS 源的缓存**相对路径**：`bundle-<md5(url)>/index.js`。
+    public static func scriptCacheFileName(for url: URL) -> String {
+        scriptCacheDirectoryName(for: url) + "/" + scriptFileName
     }
 
     /// 用远端 `.md5` 文本校验本地 bundle 是否需要更新。

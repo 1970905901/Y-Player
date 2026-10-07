@@ -54,6 +54,26 @@ public struct NodeRuntimeConfiguration: Sendable, Equatable {
         scriptURL.lastPathComponent.lowercased() == "index.js"
     }
 
+    /// bundle 同级的 `data/` 目录 —— `NODE_PATH` 指向它。
+    ///
+    /// 依据参考实现 webhtv `NodeBoot`：bundle 的 `db.json` 与代理缓存 `vod_cache` 都落在这里，
+    /// **不设 `NODE_PATH` 会回退到进程 CWD**，代理拿不到可靠的缓存目录、表现为「返回 200 但 0 字节」。
+    /// 真机 App Bundle 不可写，所以这个目录必须在容器内（我们让它与 bundle 同级）。
+    public var bundleDataDirectory: URL {
+        scriptURL.deletingLastPathComponent().appendingPathComponent("data", isDirectory: true)
+    }
+
+    /// 创建 `data/` 目录；失败返回 nil（调用方据此决定是否跳过 `NODE_PATH`）。
+    public func makeBundleDataDirectory(fileManager: FileManager = .default) -> URL? {
+        let directory = bundleDataDirectory
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            return directory
+        } catch {
+            return nil
+        }
+    }
+
     /// 组装子进程环境变量。
     ///
     /// - Parameter base: 基础环境（默认继承当前进程；测试里传入固定字典以便断言）。

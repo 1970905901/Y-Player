@@ -60,7 +60,9 @@ jobs:
       - name: Real bundle probe (6.29 MB download; informational — never fails the run)
         continue-on-error: true
         env:
-          YPLAYER_NODE_PROBE: real-bundle
+          # 必须带 TEST_RUNNER_ 前缀：XCTest 里 App 进程的环境来自**模拟器启动**，
+          # shell 的 env 传不进去（首轮就是这样被静默跳过的，见 M16P4 第七节）。
+          TEST_RUNNER_YPLAYER_NODE_PROBE: real-bundle
         run: |
           DEVICE_ID=$(bash Scripts/pick_simulator.sh)
           xcodebuild test \

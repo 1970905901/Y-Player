@@ -127,6 +127,20 @@ xcodegen generate                           # 工程已把 NodeMobile.xcframewor
    `RealBundleHostProbeTests`（真 bundle，需 `YPLAYER_NODE_PROBE=real-bundle`）在 CI 里 `continue-on-error`，只作信息；
 3. 每一步 `print` 后立刻 `fflush`：下次若再出现进程消失，日志里能直接看出死在**哪一步**。
 
-预载依赖 libnode 的选项解析接受 `-r`。若某个版本不接受（症状同样是启动即消失），
-可用 `NodeRuntimeConfiguration(prefersPreload: false)` 关掉它 —— 开关与理由都写在类型注释里。
+### 2026-10-07 首轮模拟器结果（真 iOS 运行时）
+
+| 观察到的事实 | 结论 |
+| --- | --- |
+| `EmbeddedNodeHostTests` **passed**（0.346 s；从 `host starting` 到断言完成 **1.7 s**） | **第 1 项成立**：`dup2` 抓到的 stdout 里确实有就绪行 —— 能拿到 baseURL 才可能取到站点；第 2 项（env 注入）、第 5 项（容器临时目录里的脚本 node 读得到）同时成立 |
+| 预载默认开启（`prefersPreload: true`）而链路仍然通过 | libnode 接受 `-r`，预载不会破坏启动 |
+| `RealBundleHostProbeTests` **skipped** | 首次把 `YPLAYER_NODE_PROBE` 放在 shell `env:` 里 —— App 进程的环境来自**模拟器启动**，必须用 `TEST_RUNNER_` 前缀。已修（`simulator.yml`），真 bundle 待下一轮 |
+| `testMpvDependencyLinkedButEngineNotImplemented` 耗时 **13.6 s** | 可疑：`MpvAvailability.summary`（界面会调用）不该这么慢，待查是否与首次加载 MPVKit 动态库有关 |
+
+第 3 项（体积 / 冷启动 / 常驻内存 / 无 JIT 性能）与第 4 项（`child_process` / `worker_threads`）
+仍待真 bundle 探针给出：预载会把 `preload module ok/MISSING: …` 写进落盘日志，
+下次跑真 bundle 时直接读那段即可。
+
+预载依赖 libnode 的选项解析接受 `-r`（首轮已间接验证）。若某个版本不接受
+（症状同样是启动即消失），可用 `NodeRuntimeConfiguration(prefersPreload: false)` 关掉它 ——
+开关与理由都写在类型注释里。
 

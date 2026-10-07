@@ -32,10 +32,17 @@ extension NodeRuntimeAdapter {
             )
         }
 
+        var settings = configuration
+        // NODE_PATH 指向 bundle 同级的 data/（参考实现 webhtv NodeBoot 的硬要求：
+        // 不设会回退到进程 CWD，代理拿不到缓存目录、返回 200 但 0 字节）。
+        if let dataDirectory = settings.makeBundleDataDirectory() {
+            settings.environment["NODE_PATH"] = dataDirectory.path
+        }
+
         let process = Process()
         process.executableURL = executable
         process.arguments = [configuration.scriptURL.path]
-        process.environment = configuration.processEnvironment()
+        process.environment = settings.processEnvironment()
         process.standardInput = FileHandle.nullDevice
 
         let pipe = Pipe()

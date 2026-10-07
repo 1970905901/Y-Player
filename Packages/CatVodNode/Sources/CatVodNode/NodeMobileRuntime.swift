@@ -106,6 +106,12 @@ extension NodeMobileRuntime {
     /// 否则一个日志功能会把整条链路拖死。
     func makeLaunchPlan() -> (NodeMobileLaunchPlan, URL?) {
         var configuration = configuration
+        // NODE_PATH 指向 bundle 同级的 data/（见 NodeRuntimeConfiguration.bundleDataDirectory）。
+        if let dataDirectory = configuration.makeBundleDataDirectory() {
+            configuration.environment["NODE_PATH"] = dataDirectory.path
+        } else {
+            output.append("无法创建 bundle 的 data/ 目录，未设置 NODE_PATH（bundle 的 db/代理缓存可能不可用）")
+        }
         guard configuration.prefersPreload else {
             return (NodeMobileLaunchPlan(configuration: configuration), nil)
         }

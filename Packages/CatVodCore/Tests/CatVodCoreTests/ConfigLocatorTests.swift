@@ -25,14 +25,15 @@ struct MD5Tests {
 
 @Suite("配置入口定位（.js ↔ .js.md5）")
 struct ConfigLocatorTests {
-    @Test("JS 源配置：关联 .js.md5 校验地址与缓存名")
+    @Test("JS 源配置：关联 .js.md5 校验地址与 index.js 缓存路径")
     func javascriptConfig() throws {
         let source = try #require(ConfigLocator.locate("https://9280.kstore.vip/ceshi/index.js"))
         #expect(source.kind == .javaScript)
         // 关键：校验地址是 index.js.md5，而不是 index.md5
         #expect(source.digestURL?.absoluteString == "https://9280.kstore.vip/ceshi/index.js.md5")
-        #expect(source.cacheFileName.hasPrefix("config-"))
-        #expect(source.cacheFileName.hasSuffix(".js"))
+        // 缓存路径必须**以 index.js 结尾**（bundle 的自启动条件），且每接口一个目录
+        #expect(source.cacheFileName.hasPrefix("bundle-"))
+        #expect(source.cacheFileName.hasSuffix("/index.js"))
     }
 
     @Test("JSON 配置：无校验地址，缓存名为 .json")
@@ -75,6 +76,25 @@ struct ConfigLocatorTests {
         #expect(!ConfigLocator.needsDownload(remoteDigest: digest, localDigest: digest))
         // 摘要不同 → 重新下载
         #expect(ConfigLocator.needsDownload(remoteDigest: digest, localDigest: MD5.hexDigest(of: "other")))
+    }
+
+    @Test("填 .js.md5 是正规输入（参考实现 webhtv 就是让用户这么填）：归一化为 .js 且与 .js 填法同缓存")
+    func digestFileIsCanonicalInput() throws {
+        let fromDigest = try #require(ConfigLocator.locate("https://9280.kstore.vip/ceshi/index.js.md5"))
+        let fromScript = try #require(ConfigLocator.locate("https://9280.kstore.vip/ceshi/index.js"))
+
+        #expect(fromDigest.kind == .javaScript)
+        #expect(fromDigest.url?.absoluteString == "https://9280.kstore.vip/ceshi/index.js")
+        #expect(fromDigest.digestURL?.absoluteString == "https://9280.kstore.vip/ceshi/index.js.md5")
+        // 两种填法必须落到同一个缓存目录，否则同一个源会被重复下载 6 MB
+        #expect(fromDigest.cacheFileName == fromScript.cacheFileName)
+        #expect(fromDigest.cacheFileName.hasSuffix("/index.js"))
+    }
+
+    @Test("普通 .md5（不是 JS 源的校验文件）仍按 JSON 处理")
+    func plainDigestStaysJSON() throws {
+        let source = try #require(ConfigLocator.locate("https://example.com/tvbox/config.md5"))
+        #expect(source.kind == .json)
     }
 }
 

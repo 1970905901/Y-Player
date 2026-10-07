@@ -33,23 +33,25 @@ struct SourceCacheTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = SourceCacheStore(directory: directory)
 
-        // 当前接口是 JS 源：应有 bundle 与 .md5 两个文件
+        // 当前接口是 JS 源：缓存是**一个目录**（bundle-<md5>/，内含 index.js 与 index.js.md5）
         let current = SourceCacheStore.cacheFileNames(for: cacheTestJSURL)
-        #expect(current.count == 2)
+        #expect(current.count == 1)
         for name in current {
             try writeCacheFile(name, bytes: 16, in: directory, modified: nil)
         }
         try writeCacheFile("config-deadbeef.js", bytes: 32, in: directory, modified: nil)
+        try writeCacheFile("config-deadbeef.js.md5", bytes: 8, in: directory, modified: nil)
 
         let entries = try store.entries(currentURL: cacheTestJSURL)
         // 注意：`#expect` 会把 `x.method(arg)` 展开成 `__checkFunctionCall(...)`；
         // `filter`/`first(where:)` 这类 `rethrows` 调用（尤其是 key-path 形式）会因此报「call can throw」，
         // 所以先把结果取到局部变量再断言。
         let currentEntries = entries.filter(\.isCurrent)
-        let digestEntry = entries.first { $0.fileName.hasSuffix(".md5") }
+        let digestEntry = entries.first { $0.isDigest }
 
         #expect(entries.count == 3)
-        #expect(currentEntries.count == 2)
+        #expect(currentEntries.count == 1)
+        #expect(currentEntries.allSatisfy { $0.fileName.hasPrefix("bundle-") })
         #expect(digestEntry?.isDigest == true)
     }
 
@@ -73,12 +75,15 @@ struct SourceCacheTests {
         #expect(!summary.formattedTotalSize.isEmpty)
     }
 
-    @Test("缓存文件名只有一处来源（与 ConfigLocator 一致）")
+    @Test("缓存条目名只有一处来源（与 ConfigLocator 一致）")
     func namesComeFromLocator() throws {
         let located = try #require(ConfigLocator.locate(cacheTestJSURL.absoluteString))
+        let scriptURL = try #require(located.url)
+        // JS 源：缓存路径是 bundle-<md5>/index.js，而清理/淘汰按它的**目录**进行
+        #expect(located.cacheFileName == ConfigLocator.scriptCacheDirectoryName(for: scriptURL) + "/index.js")
         #expect(
             SourceCacheStore.cacheFileNames(for: cacheTestJSURL)
-                == [located.cacheFileName, located.cacheFileName + ConfigLocator.digestSuffix]
+                == [ConfigLocator.scriptCacheDirectoryName(for: scriptURL)]
         )
         #expect(SourceCacheStore.cacheFileNames(for: nil).isEmpty)
     }

@@ -30,15 +30,17 @@ public actor SourceRepository {
         }
         try ensureCacheDirectory()
 
+        let loaded: LoadedSource
         switch source.kind {
         case .inline:
             let config = try decodeConfig(Data(raw.utf8))
-            return LoadedSource(kind: .json, config: config, warnings: config.validationWarnings)
+            loaded = LoadedSource(kind: .json, config: config, warnings: config.validationWarnings)
         case .json:
-            return try await loadJSON(source: source, forceRefresh: forceRefresh)
+            loaded = try await loadJSON(source: source, forceRefresh: forceRefresh)
         case .javaScript:
-            return try await loadJavaScript(source: source, forceRefresh: forceRefresh)
+            loaded = try await loadJavaScript(source: source, forceRefresh: forceRefresh)
         }
+        return loaded
     }
 
     // MARK: - 辅助（同模块扩展也使用）
@@ -51,7 +53,9 @@ public actor SourceRepository {
         do {
             config = try JSONDecoder().decode(SourceConfig.self, from: data)
         } catch {
-            throw CatVodError.config(reason: "配置不是合法 JSON：\(error)")
+            // 不把 `DecodingError` 原文甩给用户：真机上它长这样 ——
+            // `dataCorrupted(… NSJSONSerializationErrorIndex=2)`，看的人不知道该改什么。
+            throw CatVodError.config(reason: Self.describeNonJSON(data))
         }
         // 上游把 `msg` 视为错误响应，必须直接失败。
         if config.isErrorResponse {
@@ -111,5 +115,44 @@ extension SourceRepository {
                 warnings: ["网络不可用，已使用本地缓存配置：\(reason)"] + config.validationWarnings
             )
         }
+    }
+}
+
+// MARK: - 面向用户的失败说明
+
+extension SourceRepository {
+    /// 把「不是 JSON」翻译成**可操作**的说明。
+    ///
+    /// 实测最容易踩到的两种输入都给确切指引：
+    /// - 填了同目录的 `.md5` 校验文件（32 位十六进制摘要，以数字开头时 JSON 恰好会在第 2 列报错）；
+    /// - 填了 JS bundle 的地址但没以 `.js` 结尾，于是被当成 JSON 配置。
+    static func describeNonJSON(_ data: Data) -> String {
+        let head = String(decoding: data.prefix(64), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let digest = digestLikeHead(head) {
+            return "远端返回的是 MD5 校验文本（\(digest)），不是配置。"
+                + "若这是猫源接口，请填写同目录下的 index.js 或 index.js.md5"
+        }
+        if isScriptLike(head) {
+            return "远端返回的像是 JS 脚本（开头 \(head.prefix(24))…，共 \(data.count) 字节），不是 JSON 配置。"
+                + "若这是 JS 源，请确认地址以 .js 结尾"
+        }
+        return "远端返回的不是 JSON 配置（\(data.count) 字节，开头：\(head.prefix(48))）"
+    }
+
+    /// 开头是 32 位十六进制摘要时返回它，否则 nil（容忍尾部换行与后面的文件名）。
+    private static func digestLikeHead(_ head: String) -> String? {
+        let token = head.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? head
+        guard token.count >= 32 else {
+            return nil
+        }
+        let candidate = String(token.prefix(32))
+        return candidate.allSatisfy(\.isHexDigit) ? candidate : nil
+    }
+
+    /// 开头像 JS 脚本（bundle 的常见形态）。
+    private static func isScriptLike(_ head: String) -> Bool {
+        ["!function", "(function", "function ", "var ", "const ", "let ", "import ", "/*"]
+            .contains { head.hasPrefix($0) }
     }
 }
