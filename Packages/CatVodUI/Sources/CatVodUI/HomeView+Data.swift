@@ -73,7 +73,7 @@ extension HomeView {
     }
 
     func describe(_ error: Error) -> String {
-        (error as? CatVodError)?.errorDescription ?? error.localizedDescription
+        userFacingMessage(error)
     }
 }
 

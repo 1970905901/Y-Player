@@ -69,7 +69,11 @@ public struct HomeView: View {
         .adaptiveListStyle()
         .navigationTitle("首页")
         .adaptiveToolbar {
-            EmptyView()
+            NavigationLink {
+                SearchView(model: model)
+            } label: {
+                Image(systemName: "magnifyingglass")
+            }
         } trailing: {
             Button {
                 Task { await loadHome(force: true) }
