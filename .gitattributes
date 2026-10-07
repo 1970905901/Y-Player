@@ -1,0 +1,22 @@
+# 统一换行与二进制处理，避免跨平台（Windows 开发 / macOS CI）出现整文件 diff
+* text=auto eol=lf
+
+*.swift text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.py text eol=lf
+*.ps1 text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.icns binary
+*.xcframework binary
+*.a binary
+*.dylib binary
+*.so binary
+*.zip binary
+*.ipa binary
