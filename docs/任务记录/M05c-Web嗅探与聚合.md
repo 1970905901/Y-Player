@@ -74,4 +74,26 @@
 
 ## 七、验证记录
 
-（CI 结果与人工清单在第二阶段一并补齐；本阶段的自动化验证是 4 个 Core 套件 + 1 个 Source 套件。）
+### 2026-10-07 · 本轮 CI（Windows 上无 Swift 工具链，编译/格式问题只能靠 CI 发现）
+
+| 提交 | 作业 | 结果 | 具体错误 → 修复 |
+| --- | --- | --- | --- |
+| `2ee7fed`（第一阶段） | SwiftPM | ❌ | `#expect(list.insert(x))`：宏参数里不能调 `mutating` 方法（`'$0' is immutable`）→ 先取局部变量再断言 |
+| `2ee7fed` | Lint | ❌ | `return .parsed(try await …)`（`hoistTry`/`hoistAwait`）、`public init() {}`（`emptyBraces`）→ 均已修 |
+| `dbc8e5b`（第二阶段） | Lint | ❌ | 空 `update*` 实现要写 `{ }`、多行 `if` 的 `{` 要单独一行、逃逸闭包去掉冗余 `self.` → 均已修 |
+| `dbc8e5b` | SwiftPM | ❌ | `AggregateParserTests` 缺 `@testable import CatVodSource`（`cannot find 'AggregateParser' in scope`）→ 已补并按字母序排好 |
+| `b2a3f58` | Lint | ✅ | — |
+| `b2a3f58` | SwiftPM | ❌ | 断言写错：默认媒体正则 `(?:\?.*)?` 是**贪婪**的（会把 `"></video>` 一起吞掉，与上游一致）→ 断言改成「以该地址开头」，另补一个干净用例 |
+
+结论与状态：以 **Actions 里最新一条提交**为准（本文件会随每次修复更新）。
+本轮踩到的 9 类坑（含 `private(set)` 跨文件、`read<T>` 双可选、FlyingFox 同名类型等）已写进
+`docs/构建与分发.md` 的「已知的构建陷阱」8–16，并让 `Tools/out/check_swift.py` 覆盖其中两类（空实现 `{}`、行长等）。
+
+自动化验证：`SniffRulesTests`、`SniffedPageListTests`、`WebSniffHeadersTests`、`AggregateParsePlanTests`、
+`AggregateParserTests`（另加既有 114 个测试）在同一次 SwiftPM 运行里执行。
+
+人工清单（需 Mac / 真机）：
+1. `type=1` 的集：解析后进播放页；失败给可读原因（缺名解析器 / 地址过短 / 非 2xx / 不是 JSON）。
+2. `type=0` 的集：先看到「正在用解析页嗅探真实地址…」，页面加载后进播放页；
+   站点要求人机验证时，页面会**展开**给用户操作（上游此时弹对话框）。
+3. `type=4` 的集：JSON 侧并发与 Web 侧并行，**谁先成功算谁**；两条都失败时原因合并展示。

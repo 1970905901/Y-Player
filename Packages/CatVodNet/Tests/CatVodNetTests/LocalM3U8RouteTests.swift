@@ -18,7 +18,15 @@ struct LocalM3U8RouteTests {
         for (key, value) in headers {
             allHeaders[key] = value
         }
-        return FlyingFox.HTTPRequest(method: method, version: .http11, path: "/m3u8", query: query, headers: allHeaders)
+        // 注意：FlyingFox 的 `body` 参数**没有默认值**，必须显式给（CI 报过 missing argument for parameter 'body'）。
+        return FlyingFox.HTTPRequest(
+            method: method,
+            version: .http11,
+            path: "/m3u8",
+            query: query,
+            headers: allHeaders,
+            body: Data()
+        )
     }
 
     private func makeHandler(
