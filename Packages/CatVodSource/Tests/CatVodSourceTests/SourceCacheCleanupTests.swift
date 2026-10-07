@@ -37,7 +37,8 @@ struct SourceCacheCleanupTests {
         let allCurrent = remaining.allSatisfy(\.isCurrent)
 
         #expect(removed == 1)
-        #expect(remaining.count == 2)
+        // JS 源的缓存是**一个目录**（bundle-<md5>/），所以清掉残留后只剩 1 个条目
+        #expect(remaining.count == 1)
         #expect(allCurrent)
     }
 
