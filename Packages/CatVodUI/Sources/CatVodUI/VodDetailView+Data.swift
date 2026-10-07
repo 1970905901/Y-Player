@@ -2,11 +2,38 @@ import CatVodCore
 import CatVodNet
 import CatVodPlayer
 import CatVodSource
+import CatVodStore
 import SwiftUI
 
 // 详情页数据逻辑与播放能力判定。
 
 extension VodDetailView {
+    /// 读取本片进度（用于「上次看到这里」标记）。
+    func loadProgress() async {
+        guard let progressKey else {
+            progress = nil
+            return
+        }
+        progress = await model.progressStore.progress(for: progressKey)
+    }
+
+    /// 换源：切到候选站点/条目并重新拉详情。
+    ///
+    /// 必须清空当前 `detail`/`lines`/线路选择，否则会出现「站点已换但选集还是旧的」的串数据。
+    func switchSource(to candidate: ChangeSourceCandidate) {
+        site = candidate.site
+        vodID = candidate.item.vodID
+        detail = SpiderResult()
+        lines = []
+        selectedLineIndex = 0
+        errorText = ""
+        progress = nil
+        Task {
+            await loadDetail(force: true)
+            await loadProgress()
+        }
+    }
+
     /// 拉取详情并解析线路/选集。
     ///
     /// - Parameter force: 为 true 时绕过本地缓存重新请求（下拉刷新、换源）。

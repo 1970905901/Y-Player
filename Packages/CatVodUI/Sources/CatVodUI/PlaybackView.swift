@@ -1,6 +1,8 @@
 import AVKit
 import CatVodCore
 import CatVodPlayer
+import CatVodStore
+import Foundation
 import SwiftUI
 
 /// 播放页。
@@ -14,6 +16,12 @@ public struct PlaybackView: View {
     let title: String
     /// 播放设置（内核 + 解码方式）：来自设置页，**运行时严格遵循，不自动降级**。
     let settings: PlaybackSettings
+    /// 进度记录键；nil 表示不记录进度（例如从搜索页直接播放的临时场景）。
+    let progressKey: PlaybackKey?
+    /// 当前集在线路内的下标（`-1` 表示未知），仅用于详情页「上次看到这里」标记与进度落库。
+    let progressEpisodeIndex: Int
+    /// 进度存储；nil 表示不记录。
+    let progressStore: PlaybackProgressStore?
 
     @State private var engine: AVPlayerEngine?
     @State private var player: AVPlayer?
@@ -21,15 +29,29 @@ public struct PlaybackView: View {
     @State private var engineText = ""
     @State private var errorText = ""
     @State private var eventTask: Task<Void, Never>?
+    @State private var resumedFromText = ""
+    @State private var latestPosition: Double = 0
+    @State private var latestDuration: Double = 0
+    @State private var isFinished = false
+    @State private var lastPersistAt = Date.distantPast
+
+    /// 进度落库节流间隔（秒）：播放中不必每秒写一次。
+    static let persistInterval: TimeInterval = 5
 
     public init(
         resource: MediaResource,
         title: String,
-        settings: PlaybackSettings = PlaybackSettings()
+        settings: PlaybackSettings = PlaybackSettings(),
+        progressKey: PlaybackKey? = nil,
+        progressEpisodeIndex: Int = -1,
+        progressStore: PlaybackProgressStore? = nil
     ) {
         self.resource = resource
         self.title = title
         self.settings = settings
+        self.progressKey = progressKey
+        self.progressEpisodeIndex = progressEpisodeIndex
+        self.progressStore = progressStore
     }
 
     public var body: some View {
@@ -53,6 +75,16 @@ public struct PlaybackView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                if !resumedFromText.isEmpty {
+                    Section("进度") {
+                        Text(resumedFromText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button("从头播放") {
+                            Task { await restartFromBeginning() }
+                        }
+                    }
+                }
                 if !errorText.isEmpty {
                     Section("错误") {
                         Text(errorText)
@@ -69,7 +101,11 @@ public struct PlaybackView: View {
             eventTask?.cancel()
             eventTask = nil
             let current = engine
-            Task { await current?.teardown() }
+            Task {
+                // 退出前落一次进度（节流不适用于离场）。
+                await persist(force: true)
+                await current?.teardown()
+            }
         }
     }
 
@@ -118,7 +154,8 @@ extension PlaybackView {
         eventTask = Task { await consume(systemEngine) }
 
         do {
-            try await systemEngine.load(resource)
+            // 续播：有进度记录就从上次位置起播（已看完或过短会从头，规则在 PlaybackProgress.resumePosition）。
+            try await systemEngine.load(resumableResource())
             await systemEngine.play()
         } catch let error as PlayerError {
             errorText = error.message
@@ -132,12 +169,85 @@ extension PlaybackView {
             switch event {
             case let .stateChanged(state):
                 stateText = describe(state)
+                if state == .ended {
+                    isFinished = true
+                    await persist(force: true)
+                } else if state == .paused {
+                    await persist(force: true)
+                }
             case let .error(message):
                 errorText = message
-            case .timeChanged, .bufferedChanged, .tracksChanged, .speedChanged:
+            case let .timeChanged(current, duration):
+                latestPosition = current
+                latestDuration = duration
+                await persist(force: false)
+            case .bufferedChanged, .tracksChanged, .speedChanged:
                 break
             }
         }
+    }
+
+    /// 续播资源：有进度记录时把 `startPosition` 换成上次位置。
+    func resumableResource() async -> MediaResource {
+        guard let progressKey, let progressStore, let saved = await progressStore.progress(for: progressKey) else {
+            return resource
+        }
+        let resume = saved.resumePosition()
+        guard resume > 0 else {
+            return resource
+        }
+        var copy = resource
+        copy.startPosition = resume
+        resumedFromText = "已从上次位置续播（\(Self.timeText(resume))）"
+        return copy
+    }
+
+    /// 落一次进度（节流；`force` 用于暂停 / 播放结束 / 离开页面）。
+    func persist(force: Bool) async {
+        guard let progressKey, let progressStore, latestPosition > 0 else {
+            return
+        }
+        let now = Date()
+        if !force, now.timeIntervalSince(lastPersistAt) < Self.persistInterval {
+            return
+        }
+        lastPersistAt = now
+        await progressStore.save(
+            PlaybackProgress(
+                key: progressKey,
+                position: latestPosition,
+                duration: latestDuration,
+                isFinished: isFinished,
+                episodeIndex: progressEpisodeIndex,
+                updatedAt: now
+            )
+        )
+    }
+
+    /// 从头播放：清掉进度记录并 seek 到 0。
+    func restartFromBeginning() async {
+        latestPosition = 0
+        isFinished = false
+        resumedFromText = ""
+        if let progressKey, let progressStore {
+            await progressStore.clear(for: progressKey)
+        }
+        guard let engine else {
+            return
+        }
+        await engine.seek(to: 0)
+    }
+
+    /// 时间文本（`1:02:03` 或 `2:34`）。
+    static func timeText(_ seconds: Double) -> String {
+        let total = Int(max(seconds, 0))
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let secs = total % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, secs)
+        }
+        return String(format: "%d:%02d", minutes, secs)
     }
 
     func describe(_ state: PlayerState) -> String {

@@ -96,6 +96,7 @@ public final class AppModel: ObservableObject {
         let base = cacheDirectory ?? Self.defaultCacheDirectory()
         self.cacheDirectory = base
         sessionTransport = URLSessionTransport()
+        progressStore = InMemoryPlaybackProgressStore()
 
         configURL = defaults.string(forKey: StorageKey.configURL) ?? ""
         let storedEngine = defaults.string(forKey: StorageKey.preferredEngine)
@@ -169,6 +170,17 @@ public final class AppModel: ObservableObject {
     public func makePictureFiller() -> PictureFiller {
         PictureFiller(client: makeCMSClient())
     }
+
+    /// 换源服务：按片名在其它站点搜索候选（`changeable == 0` 与本平台不可用的站点会被跳过）。
+    public func makeChangeSourceService() -> ChangeSourceService {
+        ChangeSourceService(client: makeCMSClient())
+    }
+
+    /// 播放进度存储。
+    ///
+    /// M2 用内存实现（进程内有效）；M8 用 GRDB 落库时只需替换 ``progressStore`` 的构造，
+    /// 详情页与播放页按协议编写、不感知底层实现。
+    public let progressStore: PlaybackProgressStore
 
     /// 接口（源配置）缓存管理。
     ///

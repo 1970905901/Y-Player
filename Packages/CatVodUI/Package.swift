@@ -12,11 +12,12 @@ let package = Package(
         .package(path: "../CatVodCore"),
         .package(path: "../CatVodSource"),
         .package(path: "../CatVodPlayer"),
+        .package(path: "../CatVodStore"),
     ],
     targets: [
         .target(
             name: "CatVodUI",
-            dependencies: ["CatVodCore", "CatVodSource", "CatVodPlayer"],
+            dependencies: ["CatVodCore", "CatVodSource", "CatVodPlayer", "CatVodStore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(

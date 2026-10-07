@@ -1,5 +1,6 @@
 import CatVodCore
 import CatVodSource
+import CatVodStore
 import SwiftUI
 
 /// 详情页：影片信息 → 线路 → 选集 → 播放。
@@ -12,23 +13,34 @@ import SwiftUI
 @MainActor
 public struct VodDetailView: View {
     @ObservedObject var model: AppModel
-    let site: Site?
-    let vodID: String
+    /// 当前站点/条目：**换源会就地替换**，因此是 `@State` 而不是 `let`。
+    @State var site: Site?
+    @State var vodID: String
 
     @State var detail = SpiderResult()
     @State var lines: [PlaylistParser.Line] = []
     @State var selectedLineIndex = 0
     @State var isLoading = false
     @State var errorText = ""
+    @State private var isShowingChangeSource = false
+    @State private var progress: PlaybackProgress?
 
     public init(model: AppModel, site: Site?, vodID: String) {
         self.model = model
-        self.site = site
-        self.vodID = vodID
+        _site = State(initialValue: site)
+        _vodID = State(initialValue: vodID)
     }
 
     var vod: VodItem? {
         detail.list.first
+    }
+
+    /// 进度记录键（站点 + vodID）；缺站点时为 nil（不记录）。
+    var progressKey: PlaybackKey? {
+        guard let site else {
+            return nil
+        }
+        return PlaybackKey(siteKey: site.key, vodID: vodID)
     }
 
     var currentLine: PlaylistParser.Line? {
@@ -36,6 +48,10 @@ public struct VodDetailView: View {
             return lines.first
         }
         return lines[selectedLineIndex]
+    }
+
+    var episodes: [PlaylistParser.Episode] {
+        currentLine?.episodes ?? []
     }
 
     public var body: some View {
@@ -55,8 +71,38 @@ public struct VodDetailView: View {
         }
         .adaptiveListStyle()
         .navigationTitle(vod?.vodName.isEmpty == false ? (vod?.vodName ?? "详情") : "详情")
-        .refreshable { await loadDetail(force: true) }
-        .task { await loadDetail() }
+        .refreshable {
+            await loadDetail(force: true)
+            await loadProgress()
+        }
+        .adaptiveToolbar {
+            EmptyView()
+        } trailing: {
+            Button {
+                isShowingChangeSource = true
+            } label: {
+                Label("换源", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .disabled(model.sites.count < 2)
+        }
+        .sheet(isPresented: $isShowingChangeSource) {
+            ChangeSourceView(
+                model: model,
+                title: vod?.vodName ?? "",
+                currentSiteKey: site?.key,
+                onPick: { candidate in
+                    switchSource(to: candidate)
+                }
+            )
+        }
+        .task {
+            await loadDetail()
+            await loadProgress()
+        }
+        .onAppear {
+            // 从播放页返回时刷新「上次看到这里」标记。
+            Task { await loadProgress() }
+        }
     }
 
     // MARK: - 区块
@@ -112,6 +158,11 @@ public struct VodDetailView: View {
                     Text(vod.vodContent)
                         .font(.footnote)
                 }
+                if let summary = progressSummary {
+                    Text(summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -129,17 +180,22 @@ public struct VodDetailView: View {
 
     private var episodesSection: some View {
         Section("选集") {
-            if lines.isEmpty {
+            if episodes.isEmpty {
                 Text(isLoading ? "加载中…" : "没有可用线路")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            ForEach(currentLine?.episodes ?? []) { episode in
+            ForEach(Array(episodes.enumerated()), id: \.element.id) { index, episode in
                 NavigationLink {
-                    destination(for: episode)
+                    destination(for: episode, at: index)
                 } label: {
                     HStack {
                         Text(episode.name.isEmpty ? "播放" : episode.name)
+                        if isLastWatched(index) {
+                            Text("上次看到")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
                         Spacer()
                         if makeResource(for: episode) == nil {
                             Image(systemName: "exclamationmark.triangle")
@@ -151,13 +207,37 @@ public struct VodDetailView: View {
         }
     }
 
+    /// 「上次看到 · 第 N 集 · 12:34」；没有进度时为 nil。
+    private var progressSummary: String? {
+        guard let progress, !progress.isFinished, progress.position > 0 else {
+            return nil
+        }
+        let episodeName = episodes.indices.contains(progress.episodeIndex)
+            ? episodes[progress.episodeIndex].displayName
+            : ""
+        return ["上次看到", episodeName, PlaybackView.timeText(progress.position)]
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+
+    /// 是否为「上次看到」的那一集（**当前线路内**下标；跨线路/跨站对齐留 M8）。
+    private func isLastWatched(_ index: Int) -> Bool {
+        guard let progress, !progress.isFinished else {
+            return false
+        }
+        return progress.episodeIndex == index && progress.position > 0
+    }
+
     @ViewBuilder
-    private func destination(for episode: PlaylistParser.Episode) -> some View {
+    private func destination(for episode: PlaylistParser.Episode, at index: Int) -> some View {
         if let resource = makeResource(for: episode) {
             PlaybackView(
                 resource: resource,
                 title: episode.displayName,
-                settings: model.playbackSettings
+                settings: model.playbackSettings,
+                progressKey: progressKey,
+                progressEpisodeIndex: index,
+                progressStore: model.progressStore
             )
         } else {
             UnsupportedPlaybackView(reason: unsupportedReason(for: episode))
