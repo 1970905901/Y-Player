@@ -197,6 +197,11 @@ public enum PlayerEngineResolution: Sendable, Hashable {
 }
 
 /// 播放内核解析与创建。
+///
+/// 标注 `@MainActor`：创建系统内核（`AVPlayerEngine` 是 `@MainActor` 类，
+/// 因为 iOS 18 起 `AVPlayer` 本身受主线程约束）必须发生在主线程；
+/// 解析结果 `PlayerEngineResolution` 仍是普通值类型，可自由传递。
+@MainActor
 public struct PlayerCoordinator: Sendable {
     public init() {}
 

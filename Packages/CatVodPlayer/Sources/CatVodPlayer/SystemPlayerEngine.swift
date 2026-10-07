@@ -20,14 +20,16 @@ public final class AVPlayerEngine: PlayerEngine {
     /// 用户选择的解码方式（系统内核不支持强制切换，仅记录以便设置页如实展示）。
     public nonisolated let decoderMode: DecoderMode
 
-    private var continuation: AsyncStream<PlayerEvent>.Continuation?
-    private let player = AVPlayer()
-    private var timeObserver: Any?
-    private var endObserver: NSObjectProtocol?
-    private var monitoringTask: Task<Void, Never>?
-    private var state: PlayerState = .idle
-    private var lastTime: Double = 0
-    private var duration: Double = 0
+    // 说明：以下存储属性为模块内可见（非 private），因为就绪轮询与事件观测放在
+    // `SystemPlayerEngine+Monitoring.swift`（`private` 是文件作用域，跨文件无法访问）。
+    var continuation: AsyncStream<PlayerEvent>.Continuation?
+    let player = AVPlayer()
+    var timeObserver: Any?
+    var endObserver: NSObjectProtocol?
+    var monitoringTask: Task<Void, Never>?
+    var state: PlayerState = .idle
+    var lastTime: Double = 0
+    var duration: Double = 0
 
     public init(decoderMode: DecoderMode = .hardware) {
         self.decoderMode = decoderMode
