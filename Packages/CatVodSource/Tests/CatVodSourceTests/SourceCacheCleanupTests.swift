@@ -45,10 +45,11 @@ struct SourceCacheCleanupTests {
     func enforceLimit() throws {
         let directory = try makeCacheTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = SourceCacheStore(directory: directory, maxByteCount: 100)
+        // 上限 130：三个文件共 180 → 只需淘汰最旧的一个（120 ≤ 130）。
+        // 注意别把上限设成 100 —— 那要淘汰两个才对，会让断言与实现都显得"错"。
+        let store = SourceCacheStore(directory: directory, maxByteCount: 130)
         let now = Date()
 
-        // 当前接口（JSON）60 字节 + 两个旧 JS 缓存各 60 字节 → 共 180 > 100
         let currentName = SourceCacheStore.cacheFileNames(for: cacheTestJSONURL).first ?? "current.json"
         try writeCacheFile(currentName, bytes: 60, in: directory, modified: now)
         try writeCacheFile("config-oldest.js", bytes: 60, in: directory, modified: now.addingTimeInterval(-300))
@@ -56,7 +57,7 @@ struct SourceCacheCleanupTests {
 
         let removed = try store.enforceLimit(currentURL: cacheTestJSONURL)
         let remaining = try store.entries(currentURL: cacheTestJSONURL)
-        // `contains(where:)` 同样是 rethrows，取出宏外再断言。
+        // `contains(where:)` 是 rethrows，取出宏外再断言。
         let keepsCurrent = remaining.contains { $0.fileName == currentName }
         let droppedOldest = remaining.contains { $0.fileName == "config-oldest.js" }
 
