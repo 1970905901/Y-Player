@@ -1,4 +1,5 @@
 import CatVodCore
+import CatVodNet
 import CatVodPlayer
 import CatVodSource
 import CatVodStore
@@ -62,12 +63,12 @@ struct SpiderEpisodePlaybackView: View {
                 flag: lineName,
                 id: episode.url
             )
-            guard !result.primaryPlaybackURL.isEmpty else {
+            guard let playURL = result.primaryPlaybackURL, !playURL.isEmpty else {
                 errorText = "站点 play 接口没有返回播放地址（flag=\"\(lineName)\"）。"
                 return
             }
             resource = MediaResource(
-                url: result.primaryPlaybackURL,
+                url: playURL,
                 headers: HTTPHeaderMerger.merge([site.header, result.header]),
                 startPosition: 0,
                 format: result.format,
