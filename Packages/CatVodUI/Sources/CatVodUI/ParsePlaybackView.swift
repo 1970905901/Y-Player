@@ -112,15 +112,18 @@ struct ParsePlaybackView: View {
     // MARK: - 播放
 
     /// 播放资源：站点 header → 详情 header → 解析器给的 header，后者覆盖前者。
+    ///
+    /// 最后交给 ``AppModel/proxiedMediaResource(_:)``：需要 header 时改走本机 `/proxy`（M6），
+    /// 让 header 覆盖到子清单/分片/密钥请求上。
     private func resource(from parsed: ParsedPlayback) -> MediaResource {
-        MediaResource(
+        model.proxiedMediaResource(MediaResource(
             url: parsed.url,
             headers: HTTPHeaderMerger.merge([site.header, detail.header, parsed.headers]),
             startPosition: 0,
             format: detail.format,
             title: [vodName, episode.displayName].filter { !$0.isEmpty }.joined(separator: " "),
             artwork: detail.artwork
-        )
+        ))
     }
 
     /// 进度上下文：与 ``VodDetailView`` 的直链播放保持一致（片名/封面/站源/线路/集名）。

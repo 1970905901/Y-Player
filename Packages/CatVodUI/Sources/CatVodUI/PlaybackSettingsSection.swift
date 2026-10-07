@@ -24,6 +24,17 @@ struct PlaybackSettingsSection: View {
                     Text(mode.displayName).tag(mode)
                 }
             }
+            Toggle("本地代理注入 header", isOn: $model.isLocalProxyEnabled)
+            Text(
+                "开启后，需要 header 的播放地址会改走本机服务（127.0.0.1），"
+                    + "由它把 Referer/UA/Cookie 注入到主清单、子清单、分片与密钥请求上——"
+                    + "系统播放器本身只能给主请求设 header。"
+            )
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            if !model.localProxyNotice.isEmpty {
+                InfoRow(title: "本机服务", value: model.localProxyNotice)
+            }
             switch resolution {
             case let .ready(kind):
                 InfoRow(title: "将使用", value: kind.displayName)

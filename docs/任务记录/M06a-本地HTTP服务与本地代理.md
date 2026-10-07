@@ -36,8 +36,8 @@
 
 ## 三、明确未做
 
-1. **播放器接线**：本轮只交付服务与编码器，让 `PlaybackView`/`SpiderEpisodePlaybackView` 真的走 `/proxy`
-   属 M06b —— 避免把 UI/播放器改动与网络内核混在一个提交里，出问题难定位。
+1. ~~**播放器接线**：本轮只交付服务与编码器~~ → 已在 **M06b** 完成（`proxiedMediaResource(_:)` +
+   设置开关 + 冷启动启动本机服务）。
 2. **流式转发**：现在是一次性缓冲；超过 32MB 的响应会 502 并写明原因（HLS 分片/密钥/清单足够用）。
    M06b 起改为「落地临时文件 + `HTTPBodySequence(file:range:)`」。
 3. **代理真正生效**（`connectionProxyDictionary` 走 HTTP/SOCKS + 认证）：本轮只做**选择内核**与地址解析；

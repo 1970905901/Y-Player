@@ -1,4 +1,5 @@
 import CatVodCore
+import Foundation
 import Testing
 
 @Suite("本地代理地址与参数编解码")

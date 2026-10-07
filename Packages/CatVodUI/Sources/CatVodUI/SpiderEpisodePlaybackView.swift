@@ -87,14 +87,14 @@ struct SpiderEpisodePlaybackView: View {
                 errorText = "站点 play 接口没有返回播放地址（flag=\"\(lineName)\"）。"
                 return
             }
-            resource = MediaResource(
+            resource = model.proxiedMediaResource(MediaResource(
                 url: playURL,
                 headers: HTTPHeaderMerger.merge([site.header, result.header]),
                 startPosition: 0,
                 format: result.format,
                 title: [title, episode.displayName].filter { !$0.isEmpty }.joined(separator: " "),
                 artwork: result.artwork
-            )
+            ))
         } catch {
             errorText = userFacingMessage(error)
         }

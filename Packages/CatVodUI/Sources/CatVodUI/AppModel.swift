@@ -52,6 +52,7 @@ public final class AppModel: ObservableObject {
         static let preferredEngine = "yplayer.preferredEngine"
         static let decoderMode = "yplayer.decoderMode"
         static let homeLayout = "yplayer.homeLayout"
+        static let localProxyEnabled = "yplayer.localProxyEnabled"
         static let syncIdentifier = "yplayer.syncIdentifier"
     }
 
@@ -91,6 +92,31 @@ public final class AppModel: ObservableObject {
             UserDefaults.standard.set(homeLayout.rawValue, forKey: StorageKey.homeLayout)
         }
     }
+
+    // MARK: - 本地代理（M6）
+
+    /// 播放是否走本机代理注入 header（设置 → 播放 → 本地代理）。
+    ///
+    /// 默认为开：多数源要求 HLS 的子清单/分片/密钥也带 `Referer` 等 header，
+    /// 而系统播放器只能给主请求设 header（细节见 `docs/任务记录/M06a-本地HTTP服务与本地代理.md`）。
+    @Published public var isLocalProxyEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(isLocalProxyEnabled, forKey: StorageKey.localProxyEnabled)
+            refreshPlaybackNotice()
+        }
+    }
+
+    /// 本机服务的状态说明（端口 / 失败原因）：设置页如实展示，不静默失败。
+    @Published public private(set) var localProxyNotice: String = ""
+
+    /// 本机服务端口；未启动为 nil。
+    ///
+    /// 在 AppModel 里留一份而不是每次去问 actor：``proxiedMediaResource(_:)`` 是**同步**判定，
+    /// 而 `LocalHTTPServer.port` 是 actor 属性，读它必须 await。
+    @Published public private(set) var localProxyPort: UInt16?
+
+    /// 本地代理服务实例；由 ``ensureLocalServer()`` 创建并启动（见 `AppModel+LocalProxy.swift`）。
+    var localServer: LocalHTTPServer?
 
     // MARK: - js2p 宿主（JS 源）
 
@@ -138,6 +164,7 @@ public final class AppModel: ObservableObject {
         decoderMode = storedDecoder.flatMap(DecoderMode.init(rawValue:)) ?? .hardware
         let storedLayout = defaults.string(forKey: StorageKey.homeLayout)
         homeLayout = storedLayout.flatMap(HomeLayout.init(rawValue:)) ?? .vertical
+        isLocalProxyEnabled = defaults.object(forKey: StorageKey.localProxyEnabled) as? Bool ?? true
         localSyncIdentifier = Self.storedSyncIdentifier(defaults: defaults)
         refreshPlaybackNotice()
     }

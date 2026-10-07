@@ -63,15 +63,15 @@ public struct LocalProxyHandler: HTTPHandler {
     /// `/proxy`：解析 → 取回 → 过滤响应 header → 回给客户端。
     private func forward(_ request: HTTPRequest) async -> HTTPResponse {
         do {
-            guard let forward = try await LocalProxyRequestDecoder.decode(request, defaultTimeout: timeout) else {
+            guard let plan = try await LocalProxyRequestDecoder.decode(request, defaultTimeout: timeout) else {
                 return Self.errorResponse(status: .badRequest, reason: "缺少或无法解析 url 参数")
             }
-            let response = try await upstream.fetch(forward)
-            let headers = ProxyForwardingPolicy.clientResponseHeaders(upstream: response.headers)
+            let response = try await upstream.fetch(plan)
+            let responseHeaders = ProxyForwardingPolicy.clientResponseHeaders(upstream: response.headers)
             let body = request.method == .HEAD ? Data() : response.body
             return HTTPResponse(
                 statusCode: Self.statusCode(response.status),
-                headers: Self.headers(headers),
+                headers: Self.makeHeaders(responseHeaders),
                 body: body
             )
         } catch let error as CatVodError {
@@ -102,7 +102,7 @@ public struct LocalProxyHandler: HTTPHandler {
         return known[value] ?? HTTPStatusCode(value, phrase: "Proxy Response")
     }
 
-    static func headers(_ values: [String: String]) -> HTTPHeaders {
+    static func makeHeaders(_ values: [String: String]) -> HTTPHeaders {
         var headers = HTTPHeaders()
         for (key, value) in values {
             headers[HTTPHeader(key)] = value

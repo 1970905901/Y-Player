@@ -10,6 +10,9 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../CatVodCore"),
+        // CatVodNet 本来是经 CatVodPlayer 传递进来的隐式依赖（`import CatVodNet` 一直能用），
+        // M6 起 UI 直接用它的本地服务（`LocalHTTPServer`），这里显式声明，避免依赖形态变化后突然编译不过。
+        .package(path: "../CatVodNet"),
         .package(path: "../CatVodSource"),
         .package(path: "../CatVodPlayer"),
         .package(path: "../CatVodStore"),
@@ -17,7 +20,7 @@ let package = Package(
     targets: [
         .target(
             name: "CatVodUI",
-            dependencies: ["CatVodCore", "CatVodSource", "CatVodPlayer", "CatVodStore"],
+            dependencies: ["CatVodCore", "CatVodNet", "CatVodSource", "CatVodPlayer", "CatVodStore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(

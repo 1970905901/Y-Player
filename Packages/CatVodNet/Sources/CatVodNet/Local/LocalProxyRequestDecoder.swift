@@ -22,14 +22,14 @@ public enum LocalProxyRequestDecoder {
         var upstreamBody: Data?
 
         if target == nil, request.method == .POST {
-            guard let payload = try? await Self.payload(from: request) else {
+            guard let envelope = try? await Self.payload(from: request) else {
                 return nil
             }
-            target = payload.url
-            for (key, value) in payload.headers ?? [:] {
+            target = envelope.url
+            for (key, value) in envelope.headers ?? [:] {
                 headers[key] = value
             }
-            method = upstreamMethod(payload.method)
+            method = upstreamMethod(envelope.method)
         } else if method != .get {
             upstreamBody = try? await request.bodyData
         }

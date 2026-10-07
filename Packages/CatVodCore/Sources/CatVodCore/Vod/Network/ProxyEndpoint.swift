@@ -30,10 +30,16 @@ public struct ProxyEndpoint: Sendable, Hashable {
     /// 解析失败（缺 scheme/host/port、端口越界、协议不认识）返回 nil —— 对应上游把该条地址过滤掉。
     public init?(url text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let components = URLComponents(string: trimmed),
-              let schemeText = components.scheme?.lowercased(),
-              let host = components.host, !host.isEmpty,
-              let rawPort = components.port, (1 ... 65535).contains(rawPort) else {
+        guard let components = URLComponents(string: trimmed) else {
+            return nil
+        }
+        guard let schemeText = components.scheme?.lowercased() else {
+            return nil
+        }
+        guard let host = components.host, !host.isEmpty else {
+            return nil
+        }
+        guard let rawPort = components.port, (1 ... 65535).contains(rawPort) else {
             return nil
         }
         let scheme: Scheme

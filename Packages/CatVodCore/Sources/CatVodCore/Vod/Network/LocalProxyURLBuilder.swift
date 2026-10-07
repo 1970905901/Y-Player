@@ -32,13 +32,16 @@ public struct LocalProxyURLBuilder: Sendable {
 
     /// 由 host/port 构造。
     public init(host: String = "127.0.0.1", port: UInt16) {
-        self.baseURL = URL(string: "http://\(host):\(port)") ?? URL(fileURLWithPath: "/")
+        baseURL = URL(string: "http://\(host):\(port)") ?? URL(fileURLWithPath: "/")
     }
 
     /// `/proxy` 地址；参数非法时返回 nil。
     public func proxyURL(for request: LocalProxyRequest) -> URL? {
-        guard !request.url.isEmpty,
-              var components = URLComponents(url: baseURL.appendingPathComponent("proxy"), resolvingAgainstBaseURL: false) else {
+        guard !request.url.isEmpty else {
+            return nil
+        }
+        let target = baseURL.appendingPathComponent("proxy")
+        guard var components = URLComponents(url: target, resolvingAgainstBaseURL: false) else {
             return nil
         }
         var items = [URLQueryItem(name: "url", value: request.url)]
@@ -82,8 +85,10 @@ public struct LocalProxyURLBuilder: Sendable {
 
     /// 从 `/proxy` 地址还原转义请求；缺 `url` 参数返回 nil。
     public static func decode(url proxyURL: URL) -> LocalProxyRequest? {
-        guard let components = URLComponents(url: proxyURL, resolvingAgainstBaseURL: false),
-              let items = components.queryItems else {
+        guard let components = URLComponents(url: proxyURL, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        guard let items = components.queryItems else {
             return nil
         }
         var target: String?

@@ -52,6 +52,9 @@ public struct RootView: View {
             // 冷启动恢复：本地保存了接口地址就自动加载一次，不必先去「设置 → 源地址」手动点「加载」；
             // 加载完成会自增 `siteCatalogRevision`，首页/搜索/追剧据此拿到站点（见 M02P9）。
             await model.loadSavedSourceIfNeeded()
+            // 本机代理服务（M6）：启动时就起来，播放时才有端口可用
+            // （`proxiedMediaResource(_:)` 是同步判定，不能在那里 await）。
+            await model.ensureLocalServer()
         }
     }
 }

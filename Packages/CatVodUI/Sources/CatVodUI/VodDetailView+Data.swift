@@ -152,14 +152,14 @@ extension VodDetailView {
         guard !request.requiresParsing else {
             return nil
         }
-        return MediaResource(
+        return model.proxiedMediaResource(MediaResource(
             url: episode.url,
             headers: HTTPHeaderMerger.merge([site.header, detail.header]),
             startPosition: 0,
             format: detail.format,
             title: [vod?.vodName ?? "", episode.name].filter { !$0.isEmpty }.joined(separator: " "),
             artwork: detail.artwork.isEmpty ? (vod?.vodPic ?? "") : detail.artwork
-        )
+        ))
     }
 
     /// 该站点能否走 CatSpider 的 `play` 接口（js2p 宿主站点）。
