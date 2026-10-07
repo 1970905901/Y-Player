@@ -17,6 +17,11 @@ public struct HomeView: View {
     @State var page = 1
     @State var isLoading = false
     @State var errorText = ""
+    /// 已加载内容对应的「站点清单版本」（`AppModel.siteCatalogRevision`）。
+    ///
+    /// 与 `selectedSiteKey` 一起构成「这份内容属于哪个接口」的判断：
+    /// 版本对不上就说明接口换过（或宿主刷新过），旧站点/分类/筛选/列表全部作废。
+    @State var loadedCatalogRevision = -1
 
     public init(model: AppModel) {
         self.model = model
@@ -87,15 +92,18 @@ public struct HomeView: View {
             .disabled(isLoading || selectedSite == nil)
         }
         .task {
-            if selectedSiteKey.isEmpty {
-                selectedSiteKey = browsableSites.first?.key ?? ""
-            }
-            await loadHome()
+            await syncHomeWithInterface()
+        }
+        .onChange(of: model.siteCatalogRevision) { _ in
+            // 接口换了（加载新配置 / 宿主刷新 / 宿主停止）：首页必须自己重来一遍。
+            // 不能指望 `.task`：TabView 里的首页是常驻视图，`.task` 在回到该 Tab 时不一定重跑，
+            // 而且它重跑时 `loadHome()` 也会因为已有分类直接返回（这正是「必须冷启动」的原因）。
+            // 这里用非结构化 `Task` 而不是 `.task`：离开首页 Tab 时这次重载不该被取消。
+            Task { await syncHomeWithInterface() }
         }
         .onChange(of: selectedSiteKey) { _ in
-            selectedCategoryID = ""
-            extend = [:]
-            page = 1
+            // 站点换了：旧站点的分类/筛选/列表全部作废（否则会出现「站点已换、内容还是旧的」）。
+            invalidateContent()
             Task { await loadHome(force: true) }
         }
         .onChange(of: selectedCategoryID) { _ in
@@ -195,6 +203,11 @@ public struct HomeView: View {
     }
 
     private var emptyHint: String {
+        if let reason = model.state.failureReason {
+            // 接口加载失败（含冷启动自动恢复失败）：直接说原因，
+            // 不要显示「请先在接口管理里加载配置」——用户明明已经配置过接口。
+            return "接口加载失败：\(reason)"
+        }
         if model.allSites.isEmpty {
             return "还没有可用站点：请先在「接口管理」里加载配置。"
         }

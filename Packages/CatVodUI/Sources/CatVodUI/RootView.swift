@@ -35,5 +35,10 @@ public struct RootView: View {
                 Label("首页", systemImage: "house")
             }
         }
+        .task {
+            // 冷启动恢复：本地保存了接口地址就自动加载一次，不必先去「接口」页手动点「加载」；
+            // 加载完成会自增 `siteCatalogRevision`，首页/搜索据此拿到站点（见 M02P9）。
+            await model.loadSavedSourceIfNeeded()
+        }
     }
 }

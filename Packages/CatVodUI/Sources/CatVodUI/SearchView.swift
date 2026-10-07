@@ -74,6 +74,16 @@ public struct SearchView: View {
             page = 1
             submittedKeyword = ""
         }
+        .onChange(of: model.siteCatalogRevision) { _ in
+            // 接口换了（搜索页常驻在首页 Tab 的导航栈里，`.task` 不会重跑）：旧站点与旧结果全部作废，
+            // 否则搜索会继续对着上一个接口的站点发请求。
+            result = SpiderResult()
+            page = 1
+            submittedKeyword = ""
+            if !browsableSites.contains(where: { $0.key == selectedSiteKey }) {
+                selectedSiteKey = browsableSites.first?.key ?? ""
+            }
+        }
     }
 
     // MARK: - 区块
@@ -143,8 +153,12 @@ public struct SearchView: View {
         result.pagecount > 0 ? "第 \(page) / \(result.pagecount) 页" : "第 \(page) 页"
     }
 
-    /// 无可用站点时的说明（区分「没配置」「JS 源宿主状态」「没有可搜索站点」）。
+    /// 无可用站点时的说明（区分「接口加载失败」「没配置」「JS 源宿主状态」「没有可搜索站点」）。
     private var emptyHint: String {
+        if let reason = model.state.failureReason {
+            // 接口加载失败（含冷启动自动恢复失败）：直接说原因，别显示「请先加载配置」。
+            return "接口加载失败：\(reason)"
+        }
         if model.allSites.isEmpty {
             return "还没有可用站点：请先在「接口管理」里加载配置。"
         }

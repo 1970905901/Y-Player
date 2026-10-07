@@ -154,11 +154,29 @@ public final class AppModel: ObservableObject {
         state.loadedSource?.kind
     }
 
+    // MARK: - 站点清单版本
+
+    /// 站点清单版本号：每完成一次「配置加载 / 宿主站点刷新 / 宿主停止」就自增。
+    ///
+    /// 为什么需要它：`TabView` 里的首页是**常驻**视图，`.task` 在回到该 Tab 时不一定重跑；
+    /// 而它重跑时 `loadHome()` 又会因为已有分类直接返回 —— 首页对「接口换了」完全没有反应，
+    /// 旧行为只能靠**杀进程冷启动**才看到新接口的站点。界面监听这个版本号自行作废并重载，
+    /// 详见 `docs/任务记录/M02P9-接口变更后的自动刷新.md`。
+    @Published public private(set) var siteCatalogRevision: Int = 0
+
+    /// 通知界面「站点清单可能已经整体换过」。
+    ///
+    /// 多调一次是安全的：界面按版本号去重（版本号没变就不动），所以嵌套调用点不必精心安排。
+    private func bumpSiteCatalogRevision() {
+        siteCatalogRevision += 1
+    }
+
     /// 加载配置。
     public func load(forceRefresh: Bool = false) async {
         let target = configURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !target.isEmpty else {
             state = .failed("请先填写配置地址（支持猫源 JSON 或 js2p 的 index.js）")
+            bumpSiteCatalogRevision()
             return
         }
         state = .loading
@@ -180,6 +198,24 @@ public final class AppModel: ObservableObject {
             state = .failed(error.localizedDescription)
         }
         refreshPlaybackNotice()
+        // 站点清单可能已经整体换过（新接口 / 宿主新站点 / 加载失败后清空）：通知界面作废旧内容并重载。
+        bumpSiteCatalogRevision()
+    }
+
+    /// 冷启动恢复：本地保存了配置地址、且本进程这次还没加载过任何配置时，自动加载一次。
+    ///
+    /// 为什么需要：`configURL` 是持久化的，但以前**只有用户手动点「加载」**才会真的去取配置 ——
+    /// 于是每次冷启动首页都是空的，得先去「接口管理」再点一次加载（这也是「首页要重新加载」的一半原因）。
+    /// 行为与手动加载完全一致：JS 源只多取一次 `index.js.md5`，JSON 源网络失败仍退回本地缓存并提示。
+    public func loadSavedSourceIfNeeded() async {
+        // 只在「这次进程还没开始」时恢复：不覆盖用户正在进行的操作，也不自动重试刚失败的结果。
+        guard case .idle = state else {
+            return
+        }
+        guard !configURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+        await load()
     }
 
     /// 为站点请求构造传输层：把配置里的 `headers` 与 `ads` 规则带进去。
@@ -243,6 +279,8 @@ public final class AppModel: ObservableObject {
             return
         }
         await refreshHost(for: source, forceRestart: true)
+        // 宿主重启会换掉站点清单（端口、站点集合都可能变）：首页/搜索据此作废旧内容。
+        bumpSiteCatalogRevision()
     }
 
     /// 停止宿主并清空宿主站点。
@@ -251,6 +289,7 @@ public final class AppModel: ObservableObject {
         js2pHost = nil
         hostSites = []
         hostStatus = .idle
+        bumpSiteCatalogRevision()
     }
 
     /// 宿主最近输出（诊断用；失败时界面可展开查看，避免「为什么没有站点」只能靠猜）。
