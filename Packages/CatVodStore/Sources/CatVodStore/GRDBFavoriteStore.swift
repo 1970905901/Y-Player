@@ -33,10 +33,15 @@ public struct GRDBFavoriteStore: FavoriteStore {
     public func favorite(for key: PlaybackKey) async -> Favorite? {
         let sql = "SELECT \(Self.columns) FROM favorite WHERE vodKey = ?"
         let storageKey = key.storageKey
-        let row = database.read { db in
-            try Row.fetchOne(db, sql: sql, arguments: [storageKey])
+        // 说明：这里用 `fetchAll(...).first` 而不是 `fetchOne` —— `read` 的返回类型是 `T?`，
+        // 传 `Row?` 进去会变成 `Row??`（CI 报过 `(Row?) -> Favorite` 的类型不匹配）。
+        let rows = database.read { db in
+            try Row.fetchAll(db, sql: sql, arguments: [storageKey])
         }
-        return row.map(Self.favorite(from:))
+        guard let row = rows?.first else {
+            return nil
+        }
+        return Self.favorite(from: row)
     }
 
     public func add(_ favorite: Favorite) async {

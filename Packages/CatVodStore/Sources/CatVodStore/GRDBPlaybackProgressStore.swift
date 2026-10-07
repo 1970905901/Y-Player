@@ -23,10 +23,14 @@ public struct GRDBPlaybackProgressStore: PlaybackProgressStore {
     public func progress(for key: PlaybackKey) async -> PlaybackProgress? {
         let sql = "SELECT \(Self.columns) FROM playbackProgress WHERE vodKey = ?"
         let storageKey = key.storageKey
-        let row = database.read { db in
-            try Row.fetchOne(db, sql: sql, arguments: [storageKey])
+        // 与收藏同一处理：`read` 会把 `Row?` 再包一层，改用 `fetchAll(...).first`。
+        let rows = database.read { db in
+            try Row.fetchAll(db, sql: sql, arguments: [storageKey])
         }
-        return row.map(Self.progress(from:))
+        guard let row = rows?.first else {
+            return nil
+        }
+        return Self.progress(from: row)
     }
 
     public func save(_ progress: PlaybackProgress) async {
