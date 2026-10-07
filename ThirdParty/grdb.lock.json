@@ -1,0 +1,37 @@
+{
+  "$schema": "YPlayer 第三方依赖锁定记录（人工维护，CI 校验用）",
+  "purpose": "记录依赖的版本与来源，保证构建可复现；任何升级都必须同步更新本文件并在 docs/任务记录 中留痕。",
+  "entries": [
+    {
+      "name": "GRDB.swift",
+      "kind": "swiftpm-source",
+      "url": "https://github.com/groue/GRDB.swift.git",
+      "ref": "7.11.1",
+      "released": "2026-06-18",
+      "pin": "exact（Package.swift 里 .package(url:exact:)）",
+      "license": "MIT",
+      "platforms": [
+        "iOS 13+",
+        "macOS 10.15+",
+        "tvOS 13+",
+        "watchOS 7+"
+      ],
+      "requirements": [
+        "Swift 6.1 / Xcode 16.3+（仓库基线 Xcode 16.4 满足）",
+        "SQLite 3.20+（系统自带；GRDB 也可自带源码编译，本轮用系统 SQLite）"
+      ],
+      "requiredBy": "CatVodStore（M8：收藏 / 播放进度落库）",
+      "usedAPIs": [
+        "DatabaseQueue(path:) / DatabaseQueue() 内存库",
+        "DatabaseMigrator.registerMigration + migrate（建表迁移）",
+        "DatabaseQueue.read / write + Row.fetchAll / Row.fetchOne / Int.fetchOne",
+        "db.execute(sql:arguments:) 全部写操作（不使用 upsert 语法，统一 INSERT OR REPLACE）"
+      ],
+      "notes": [
+        "只用于本地持久化；不上传任何数据（跨设备同步仍待后续里程碑）。",
+        "升级前先在 CI 的 SwiftPM tests 里跑通 CatVodStoreTests（含「关闭后用同一路径重开，数据仍在」）。"
+      ],
+      "verification": "CI 的 SwiftPM tests 会跑 Packages/CatVodStore/Tests（GRDBStoreTests）。"
+    }
+  ]
+}
