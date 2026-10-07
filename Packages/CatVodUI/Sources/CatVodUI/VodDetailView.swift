@@ -210,7 +210,7 @@ public struct VodDetailView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        if makeResource(for: episode) == nil, !(site.map(isSpiderPlayable) ?? false) {
+                        if showsUnsupportedBadge(for: episode) {
                             Image(systemName: "exclamationmark.triangle")
                                 .foregroundStyle(.orange)
                         }
@@ -260,6 +260,18 @@ public struct VodDetailView: View {
                 title: vod?.vodName ?? "",
                 lineName: currentLine?.name ?? "",
                 episodeIndex: index,
+                progressKey: progressKey
+            )
+        } else if let site, canParse(episode) {
+            // 需要解析（`parse/jx = 1`）的集：走解析链（M5b 已支持 type=1 JSON；type=0/4 会给出 M5c 的原因）。
+            ParsePlaybackView(
+                model: model,
+                site: site,
+                vodName: vod?.vodName ?? "",
+                lineName: currentLine?.name ?? "",
+                episode: episode,
+                episodeIndex: index,
+                detail: detail,
                 progressKey: progressKey
             )
         } else {

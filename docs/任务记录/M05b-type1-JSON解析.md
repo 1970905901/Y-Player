@@ -12,6 +12,8 @@
 | `CatVodCore/Vod/Parse/ParsedPlayback.swift` | 解析成功的产物：`url` + `headers` + `from`（来源解析器名）。`type=1` 与将来的 `type=0` Web 嗅探共用它，调用方不区分通道 |
 | `CatVodSource/Parse/JSONParser.swift` | `type=1` 执行器：`GET 解析器地址 + webUrl`，读 `url`（为空读 `data.url`），按 `> 40` 判定成功，响应 header 只认 UA/Referer/Cookie/ua（取不到回落） |
 | `CatVodSourceTests/JSONParserTests.swift` | 9 例单测（含一个记录**完整请求**的假传输层，用来断言 header 与超时） |
+| `CatVodUI/ParsePlaybackView.swift` | **界面接线**：详情页里「需要解析」的集先解析再进播放页；解析失败/未实现的类型（type=0/4、JAR）给出可读原因 |
+| `VodDetailView` / `+Data` | 新增 `canParse(_:)` / `showsUnsupportedBadge(for:)`；`destination(for:at:)` 增加解析分支；直链与 Spider 分支不变 |
 
 **错误模型**：全部抛 `CatVodError`（仓库既有约定里的「面向 UI 的统一错误」），不返回半成品：
 
@@ -35,18 +37,21 @@
 
 ## 三、明确未做
 
-1. **界面接线**：详情页对「需要解析」的集目前仍渲染 `UnsupportedPlaybackView`；接线（异步解析 → 播放页 / 失败原因）是下一步。
-2. **`type=0` Web 嗅探（M5c）**：需要 M6a 的本地 `/proxy` 与平台 WebKit 承载层。
-3. **`type=4` 聚合**：并发所有匹配 flag 的 `type=1` + 一个把 `type=0` 拼起来的 WebView，属 M5c。
-4. **`parse/jx = 1` 的后续解析**：契约已备（`ParseJobResolver.followUp`），实际调用随界面接线一起做。
-5. **`type=2/3` JAR**：Apple 平台无 JVM，永久不支持（执行器直接给原因）。
+1. **`type=0` Web 嗅探（M5c）**：需要 M6a 的本地 `/proxy` 与平台 WebKit 承载层。
+2. **`type=4` 聚合**：并发所有匹配 flag 的 `type=1` + 一个把 `type=0` 拼起来的 WebView，属 M5c。
+3. **`type=2/3` JAR**：Apple 平台无 JVM，永久不支持（执行器直接给原因）。
+4. **`parse/jx = 1` 的第二层解析**：契约已备（`ParseJobResolver.followUp`），但 `type=1` 的响应里没有
+   `parse/jx` 字段，上游 `checkResult(headers:url:)` 那条路径也不追第二层；等 M5c 的 Web 嗅探结果
+   （是一个完整 `Result`）再启用。
 
 ## 四、验收
 
 - 单测：`CatVodSourceTests/JSONParserTests`（正常取值、`data.url` 回退、过短、空地址、非 2xx、非法 JSON、
   解析器 header 优先、响应 header 覆盖、type=0 与 JAR 拒绝）。
 - CI：`CatVodSource tests` + `CatVodUI (build only)` + 双端未签名构建。
-- 人工：接线后（下一步）在真实源上验证「需要解析的集能播」。
+- 人工：详情页里「需要解析（parse/jx = 1）」的集点进去应显示「正在解析播放地址…」后进入播放页；
+  失败时显示可读原因（缺名解析器 / 地址过短 / 非 2xx / 响应不是 JSON）；`type=0`/`type=4` 的集应显示
+  「属 M5c」的说明而不是空白。
 
 ## 五、回滚
 

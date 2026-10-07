@@ -169,6 +169,39 @@ extension VodDetailView {
         site.isCatSpiderHTTP
     }
 
+    /// 该集是否应该交给解析链（M5b/M5c）。
+    ///
+    /// 判定条件与 ``PlayRequestBuilder`` 一致：`type 0/1/2/4` 的站点、地址非空、且 `parse/jx = 1`
+    /// 导致不能直链（`requiresParsing`）。至于「用哪个解析器、能不能执行」由
+    /// ``ParsePlaybackView`` 内部的 ``ParseJobResolver`` 决定并给出可读原因。
+    func canParse(_ episode: PlaylistParser.Episode) -> Bool {
+        guard let site, !episode.url.isEmpty else {
+            return false
+        }
+        guard let request = try? PlayRequestBuilder.makeRequest(
+            site: site,
+            flag: currentLine?.name ?? "",
+            playID: episode.url
+        ) else {
+            return false
+        }
+        guard case .direct = request.source else {
+            return false
+        }
+        return request.requiresParsing
+    }
+
+    /// 选集行是否要显示「不支持」的感叹号：能直链、能走 Spider、能走解析链的都不显示。
+    func showsUnsupportedBadge(for episode: PlaylistParser.Episode) -> Bool {
+        if makeResource(for: episode) != nil {
+            return false
+        }
+        if let site, isSpiderPlayable(site) {
+            return false
+        }
+        return !canParse(episode)
+    }
+
     /// 不可直接播放的原因（必须能说明，不能静默失败）。
     func unsupportedReason(for episode: PlaylistParser.Episode) -> String {
         guard let site else {
@@ -185,7 +218,7 @@ extension VodDetailView {
         switch request.source {
         case .direct:
             if request.requiresParsing {
-                return "该集需要解析（parse/jx = 1）：解析链在 M5 实现，当前不可直接播放。"
+                return "该集需要解析（parse/jx = 1），但配置里给不出可用的解析器（`parses` 为空，或站点级/结果级 `playUrl` 都没有解析指令）。"
             }
             return "该集地址无效"
         case .http:
