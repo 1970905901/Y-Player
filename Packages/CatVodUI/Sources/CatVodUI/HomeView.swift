@@ -11,6 +11,8 @@ import SwiftUI
 public struct HomeView: View {
     @ObservedObject var model: AppModel
     @State var selectedSiteKey = ""
+    /// 当前分类。**程序内回写它不会发起加载**：分类加载的唯一入口是 `categoryBinding`
+    /// （见 `HomeView+Data.swift`），否则 `loadHome()` / `loadCategory()` 的回写会再触发一次同页请求。
     @State var selectedCategoryID = ""
     @State var extend: [String: String] = [:]
     @State var result = SpiderResult()
@@ -106,11 +108,6 @@ public struct HomeView: View {
             invalidateContent()
             Task { await loadHome(force: true) }
         }
-        .onChange(of: selectedCategoryID) { _ in
-            extend = [:]
-            page = 1
-            Task { await loadCategory() }
-        }
     }
 
     // MARK: - 区块
@@ -132,7 +129,7 @@ public struct HomeView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
-                Picker("分类", selection: $selectedCategoryID) {
+                Picker("分类", selection: categoryBinding) {
                     ForEach(result.categories) { category in
                         Text(category.typeName).tag(category.typeID)
                     }

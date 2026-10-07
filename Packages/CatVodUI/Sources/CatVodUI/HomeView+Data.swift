@@ -13,6 +13,27 @@ extension HomeView {
         )
     }
 
+    /// 分类选择绑定：**分类加载的唯一入口**。
+    ///
+    /// 为什么不用 `.onChange(of: selectedCategoryID)`：`loadHome()` / `loadCategory()` 内部也会写
+    /// `selectedCategoryID`，用 onChange 会把「一次加载」变成两次请求（同分类同页各发一遍）。
+    /// 这里只把「用户改分类」当事件：重置筛选与翻页 → 加载一次。
+    var categoryBinding: Binding<String> {
+        Binding(
+            get: { selectedCategoryID },
+            set: { newValue in
+                // Picker 在初次布局时可能回写同一个值：值没变就不发请求。
+                guard newValue != selectedCategoryID else {
+                    return
+                }
+                selectedCategoryID = newValue
+                extend = [:]
+                page = 1
+                Task { await loadCategory() }
+            }
+        )
+    }
+
     /// 让首页与「当前接口的站点清单」保持一致。
     ///
     /// 两个调用点：`.task`（首页出现）与 `.onChange(of: model.siteCatalogRevision)`
