@@ -1,0 +1,16 @@
+# YPlayer SwiftFormat 配置
+# 与 .swiftlint.yml 互补：格式化交给 SwiftFormat，静态检查交给 SwiftLint。
+
+indent = 4
+maxwidth = 140
+swiftversion = 6.0
+linebreaks = lf
+trimwhitespace = always
+stripunusedargs = closure-only
+wraparguments = beforefirst
+wrapparameters = beforefirst
+semicolons = inline
+emptybraces = spaced
+numbers = skip
+
+exclude = .build,DerivedData,ThirdParty,Tools/.cache,Packages/*/.build

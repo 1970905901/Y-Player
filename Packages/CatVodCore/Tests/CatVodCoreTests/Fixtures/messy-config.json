@@ -1,0 +1,28 @@
+{
+  "msg": "配置已失效，请更换接口",
+  "notice": 123,
+  "home": 100,
+  "sites": [
+    "this-is-not-an-object",
+    { "key": "ok", "name": 42, "type": "1", "api": "https://ok.example.com", "searchable": "0", "changeable": true, "timeout": "abc" },
+    {
+      "key": "alias",
+      "name": "别名站点",
+      "type": 1,
+      "api": "https://alias.example.com",
+      "home_page": "https://alias.example.com/home",
+      "categories": "电影",
+      "header": { "User-Agent": 2024, "Referer": "https://alias.example.com" },
+      "style": { "type": "oval", "ratio": "2.5", "circle": "1" }
+    },
+    { "key": "", "name": "缺少 key", "type": 1, "api": "https://x.example.com" },
+    { "key": "noapi", "name": "缺少 api", "type": 1, "api": "" },
+    { "key": "unknowntype", "name": "未知类型", "type": 99, "api": "https://y.example.com" }
+  ],
+  "parses": [
+    { "name": "解析A", "type": "1", "url": "https://a.example.com/parse?url=", "ext": { "flag": "abc" } }
+  ],
+  "hosts": "example.com=1.2.3.4",
+  "ads": "ad.example.com",
+  "flags": ["a", 2]
+}

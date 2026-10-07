@@ -1,0 +1,66 @@
+{
+  "$schema": "YPlayer 第三方原生依赖锁定记录（人工维护，CI 校验用）",
+  "purpose": "记录 Apple 端原生依赖的版本与来源，保证构建可复现；任何升级都必须同步更新本文件并在 docs/任务记录 中留痕。",
+  "entries": [
+    {
+      "name": "MPVKit",
+      "kind": "swiftpm-binary",
+      "url": "https://github.com/mpvkit/MPVKit.git",
+      "ref": "1.0.0",
+      "license": "LGPL-3.0（variants/bundles）；使用 -GPL 后缀产物或 enable-gpl 构建则转为 GPL-3.0",
+      "variantInUse": "MPVKit（LGPL），不使用 MPVKit-GPL",
+      "platforms": ["iOS 15+", "macOS 12+", "tvOS 15+", "visionOS 1+"],
+      "provides": {
+        "mpv": "libmpv（client API + render API）",
+        "ffmpeg": "Libavcodec/Libavdevice/Libavfilter/Libavformat/Libavutil/Libswresample/Libswscale",
+        "subtitle": "Libass + Libfreetype + Libharfbuzz + Libfribidi + Libunibreak",
+        "gpu": "Libplacebo + MoltenVK + Libshaderc_combined + lcms2",
+        "decode": "Libdav1d + Libuavs3d + Libdovi",
+        "tls": "Libssl + Libcrypto + gnutls/gmp/nettle/hogweed"
+      },
+      "notes": [
+        "MPVKit 官方声明：Metal 后端仅为补丁级支持，未官方支持；MpvEngine 的渲染路径必须做 PoC（OpenGL ES / MoltenVK / SW→Metal）。",
+        "libsmbclient 仅在 -GPL 变体提供，本项目不启用。",
+        "同一依赖同时供 MpvEngine 与自研 FFmpegEngine 使用，避免引入第二套 FFmpeg。"
+      ],
+      "binaryTargetChecksums": {
+        "Libmpv": "c381ceb4c1504efac12da95293e56585bbeb691634aa64e3a729f517169933ba",
+        "Libavcodec": "136e432919a8a7b5b80155c68e9dc91b0ef3ae6623970b87bb8bd96a452543cf",
+        "Libavdevice": "65713615f53352b37baffb38c5b88d88bab647d050d999bcc4684344ab636bdf",
+        "Libavfilter": "3e71af8633d99d365f14b88064bceafd57acb23fc64db90e55b715a9c0dca328",
+        "Libavformat": "2afb601375929640e743e7bdaa6c4a88e2b582a07e1c5f2dc95cc7f5b26a0810",
+        "Libavutil": "5dc251c8807c501982edfb0bc9bddfee4148733142d6ebb947738c60fb3bf8d8",
+        "Libswresample": "d5c36acf2ff944e15706f4b7bfbf18bb1993ffc5b446c9f67f1aa79de5441f15",
+        "Libswscale": "4fc00de6a7a8cddcdfe0eeb73b4f919cfaf9a0fd5a442f42a43e0f56e157d7c5",
+        "Libuchardet": "ea4f548a230a755e059144657cc9e2ff563c1cdeae03974c38f8b6e1a40303fb",
+        "Libluajit": "3a171ef1627fb88260893dc452f989bd93dd8510814771ba3aff7753470d3f3e",
+        "Libshaderc_combined": "758047b615708575b580eb960a2d083f760a29dc462d6eaa360416c946ce433b",
+        "lcms2": "dc0dce0606f6ab6841a8ec5a6bd4448e2f3ef00661a050460f806c9393dc6982",
+        "Libplacebo": "2fa3d54cb81f302d6f11c7b2f509af30944381c3b11ee9d35096eb4637a6e2dd",
+        "Libdav1d": "d1a32ae6a1f0193e9f05c44c9176844af7f6d2a58cb33843f6f1b8dfd9224083"
+      },
+      "unverifiedChecksums": [
+        "Libsmbclient / Libssl / Libcrypto / Libass / Libfreetype / Libfribidi / Libharfbuzz / Libdovi / Libunibreak / gmp / nettle / hogweed / gnutls / MoltenVK",
+        "以上条目未逐条抄录；首次在 macOS 上 swift package resolve 后按 MPVKit Package.swift 补齐。"
+      ]
+    },
+    {
+      "name": "Node 运行时（M1.5 已判定必须启用）",
+      "kind": "apple-binary（随包，禁止运行时下载）",
+      "decision": "js2p 主接口的 index.js（6.29MB）依赖 Node 内建 net/tls/dns/http2/worker_threads/fs/zlib/crypto/stream 与 fastify 5，无法用 JavaScriptCore shim 承载；必须随包内嵌真 Node。详见 docs/js2p宿主契约.md",
+      "candidates": [
+        {
+          "name": "nodejs-mobile",
+          "version": "v18.20.4（Node 18.20.4）",
+          "artifacts": ["iOS iPhone arm64", "Simulator arm64", "Simulator x86_64", "Android armeabi-v7a/arm64-v8a/x86_64"],
+          "url": "https://github.com/nodejs-mobile/nodejs-mobile/releases"
+        }
+      ],
+      "constraints": [
+        "未签名 IPA 侧载后无法加载事后下载的 dylib，因此必须是随包内嵌（静态库或 framework），不得照搬 webhtv 在 Android 上的运行时下载方案。",
+        "iOS 无 JIT；每进程仅允许一个 Node 实例；child_process 不可用；Node 必须运行在独立后台线程。",
+        "体积与冷启动性能必须在 M1.6 PoC 中实测（参考：webhtv 注明 Android libnode.so 约 60MB）。"
+      ]
+    }
+  ]
+}

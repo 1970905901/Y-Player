@@ -1,0 +1,156 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  XCODE_VERSION: "16.4"
+  SCHEME_IOS: YPlayer-iOS
+  SCHEME_MACOS: YPlayer-macOS
+
+jobs:
+  lint:
+    name: Lint (SwiftLint / SwiftFormat)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          swiftlint version || true
+          swiftformat --version || true
+      - name: SwiftFormat (lint only, 非阻断)
+        continue-on-error: true
+        run: swiftformat --lint . --config .swiftformat
+      - name: SwiftLint (非阻断，M2 起收紧为 --strict)
+        continue-on-error: true
+        run: swiftlint lint --config .swiftlint.yml
+
+  core-tests:
+    name: SwiftPM tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_${{ env.XCODE_VERSION }}.app
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/org.swift.swiftpm
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/DerivedData
+          key: spm-${{ runner.os }}-${{ hashFiles('**/Package.swift', '**/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+      - name: CatVodCore tests
+        run: swift test --package-path Packages/CatVodCore
+      - name: CatVodNet tests
+        run: swift test --package-path Packages/CatVodNet
+      - name: CatVodSource tests
+        run: swift test --package-path Packages/CatVodSource
+      - name: CatVodPlayer tests
+        run: swift test --package-path Packages/CatVodPlayer
+      - name: CatVodStore tests
+        run: swift test --package-path Packages/CatVodStore
+
+  build:
+    name: Build apps (unsigned)
+    runs-on: macos-15
+    needs: [core-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_${{ env.XCODE_VERSION }}.app
+      - name: Install XcodeGen
+        run: command -v xcodegen >/dev/null || brew install xcodegen
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/org.swift.swiftpm
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-${{ runner.os }}-${{ hashFiles('**/Package.swift', '**/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+      - name: Build iOS (simulator, unsigned)
+        run: |
+          xcodebuild build \
+            -project YPlayer.xcodeproj \
+            -scheme "$SCHEME_IOS" \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+      - name: Build macOS (unsigned)
+        run: |
+          xcodebuild build \
+            -project YPlayer.xcodeproj \
+            -scheme "$SCHEME_MACOS" \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+
+  release:
+    name: Release (unsigned ipa / mac app)
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-15
+    needs: [build]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_${{ env.XCODE_VERSION }}.app
+      - name: Install XcodeGen
+        run: command -v xcodegen >/dev/null || brew install xcodegen
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Archive iOS (unsigned)
+        run: |
+          xcodebuild archive \
+            -project YPlayer.xcodeproj \
+            -scheme "$SCHEME_IOS" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/YPlayer-iOS.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+          mkdir -p build/Payload
+          cp -R build/YPlayer-iOS.xcarchive/Products/Applications/YPlayer.app build/Payload/
+          cd build && zip -qry YPlayer-unsigned.ipa Payload
+      - name: Build macOS app (unsigned)
+        run: |
+          xcodebuild build \
+            -project YPlayer.xcodeproj \
+            -scheme "$SCHEME_MACOS" \
+            -configuration Release \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+          cd build/DerivedData/Build/Products/Release && zip -qry ../../../YPlayer-macOS-unsigned.zip YPlayer.app
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: YPlayer-${{ github.ref_name }}
+          path: |
+            build/YPlayer-unsigned.ipa
+            build/YPlayer-macOS-unsigned.zip
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/YPlayer-unsigned.ipa
+            build/YPlayer-macOS-unsigned.zip
+          body: |
+            未签名构建产物（非 App Store 分发）。
+
+            - `YPlayer-unsigned.ipa`：iOS/iPadOS，需自行侧载并重签
+            - `YPlayer-macOS-unsigned.zip`：macOS 13+，首次打开需右键“打开”
+
+            本仓库不内置任何影视源，所有接口由使用者自行添加，责任自负。

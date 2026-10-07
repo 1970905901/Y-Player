@@ -1,0 +1,16 @@
+{
+  "parse": 1,
+  "jx": 0,
+  "playUrl": "parse:演示解析",
+  "url": { "values": [{ "n": "高清", "v": "https://example.com/hd.m3u8" }, { "n": "标清", "v": "https://example.com/sd.m3u8" }], "position": 1 },
+  "header": { "User-Agent": "Mozilla/5.0", "Referer": "https://example.com/" },
+  "format": "application/x-mpegURL",
+  "subs": [{ "name": "中文", "url": "https://example.com/a.srt", "language": "zh" }],
+  "danmaku": [{ "name": "弹幕A", "url": "https://example.com/dm.xml" }],
+  "drm": { "key": "https://example.com/license", "type": "widevine", "forceKey": false },
+  "artwork": "https://example.com/cover.jpg",
+  "flag": "主线",
+  "position": 128000,
+  "jxFrom": "演示解析",
+  "desc": "第 2 集"
+}

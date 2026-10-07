@@ -1,0 +1,34 @@
+{
+  "class": [
+    { "type_id": "movie", "type_name": "电影" },
+    { "id": "tv", "name": "剧集", "type_flag": "1" }
+  ],
+  "filters": {
+    "movie": [
+      { "key": "area", "name": "地区", "init": "大陆", "value": [{ "n": "大陆", "v": "大陆" }, { "n": "香港", "v": "香港" }] }
+    ]
+  },
+  "list": [
+    {
+      "vod_id": "1",
+      "vod_name": "示例影片",
+      "vod_pic": "https://example.com/poster.jpg",
+      "vod_remarks": "全 2 集",
+      "vod_play_from": "主线$$$备用线",
+      "vod_play_url": "第1集$id-1#第2集$id-2$$$第1集$backup-1",
+      "vod_tag": "",
+      "land": "1",
+      "circle": 0,
+      "ratio": "1.33"
+    },
+    {
+      "vod_id": "2",
+      "vod_name": "文件夹",
+      "vod_tag": "folder"
+    }
+  ],
+  "page": "2",
+  "pagecount": 5,
+  "total": "100",
+  "code": 0
+}

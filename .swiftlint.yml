@@ -1,0 +1,117 @@
+# YPlayer SwiftLint 配置
+# 规范要点：单类型单文件、公开 API 带文档注释、禁止强解包、并发安全显式化。
+#
+# 说明：opt_in 规则集合刻意保持精简，只在能稳定通过的前提下启用；
+# 后续里程碑（M2 起）再逐步收紧，避免首次 CI 因风格问题红掉。
+
+included:
+  - Apps
+  - Packages
+
+excluded:
+  - .build
+  - DerivedData
+  - ThirdParty
+  - Tools
+  - Packages/*/.build
+  - "**/.swiftpm"
+
+disabled_rules:
+  - todo                # TODO 允许，但由 docs/任务记录 追踪
+  - trailing_comma      # 多行集合尾逗号交给 SwiftFormat 统一
+  - explicit_type_interface
+  - explicit_top_level_acl
+  - file_name
+  - missing_docs        # M2 起再开启，先靠评审保证公开 API 文档
+  - prefixed_toplevel_constant
+  - strict_fileprivate
+  - number_separator
+
+opt_in_rules:
+  - array_init
+  - closure_spacing
+  - contains_over_filter_count
+  - empty_count
+  - empty_string
+  - fallthrough
+  - fatal_error_message
+  - first_where
+  - force_unwrapping
+  - identical_operands
+  - last_where
+  - legacy_multiple
+  - lower_acl_than_parent
+  - modifier_order
+  - operator_usage_whitespace
+  - optional_enum_case_matching
+  - pattern_matching_keywords
+  - redundant_nil_coalescing
+  - redundant_type_annotation
+  - shorthand_operator
+  - sorted_first_last
+  - toggle_bool
+  - unavailable_function
+  - untyped_error_in_catch
+  - vertical_parameter_alignment_on_call
+  - weak_delegate
+  - yoda_condition
+
+analyzer_rules:
+  - unused_import
+
+line_length:
+  warning: 140
+  error: 200
+  ignores_urls: true
+
+file_length:
+  warning: 500
+  error: 800
+  ignore_comment_only_lines: true
+
+type_body_length:
+  warning: 300
+  error: 450
+
+function_body_length:
+  warning: 60
+  error: 100
+
+cyclomatic_complexity:
+  warning: 15
+  error: 25
+
+function_parameter_count:
+  warning: 6
+  error: 10
+
+identifier_name:
+  min_length:
+    warning: 1
+    error: 1
+  max_length:
+    warning: 50
+    error: 60
+  excluded:
+    - id
+    - x
+    - y
+    - i
+    - j
+    - k
+    - e
+    - n
+    - t
+    - pg
+    - wd
+    - ua
+
+type_name:
+  min_length:
+    warning: 3
+    error: 2
+  max_length:
+    warning: 50
+    error: 60
+
+reporter: xcode

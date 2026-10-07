@@ -1,0 +1,54 @@
+{
+  "spider": "./spider.jar",
+  "wallpaper": "./wallpaper.jpg",
+  "logo": "./logo.png",
+  "notice": "测试配置",
+  "home": "demo",
+  "parse": "演示解析",
+  "sites": [
+    { "key": "demo", "name": "演示点播", "type": 3, "api": "csp_Demo", "jar": "./demo.jar", "ext": {} },
+    { "key": "cmsjson", "name": "JSON 演示", "type": 1, "api": "https://cms.example.com/api.php/provide/vod", "ext": { "host": "https://cms.example.com" } },
+    { "key": "cmsxml", "name": "XML 演示", "type": 0, "api": "https://xml.example.com/api.php/provide/vod" },
+    { "key": "jsdemo", "name": "JS 演示", "type": 3, "api": "./spider.js", "ext": {} },
+    {
+      "key": "cat",
+      "name": "猫源",
+      "type": 3,
+      "api": "http://127.0.0.1:9988/spider",
+      "timeout": 20,
+      "searchable": 1,
+      "changeable": 1,
+      "quickSearch": 1,
+      "categories": ["电影", "剧集"],
+      "header": { "User-Agent": "Mozilla/5.0" },
+      "style": { "type": "rect", "ratio": 1.33 }
+    }
+  ],
+  "parses": [
+    {
+      "name": "演示解析",
+      "type": 1,
+      "url": "https://example.com/parse?url=",
+      "ext": { "flag": ["qq", "iqiyi"], "header": { "User-Agent": "Mozilla/5.0" } }
+    },
+    { "name": "Web解析", "type": 0, "url": "https://jx.example.com/?url=" },
+    { "name": "JAR解析", "type": 2, "url": "Demo", "ext": { "flag": [] } }
+  ],
+  "lives": [
+    { "name": "演示直播", "url": "./live.m3u", "epg": "https://example.com/epg.xml" }
+  ],
+  "doh": [
+    { "name": "Google", "url": "https://dns.google/dns-query", "ips": ["8.8.8.8"] }
+  ],
+  "proxy": [
+    { "name": "app", "hosts": ["example.com"], "urls": ["socks5://127.0.0.1:7897"] }
+  ],
+  "headers": [
+    { "host": "example.com", "header": { "User-Agent": "Mozilla/5.0" } }
+  ],
+  "rules": [
+    { "name": "demo", "hosts": ["example.com"], "regex": ["\\.m3u8"], "exclude": ["ad"], "script": [] }
+  ],
+  "ads": ["ad.example.com"],
+  "flags": ["需要解析"]
+}

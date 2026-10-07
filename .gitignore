@@ -1,0 +1,48 @@
+# === macOS ===
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# === Xcode / SwiftPM ===
+# 工程由 XcodeGen 从 project.yml 生成，不入库
+*.xcodeproj/
+*.xcworkspace/
+!*.xcworkspace/contents.xcworkspacedata
+xcuserdata/
+*.xcuserstate
+*.moved-aside
+DerivedData/
+build/
+.build/
+.swiftpm/
+Package.resolved
+*.swiftmodule
+*.xcframework
+!ThirdParty/xcframeworks/**
+*.dSYM
+*.dSYM.zip
+*.ipa
+*.app
+*.dmg
+Payload/
+
+# === 本仓库产出的中间物 ===
+Tools/.cache/
+Tools/out/
+ThirdParty/downloads/
+ThirdParty/maven/
+analysis/
+
+# === 依赖 / 工具 ===
+node_modules/
+Pods/
+vendor/
+.env
+.env.*
+
+# === 其它 ===
+*.log
+*.tmp
+!.gitkeep

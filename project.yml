@@ -1,0 +1,143 @@
+name: YPlayer
+options:
+  bundleIdPrefix: com.YPlayer
+  createIntermediateGroups: true
+  groupSortPosition: top
+  deploymentTarget:
+    iOS: "15.0"
+    macOS: "13.0"
+  xcodeVersion: "16.4"
+  minimumXcodeGenVersion: "2.38.0"
+
+attributes:
+  ORGANIZATIONNAME: YPlayer
+  LastUpgradeCheck: "1640"
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: targeted
+    SWIFT_EMIT_LOC_STRINGS: YES
+    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+    CLANG_ENABLE_MODULES: YES
+    GCC_C_LANGUAGE_STANDARD: gnu17
+    ENABLE_MODULE_VERIFIER: NO
+
+packages:
+  CatVodCore:
+    path: Packages/CatVodCore
+  CatVodNet:
+    path: Packages/CatVodNet
+  CatVodSource:
+    path: Packages/CatVodSource
+  CatVodPlayer:
+    path: Packages/CatVodPlayer
+  CatVodStore:
+    path: Packages/CatVodStore
+  CatVodUI:
+    path: Packages/CatVodUI
+
+targets:
+  YPlayer-iOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Apps/YPlayer-iOS
+    dependencies:
+      - package: CatVodCore
+      - package: CatVodNet
+      - package: CatVodSource
+      - package: CatVodPlayer
+      - package: CatVodStore
+      - package: CatVodUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.YPlayer.cat
+        PRODUCT_NAME: YPlayer
+        INFOPLIST_KEY_CFBundleDisplayName: YPlayer
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+    info:
+      path: Apps/YPlayer-iOS/Info.plist
+      properties:
+        CFBundleDisplayName: YPlayer
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen:
+          UIColorName: ""
+        UIRequiredDeviceCapabilities: [arm64]
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIApplicationSupportsIndirectInputEvents: true
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsArbitraryLoadsInWebContent: true
+        NSLocalNetworkUsageDescription: 用于局域网投屏与远程托管功能。
+        NSBonjourServices:
+          - _yplayer._tcp
+          - _http._tcp
+
+  YPlayer-macOS:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: Apps/YPlayer-macOS
+    dependencies:
+      - package: CatVodCore
+      - package: CatVodNet
+      - package: CatVodSource
+      - package: CatVodPlayer
+      - package: CatVodStore
+      - package: CatVodUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.YPlayer.cat
+        PRODUCT_NAME: YPlayer
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: NO
+    info:
+      path: Apps/YPlayer-macOS/Info.plist
+      properties:
+        CFBundleDisplayName: YPlayer
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "13.0"
+        LSApplicationCategoryType: public.app-category.entertainment
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsArbitraryLoadsInWebContent: true
+        NSLocalNetworkUsageDescription: 用于局域网投屏与远程托管功能。
+
+schemes:
+  YPlayer-iOS:
+    build:
+      targets:
+        YPlayer-iOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  YPlayer-macOS:
+    build:
+      targets:
+        YPlayer-macOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
