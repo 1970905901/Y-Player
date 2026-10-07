@@ -9,7 +9,12 @@
       "ref": "1.0.0",
       "license": "LGPL-3.0（variants/bundles）；使用 -GPL 后缀产物或 enable-gpl 构建则转为 GPL-3.0",
       "variantInUse": "MPVKit（LGPL），不使用 MPVKit-GPL",
-      "platforms": ["iOS 15+", "macOS 12+", "tvOS 15+", "visionOS 1+"],
+      "platforms": [
+        "iOS 15+",
+        "macOS 12+",
+        "tvOS 15+",
+        "visionOS 1+"
+      ],
       "provides": {
         "mpv": "libmpv（client API + render API）",
         "ffmpeg": "Libavcodec/Libavdevice/Libavfilter/Libavformat/Libavutil/Libswresample/Libswscale",
@@ -23,26 +28,44 @@
         "libsmbclient 仅在 -GPL 变体提供，本项目不启用。",
         "同一依赖同时供 MpvEngine 与自研 FFmpegEngine 使用，避免引入第二套 FFmpeg。"
       ],
+      "licenseCompliance": [
+        "本项目使用 LGPL 变体（未 enable-gpl、不引 -GPL 产物），因此 MPVKit / FFmpeg / mpv 按 LGPL-3.0 / LGPL-2.1+ 对待。",
+        "xcframework 里是**静态**库：LGPL 对静态链接的要求是「使用者能替换或重新链接该库」。自用 / 自签名侧载风险低，但**公开发布或商用前**必须补齐合规材料（提供可重链接的对象文件，或改为动态链接）。",
+        "应用内「关于」页需展示 MPVKit / mpv / FFmpeg 的许可与来源（随 M3 的界面任务一起做）。"
+      ],
       "binaryTargetChecksums": {
-        "Libmpv": "c381ceb4c1504efac12da95293e56585bbeb691634aa64e3a729f517169933ba",
+        "Libass": "3f4c576d2818ceb4544aa2a20e1f55846511c5e706fd19adc3ea9fd842270498",
         "Libavcodec": "136e432919a8a7b5b80155c68e9dc91b0ef3ae6623970b87bb8bd96a452543cf",
         "Libavdevice": "65713615f53352b37baffb38c5b88d88bab647d050d999bcc4684344ab636bdf",
         "Libavfilter": "3e71af8633d99d365f14b88064bceafd57acb23fc64db90e55b715a9c0dca328",
         "Libavformat": "2afb601375929640e743e7bdaa6c4a88e2b582a07e1c5f2dc95cc7f5b26a0810",
         "Libavutil": "5dc251c8807c501982edfb0bc9bddfee4148733142d6ebb947738c60fb3bf8d8",
+        "Libbluray": "bc037d34e2b0b5ab7f202fb371f5fb298136cc66fdf406c2172185d06f53f18d",
+        "Libcrypto": "593283be2a90f7fd66f6e6ed331b2f099cf403e0926fe3b4ac09a7062b793965",
+        "Libdav1d": "d1a32ae6a1f0193e9f05c44c9176844af7f6d2a58cb33843f6f1b8dfd9224083",
+        "Libdovi": "e693e239808350868e79c5448ef9f02e2716bc822dd8632a41a368a1eae5ca7d",
+        "Libfreetype": "496ca62488530e14b1e4624d20ee2b237c0bd675cd70c19da578a5768302d02d",
+        "Libfribidi": "bc15e097b892f2f90424e4a27ba287070cc2f98a74a4da10e6d2481d15cf5ff9",
+        "Libharfbuzz": "aa8e0b9ca0387dac74e3e93c86e34d11982bb013b28022d0e6966a8427a35b2e",
+        "Libluajit": "3a171ef1627fb88260893dc452f989bd93dd8510814771ba3aff7753470d3f3e",
+        "Libmpv": "c381ceb4c1504efac12da95293e56585bbeb691634aa64e3a729f517169933ba",
+        "Libplacebo": "2fa3d54cb81f302d6f11c7b2f509af30944381c3b11ee9d35096eb4637a6e2dd",
+        "Libshaderc_combined": "758047b615708575b580eb960a2d083f760a29dc462d6eaa360416c946ce433b",
+        "Libssl": "ff5ffd43d015d7285fd37e4a3145b25cbd8d2842740bd629a711c299a20e226a",
         "Libswresample": "d5c36acf2ff944e15706f4b7bfbf18bb1993ffc5b446c9f67f1aa79de5441f15",
         "Libswscale": "4fc00de6a7a8cddcdfe0eeb73b4f919cfaf9a0fd5a442f42a43e0f56e157d7c5",
+        "Libuavs3d": "bd5256081486d16c51c868d755bf70266c424b54c895269580de44ec6707f789",
         "Libuchardet": "ea4f548a230a755e059144657cc9e2ff563c1cdeae03974c38f8b6e1a40303fb",
-        "Libluajit": "3a171ef1627fb88260893dc452f989bd93dd8510814771ba3aff7753470d3f3e",
-        "Libshaderc_combined": "758047b615708575b580eb960a2d083f760a29dc462d6eaa360416c946ce433b",
+        "Libunibreak": "940d9833cf4477d0a260d9f2b4066125bc0ff7bbc111ac3c90e774765b77a559",
+        "MoltenVK": "aee189c54ad7c62bf734a3dc51eb4cfad5685d1d63b0ec519ecd1b437c332418",
+        "gmp": "ad33c7a08f4cdcb9924c8f0e6d9a054dad33d7794b97667bf8b6fb2b236ae585",
+        "gnutls": "3dbec5809339189bf9679e218c6cff387ebf8fb72745927835afc2678f5c9f4d",
+        "hogweed": "25727c9fa67287fa0a4f4722f88bb8be669b23cd7e837e2d00870eb8a25d3f27",
         "lcms2": "dc0dce0606f6ab6841a8ec5a6bd4448e2f3ef00661a050460f806c9393dc6982",
-        "Libplacebo": "2fa3d54cb81f302d6f11c7b2f509af30944381c3b11ee9d35096eb4637a6e2dd",
-        "Libdav1d": "d1a32ae6a1f0193e9f05c44c9176844af7f6d2a58cb33843f6f1b8dfd9224083"
+        "nettle": "0fdf3ebf8bd7b8bc8eee837cf27261cb4c52ae520b6576a2f468656aa1691e02"
       },
-      "unverifiedChecksums": [
-        "Libsmbclient / Libssl / Libcrypto / Libass / Libfreetype / Libfribidi / Libharfbuzz / Libdovi / Libunibreak / gmp / nettle / hogweed / gnutls / MoltenVK",
-        "以上条目未逐条抄录；首次在 macOS 上 swift package resolve 后按 MPVKit Package.swift 补齐。"
-      ]
+      "unverifiedChecksums": [],
+      "binaryTargetChecksumsSource": "https://raw.githubusercontent.com/mpvkit/MPVKit/1.0.0/Package.swift"
     },
     {
       "name": "Node 运行时（M1.5 已判定必须启用）",
@@ -52,7 +75,12 @@
         {
           "name": "nodejs-mobile",
           "version": "v18.20.4（Node 18.20.4）",
-          "artifacts": ["iOS iPhone arm64", "Simulator arm64", "Simulator x86_64", "Android armeabi-v7a/arm64-v8a/x86_64"],
+          "artifacts": [
+            "iOS iPhone arm64",
+            "Simulator arm64",
+            "Simulator x86_64",
+            "Android armeabi-v7a/arm64-v8a/x86_64"
+          ],
           "url": "https://github.com/nodejs-mobile/nodejs-mobile/releases"
         }
       ],
