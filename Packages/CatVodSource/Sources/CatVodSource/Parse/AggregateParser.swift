@@ -94,9 +94,13 @@ public struct AggregateParser: Sendable {
     }
 
     /// 跑一个成员，把结局压成可读且 `Sendable` 的 ``MemberOutcome``。
+    ///
+    /// 说明：`try await` 必须**先取到局部变量**再包进 `.parsed(...)` ——
+    /// SwiftFormat 的 `hoistTry` / `hoistAwait` 会拒绝内联写法（CI 已拦一次）。
     private static func run(parser: JSONParser, job: ParseJob) async -> MemberOutcome {
         do {
-            return .parsed(try await parser.parse(job))
+            let playback = try await parser.parse(job)
+            return .parsed(playback)
         } catch {
             return .failed(name: displayName(job), reason: message(for: error))
         }

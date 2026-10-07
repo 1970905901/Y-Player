@@ -16,7 +16,9 @@ public struct SniffedPageList: Sendable, Hashable {
     /// 已记录的顺序（按插入顺序，等价上游 `LinkedHashSet` 的迭代顺序）。
     public private(set) var urls: [String] = []
 
-    public init() {}
+    public init(urls: [String] = []) {
+        self.urls = urls
+    }
 
     /// 记录一个播放页地址；返回 `true` 表示是新地址，调用方应当为它再开一次嗅探。
     public mutating func insert(_ url: String) -> Bool {

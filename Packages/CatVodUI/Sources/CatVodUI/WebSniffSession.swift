@@ -43,8 +43,6 @@ final class WebSniffSession: NSObject, ObservableObject {
         var detectsPlayerPages = true
         /// 来源说明（写进 ``ParsedPlayback/from``）。
         var from: String = ""
-
-        init() {}
     }
 
     /// 嗅探成功（`from` 为来源说明）。
