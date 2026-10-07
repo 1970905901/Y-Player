@@ -36,7 +36,7 @@ public struct GRDBFavoriteStore: FavoriteStore {
         let row = database.read { db in
             try Row.fetchOne(db, sql: sql, arguments: [storageKey])
         }
-        return row.flatMap(Self.favorite(from:))
+        return row.map(Self.favorite(from:))
     }
 
     public func add(_ favorite: Favorite) async {

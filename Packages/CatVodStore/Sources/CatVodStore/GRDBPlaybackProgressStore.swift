@@ -26,7 +26,7 @@ public struct GRDBPlaybackProgressStore: PlaybackProgressStore {
         let row = database.read { db in
             try Row.fetchOne(db, sql: sql, arguments: [storageKey])
         }
-        return row.flatMap(Self.progress(from:))
+        return row.map(Self.progress(from:))
     }
 
     public func save(_ progress: PlaybackProgress) async {
