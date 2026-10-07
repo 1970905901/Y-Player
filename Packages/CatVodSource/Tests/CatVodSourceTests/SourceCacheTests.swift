@@ -43,9 +43,15 @@ struct SourceCacheTests {
         try writeCacheFile("config-deadbeef.js", bytes: 32, in: directory, modified: nil)
 
         let entries = try store.entries(currentURL: cacheTestJSURL)
+        // 注意：`#expect` 会把 `x.method(arg)` 展开成 `__checkFunctionCall(...)`；
+        // `filter`/`first(where:)` 这类 `rethrows` 调用（尤其是 key-path 形式）会因此报「call can throw」，
+        // 所以先把结果取到局部变量再断言。
+        let currentEntries = entries.filter(\.isCurrent)
+        let digestEntry = entries.first { $0.fileName.hasSuffix(".md5") }
+
         #expect(entries.count == 3)
-        #expect(entries.filter(\.isCurrent).count == 2)
-        #expect(entries.first { $0.fileName.hasSuffix(".md5") }?.isDigest == true)
+        #expect(currentEntries.count == 2)
+        #expect(digestEntry?.isDigest == true)
     }
 
     @Test("概览统计总占用与可清理的残留")

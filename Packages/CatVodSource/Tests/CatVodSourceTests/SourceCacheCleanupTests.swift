@@ -33,10 +33,13 @@ struct SourceCacheCleanupTests {
         try writeCacheFile("config-gone.js", bytes: 10, in: directory, modified: nil)
 
         let removed = try store.pruneOrphans(currentURL: cacheTestJSURL)
-        #expect(removed == 1)
         let remaining = try store.entries(currentURL: cacheTestJSURL)
+        // `allSatisfy` 是 rethrows：不能在 `#expect` 宏里直接调用（见 SourceCacheTests 的说明）。
+        let allCurrent = remaining.allSatisfy(\.isCurrent)
+
+        #expect(removed == 1)
         #expect(remaining.count == 2)
-        #expect(remaining.allSatisfy(\.isCurrent))
+        #expect(allCurrent)
     }
 
     @Test("容量上限：最旧的先淘汰，且不动当前接口")
@@ -53,11 +56,15 @@ struct SourceCacheCleanupTests {
         try writeCacheFile("config-newer.js", bytes: 60, in: directory, modified: now.addingTimeInterval(-60))
 
         let removed = try store.enforceLimit(currentURL: cacheTestJSONURL)
-        #expect(removed == 1)
         let remaining = try store.entries(currentURL: cacheTestJSONURL)
+        // `contains(where:)` 同样是 rethrows，取出宏外再断言。
+        let keepsCurrent = remaining.contains { $0.fileName == currentName }
+        let droppedOldest = remaining.contains { $0.fileName == "config-oldest.js" }
+
+        #expect(removed == 1)
         #expect(remaining.count == 2)
-        #expect(remaining.contains { $0.fileName == currentName })
-        #expect(!remaining.contains { $0.fileName == "config-oldest.js" })
+        #expect(keepsCurrent)
+        #expect(!droppedOldest)
     }
 
     @Test("容量上限：只剩当前接口时停止淘汰（不会删掉正在用的缓存）")

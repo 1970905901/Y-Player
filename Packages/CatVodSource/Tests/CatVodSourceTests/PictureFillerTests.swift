@@ -96,7 +96,9 @@ struct PictureFillerTests {
 
         #expect(filler.needsFilling(site: cmsSite(), result: needsFill))
         let filled = await filler.fill(site: cmsSite(), result: needsFill)
-        #expect(filled.list.allSatisfy { !$0.vodPic.isEmpty })
+        // `allSatisfy` 是 rethrows：先在宏外算好再断言（Swift Testing 宏展开限制）。
+        let allHavePictures = filled.list.allSatisfy { !$0.vodPic.isEmpty }
+        #expect(allHavePictures)
 
         // 请求应带上 ids（逗号连接的 vod_id 列表）。
         let request = await transport.lastRequest()
