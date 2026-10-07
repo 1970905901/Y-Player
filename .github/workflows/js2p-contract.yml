@@ -1,0 +1,47 @@
+name: js2p contract
+
+# 为什么独立于 build.yml：
+# 本作业要出网下载 6.29 MB 的 js2p bundle，而且 bundle 启动时会去拉**上游站点配置**。
+# 上游抖动不该把正常 PR 判红，所以这里只在「手动触发 + 每周定时」跑，**不挂在 push/PR 上**。
+# 作业的断言也分级：就绪行/`/health` 是硬断言，站点数/`spider init` 只作证据记录。
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
+
+concurrency:
+  group: js2p-contract
+  # 定时任务重叠时不要互相取消：契约探针很便宜，跑完更可靠。
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: js2p bundle contract (node)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Node version
+        run: node --version
+
+      - name: "Contract probe (hard asserts: ready line + /health)"
+        run: python3 Tools/js2p_contract_probe.py
+
+      # 刻意不缓存 bundle：每次都验证「当前线上版本」的契约，才能发现上游契约漂移。
+      - name: Evidence
+        if: always()
+        run: |
+          cat Tools/out/js2p-contract.txt || true
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: js2p-contract
+          path: Tools/out/js2p-contract.txt
+          if-no-files-found: warn
