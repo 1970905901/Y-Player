@@ -92,11 +92,24 @@ def main() -> int:
             continue
         log_path = os.path.join(out_dir, f"job-{job['id']}.log")
         code, size = fetch_log(token, repo, job["id"], log_path)
-        lines.append(f"\n--- LOG job={job['id']} curl={code} bytes={size} tail 9000 ---")
-        if size:
-            with open(log_path, encoding="utf-8", errors="replace") as handle:
-                text = handle.read()
-            lines.append(text[-9000:])
+        lines.append(f"\n--- LOG job={job['id']} curl={code} bytes={size} ---")
+        if not size:
+            continue
+        with open(log_path, encoding="utf-8", errors="replace") as handle:
+            text = handle.read()
+
+        # 先给出关键错误行，便于快速定位
+        keys = ("error:", "fatal error", "note: ", "Undefined symbol", "no such module", "FAILED")
+        hits = [
+            line.strip()
+            for line in text.splitlines()
+            if any(key in line for key in keys)
+        ]
+        lines.append(f"--- error-ish lines ({len(hits)}) ---")
+        lines.extend(hits[:120])
+
+        lines.append(f"\n--- tail 12000 ---")
+        lines.append(text[-12000:])
 
     write(lines, out_dir)
     print("\n".join(lines[:40]))

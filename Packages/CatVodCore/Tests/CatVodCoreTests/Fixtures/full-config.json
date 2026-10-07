@@ -14,7 +14,7 @@
       "key": "cat",
       "name": "猫源",
       "type": 3,
-      "api": "http://127.0.0.1:9988/spider",
+      "api": "http://127.0.0.1:9988/spider/cat",
       "timeout": 20,
       "searchable": 1,
       "changeable": 1,

@@ -67,6 +67,22 @@ struct ConfigDecodingTests {
         #expect(jarSite.availability.reason?.contains("JVM") == true)
     }
 
+    @Test("CatSpider 判定：Loader 分派严格要求 /spider/，端点归类允许 /spider 结尾")
+    func catSpiderPredicates() {
+        let loaderShape = Site(key: "a", name: "A", type: 3, api: "http://127.0.0.1:9988/spider/cat")
+        #expect(loaderShape.isCatSpiderHTTP)
+        #expect(loaderShape.isCatSpiderEndpoint)
+        #expect(loaderShape.spiderRuntimeKind == .catSpiderHTTP)
+
+        // 与 CatSpider.java 的 matches() 一致：裸 /spider 不交给 Loader 分派，
+        // 但归类/可用性检查必须能识别，避免误报“无法识别的 api”。
+        let bareShape = Site(key: "b", name: "B", type: 3, api: "http://127.0.0.1:9988/spider")
+        #expect(!bareShape.isCatSpiderHTTP)
+        #expect(bareShape.isCatSpiderEndpoint)
+        #expect(bareShape.spiderRuntimeKind == .catSpiderHTTP)
+        #expect(bareShape.availability.isAvailable)
+    }
+
     @Test("默认站点/解析器回退与校验告警")
     func resolution() throws {
         let config = try decodeConfig("full-config")

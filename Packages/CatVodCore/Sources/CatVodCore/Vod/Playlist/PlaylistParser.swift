@@ -105,8 +105,13 @@ public enum PlaylistParser {
         for (index, name) in names.enumerated() where name.isEmpty {
             issues.append("第 \(index + 1) 个线路名为空")
         }
-        for (index, group) in groups.enumerated() where episodes(group).isEmpty {
-            issues.append("第 \(index + 1) 个线路没有可用选集")
+        // 以「线路名与播放列表」的并集为准：声明了线路却没有对应数据也要报出来，
+        // 否则 `playURL` 为空这种最常见的坏数据会被静默忽略。
+        for index in 0..<max(names.count, groups.count) {
+            let group = index < groups.count ? groups[index] : ""
+            if episodes(group).isEmpty {
+                issues.append("第 \(index + 1) 个线路没有可用选集")
+            }
         }
         return issues
     }

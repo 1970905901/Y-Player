@@ -25,11 +25,14 @@ actor CatSpiderRequestRecorder: HTTPTransport {
 }
 
 /// 测试辅助：构造带假传输层的客户端。
+///
+/// 注意站点 `api` 必须是真实形态 `http://127.0.0.1:<port>/spider/<key>`：
+/// `CatSpiderHTTPClient` 的分派判定与 `CatSpider.java#matches` 一致，要求包含 `/spider/`。
 func makeCatSpiderClient(
     response: String,
     site: Site? = nil
 ) throws -> (CatSpiderHTTPClient, CatSpiderRequestRecorder) {
-    let api = try #require(URL(string: "http://127.0.0.1:9988/spider"))
+    let api = try #require(URL(string: "http://127.0.0.1:9988/spider/cat"))
     let target = site ?? Site(key: "cat", name: "猫源", type: 3, api: api.absoluteString)
     let recorder = CatSpiderRequestRecorder(response: HTTPResponse(status: 200, body: Data(response.utf8)))
     let client = try #require(CatSpiderHTTPClient(site: target, transport: recorder))
@@ -87,7 +90,7 @@ struct CatSpiderProtocolTests {
 
     @Test("请求头使用站点 header，超时来自站点 timeout")
     func requestHeadersAndTimeout() async throws {
-        let api = try #require(URL(string: "http://127.0.0.1:9988/spider"))
+        let api = try #require(URL(string: "http://127.0.0.1:9988/spider/cat"))
         let site = Site(
             key: "cat",
             name: "猫源",
@@ -110,7 +113,7 @@ struct CatSpiderProtocolTests {
 
     @Test("非 200 抛网络错误")
     func nonSuccessStatus() async throws {
-        let api = try #require(URL(string: "http://127.0.0.1:9988/spider"))
+        let api = try #require(URL(string: "http://127.0.0.1:9988/spider/cat"))
         let site = Site(key: "cat", name: "猫源", type: 3, api: api.absoluteString)
         let recorder = CatSpiderRequestRecorder(response: HTTPResponse(status: 500, body: Data()))
         let client = try #require(CatSpiderHTTPClient(site: site, transport: recorder))

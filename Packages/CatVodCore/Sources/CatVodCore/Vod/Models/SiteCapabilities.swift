@@ -11,9 +11,22 @@ public extension Site {
     /// 是否为 js2p / CatSpider HTTP 站点。
     ///
     /// 判定与参考实现 `app/.../api/loader/CatSpider.java` 的 `matches(api)` 完全一致：
-    /// `api` 以 `http` 开头且包含 `/spider/`。
+    /// `api` 以 `http` 开头**且包含 `/spider/`**（注意含尾斜杠）。
+    /// 真实 bundle 的 `api` 形如 `http://127.0.0.1:<port>/spider/<key>`，因此该判定成立。
     var isCatSpiderHTTP: Bool {
         api.hasPrefix("http") && api.contains("/spider/")
+    }
+
+    /// 端点形态判定（比 ``isCatSpiderHTTP`` 宽松）：也接受以 `/spider` 结尾的写法。
+    ///
+    /// 用途区别：
+    /// - 分派给哪个 Loader 用 ``isCatSpiderHTTP``（必须与参考实现一致）；
+    /// - 站点类型归类、可用性提示、UI 展示用本属性，避免把 `.../spider` 误判为“无法识别的 api”。
+    var isCatSpiderEndpoint: Bool {
+        guard api.hasPrefix("http") else {
+            return false
+        }
+        return api.contains("/spider/") || api.hasSuffix("/spider")
     }
 
     /// `type=3` 的运行时分发结果。
@@ -21,7 +34,7 @@ public extension Site {
         guard kind == .spider else {
             return .unsupported
         }
-        if isCatSpiderHTTP {
+        if isCatSpiderEndpoint {
             return .catSpiderHTTP
         }
         let lowered = api.lowercased()
