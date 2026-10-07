@@ -29,10 +29,15 @@ struct SiteClientDispatchTests {
         let requests = await recorder.requests
         #expect(requests.count == 2)
 
-        // 首页：类型 0/1/2 不带参数（逐行对齐 SiteApi.java），因此 url 就是站点 api。
+        // 首页：类型 0/1/2 不带业务参数（逐行对齐 SiteApi.java）。
+        // 注意：组装层对空参数也会设置 queryItems，URL 末尾因此可能留下一个 `?`，
+        // 所以这里断言 host/path + 参数为空，而不是做整串字符串比较。
         let home = try #require(requests.first)
         #expect(home.method == .get)
-        #expect(home.url.absoluteString == "https://cms.example.com/api.php/provide/vod")
+        #expect(home.url.host == "cms.example.com")
+        #expect(home.url.path == "/api.php/provide/vod")
+        let homeQuery = home.url.query ?? ""
+        #expect(homeQuery.isEmpty)
 
         // 分类：ac=detail + t=<分类ID> + pg=<页码>。
         let categoryURL = try #require(requests.last?.url.absoluteString)

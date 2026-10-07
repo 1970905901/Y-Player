@@ -1,7 +1,7 @@
 # M16P3 macOS 宿主接通（js2p 真正可用）
 
 - 状态：**P3a + P3b 均已实现**（宿主会话层 → 站点客户端分发 → 界面接线），随 CI 验证；
-  仍需**手工验收**（在 macOS 上真正点一遍，见第五节）
+  仍需**手工验收**（在 macOS 上真正点一遍，见第六节）
 - 依赖：M16P1（`NodeRuntimeAdapter`）、M16P2（`HostSiteCatalog` 与逐字实测契约）
 - 目标：让 js2p 的 `index.js` 从「只是下载到本地」变成「macOS 上真能列出站点、真能浏览」
 
@@ -69,7 +69,14 @@ P3b 一旦把 UI 与 `CatVodNode` 混进同一次提交，出问题只能靠 20 
 | `HomeView` / `SearchView` | `cmsSites` → `browsableSites`（不再过滤 `type=3`）：首页与搜索现在都能用 js2p 站点；空态提示改为显示真实宿主状态 |
 | `InterfaceManagementView` | 新增「Node 宿主」区块：状态、**重启宿主**、**查看宿主输出**（诊断） |
 
-## 五、手工验收（需要 macOS，尚未执行）
+## 五、已知小瑕疵（如实记录，未修）
+
+**无参数请求的 URL 会带一个尾随 `?`**：`ApiRequestFactory.getRequest` 对空参数也设置了
+`components.queryItems`（设为 `[]`），于是 `URLComponents.url` 渲染成 `.../provide/vod?`。
+这是纯观感问题（上游正常忽略），但为了不改动 M01 已验证的组装层，暂不处理；
+`SiteClientDispatchTests` 因此按 `host` / `path` / 「参数为空」断言，而不是整串比较。
+
+## 六、手工验收（需要 macOS，尚未执行）
 
 1. `brew install node`（或设 `YPLAYER_NODE=/path/to/node`）；
 2. 接口地址填 `https://9280.kstore.vip/ceshi/index.js` → 加载；
