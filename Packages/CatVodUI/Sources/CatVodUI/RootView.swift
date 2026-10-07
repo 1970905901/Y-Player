@@ -6,21 +6,16 @@ import SwiftUI
 /// 应用根视图（占位壳）。
 ///
 /// 当前只展示工程状态与协议能力的自检信息；M2 会替换为「接口管理 → 首页 → 分类 → 详情 → 播放」的完整链路。
+///
+/// UI 约定：导航/列表/工具栏等一律通过 ``AdaptiveNavigationContainer``、``adaptiveListStyle()``、
+/// ``adaptiveToolbar(leading:trailing:)`` 这类基础件获取**当前系统的原生外观**，业务视图不写版本分支。
 public struct RootView: View {
     public init() {}
 
     public var body: some View {
-        #if os(iOS)
-        NavigationView { content }
-            .navigationViewStyle(.stack)
-        #else
-        NavigationView { content }
-        #endif
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        list
+        AdaptiveNavigationContainer {
+            list
+        }
     }
 
     private var list: some View {
@@ -38,6 +33,7 @@ public struct RootView: View {
                 Text("M2：接入接口管理、站点列表、搜索、详情与播放")
             }
         }
+        .adaptiveListStyle()
         .navigationTitle("YPlayer")
     }
 

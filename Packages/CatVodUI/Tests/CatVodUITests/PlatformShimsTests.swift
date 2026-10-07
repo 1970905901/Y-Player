@@ -1,5 +1,6 @@
 import CatVodCore
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import CatVodUI
@@ -18,4 +19,13 @@ struct PlatformShimsTests {
         #expect(!unavailable.isAvailable)
         #expect(SiteAvailability.available.reason == nil)
     }
+
+    @Test("版本自适应基础件可构造（编译期验证各版本分支都成立）")
+    func adaptiveViewsConstruct() {
+        _ = AdaptiveNavigationContainer { Text("root") }
+        _ = Text("list").adaptiveListStyle()
+        _ = Text("toolbar").adaptiveToolbar(leading: { Text("L") }, trailing: { Text("T") })
+        _ = Text("search").adaptiveSearchable(text: .constant(""), prompt: "搜索")
+    }
 }
+

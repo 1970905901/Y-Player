@@ -18,7 +18,6 @@ final class VodXMLParser: NSObject, XMLParserDelegate {
     private var currentVideo: [String: String] = [:]
     private var currentFlags: [String] = []
     private var currentEpisodes: [String] = []
-    private var currentFlagName = ""
     private var currentTypeID = ""
     private var insideDD = false
 
@@ -65,10 +64,8 @@ final class VodXMLParser: NSObject, XMLParserDelegate {
             currentEpisodes = []
         case "dd":
             insideDD = true
-            let flag = attributeDict["flag"] ?? ""
-            currentFlags.append(flag)
+            currentFlags.append(attributeDict["flag"] ?? "")
             currentEpisodes.append("") // 占位，随后由字符/CDATA 填充
-            currentFlagName = flag
         case "ty":
             currentTypeID = attributeDict["id"] ?? ""
         default:
@@ -104,7 +101,6 @@ final class VodXMLParser: NSObject, XMLParserDelegate {
             finishVideo()
         case "dd":
             insideDD = false
-            currentFlagName = ""
         case "ty":
             if !currentTypeID.isEmpty, !value.isEmpty {
                 result.categories.append(VodCategory(typeID: currentTypeID, typeName: value))

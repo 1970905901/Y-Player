@@ -88,7 +88,9 @@ def main() -> int:
 
     status, runs = api(token, f"/repos/{repo}/actions/runs?per_page=10")
     lines.append(f"runs -> {status}")
-    run_id = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+    run_id = 0
+    if len(sys.argv) > 3 and sys.argv[3].isdigit():
+        run_id = int(sys.argv[3])
     for run in runs.get("workflow_runs", []):
         lines.append(
             f"run {run['id']} | {run['name']} | {run['status']}/{run['conclusion']} | "
