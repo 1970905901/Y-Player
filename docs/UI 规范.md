@@ -32,6 +32,11 @@
 - ❌ 使用 macOS 不可用的 iOS 专属 API（如 `.navigationViewStyle(.stack)`、`.listStyle(.insetGrouped)`）。
 - ⚠️ `AnyView` 仅允许出现在需要按版本返回不同具体类型的适配函数里（如 `adaptiveSearchable`），业务视图不得使用。
 
+> 例外说明：`#if canImport(...)` 用于「可选原生依赖」的能力探测（例如 `CatVodPlayer` 里的
+> `#if canImport(Libmpv)` / `#if canImport(Libavformat)`），与本节的 UI 版本分支不是一回事，
+> 它必须留在拥有该依赖的包内，并且**只能用于能力判定**（如 `PlayerEngineKind.isAvailable`），
+> 不得用来切换 UI 呈现。
+
 ## 四、验收方式
 
 - iOS 15 与最新 iOS 模拟器上各跑一遍：导航推进/返回、列表分组、工具栏按钮、搜索框位置与行为必须与系统习惯一致。
