@@ -57,7 +57,9 @@ public actor AVPlayerEngine: PlayerEngine {
         installObservers(item: item)
 
         if resource.startPosition > 0 {
-            player.seek(to: CMTime(seconds: resource.startPosition, preferredTimescale: 600))
+            // 用 completion-handler 版本（经 seekAsync 包装）：
+            // 直接写 player.seek(to:) 会被解析成 async 重载，行为与完成回调不一致。
+            await seekAsync(to: CMTime(seconds: resource.startPosition, preferredTimescale: 600))
         }
         startMonitoring()
     }
