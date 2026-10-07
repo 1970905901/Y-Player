@@ -1,8 +1,7 @@
 import CatVodCore
+@testable import CatVodPlayer
 import Foundation
 import Testing
-
-@testable import CatVodPlayer
 
 /// 播放设置：**手动选择内核与解码方式，不做自动降级**。
 @MainActor

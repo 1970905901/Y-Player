@@ -1,9 +1,8 @@
 import CatVodCore
 import CatVodNet
+@testable import CatVodSource
 import Foundation
 import Testing
-
-@testable import CatVodSource
 
 @Suite("站点 API 地址构造（对齐 SiteApi.java）")
 struct ApiURLBuilderTests {
@@ -68,19 +67,19 @@ struct ApiURLBuilderTests {
 
     @Test("详情：ac + ids")
     func detailRequest() throws {
-        let parameters = query(of: try ApiURLBuilder.detailRequest(site: site(type: 1), vodID: "1001"))
+        let parameters = try query(of: ApiURLBuilder.detailRequest(site: site(type: 1), vodID: "1001"))
         #expect(parameters["ac"] == "detail")
         #expect(parameters["ids"] == "1001")
     }
 
     @Test("搜索：wd + quick + extend；pg 仅在 page != 1 时携带")
     func searchRequest() throws {
-        let first = query(of: try ApiURLBuilder.searchRequest(site: site(type: 1), keyword: "海贼", page: 1, quick: true))
+        let first = try query(of: ApiURLBuilder.searchRequest(site: site(type: 1), keyword: "海贼", page: 1, quick: true))
         #expect(first["wd"] == "海贼")
         #expect(first["quick"] == "true")
         #expect(first["pg"] == nil)
 
-        let second = query(of: try ApiURLBuilder.searchRequest(site: site(type: 1), keyword: "海贼", page: 3, quick: false))
+        let second = try query(of: ApiURLBuilder.searchRequest(site: site(type: 1), keyword: "海贼", page: 3, quick: false))
         #expect(second["pg"] == "3")
         #expect(second["quick"] == "false")
     }

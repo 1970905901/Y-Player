@@ -67,7 +67,12 @@ if !key.hasPrefix("-") {
 | `trailing_newline`（w） | `PlatformShimsTests` | 去掉多余尾空行 |
 | `nesting`（w ×2） | `PlaybackURLs.Entry.CodingKeys` / `ShortNameKeys` | 配置 `nesting.type_level: 2`（两套键空间是有意为之，见注释） |
 
-## 五、仍未收敛的一项（明确记录，不掩饰）
+## 五、仍未收敛的一项（**已由 M00P2 收敛，见下**）
+
+> **更新（同日）**：本项已在 `M00P2 全量格式化` 中完成 ——
+> `--ifdef no-indent` 处理 `#if` 风格分歧，其余规则逐条决策（采纳/禁用，理由写在 `.swiftformat` 注释与 M00P2 文档里），
+> 结果 **`0/97 files require formatting`**，并把 lint 两个步骤**升级为阻断**（不再 `|| true`）。
+> 下面保留当时的记录，便于回溯判断过程。
 
 SwiftFormat 用**默认全量规则集**检查时报 `67/93 files require formatting`。原因有两类：
 

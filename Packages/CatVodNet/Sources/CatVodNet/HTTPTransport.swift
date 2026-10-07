@@ -67,7 +67,7 @@ public struct HTTPResponse: Sendable {
 
     /// 是否 2xx。
     public var isSuccess: Bool {
-        (200..<300).contains(status)
+        (200 ..< 300).contains(status)
     }
 
     /// 按 UTF-8 解码文本体；失败时回退到 Latin-1（部分老站点不是 UTF-8）。

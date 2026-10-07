@@ -8,6 +8,6 @@ struct YPlayerMacApp: App {
         WindowGroup {
             RootView()
         }
-        .defaultSize(width: 1_280, height: 800)
+        .defaultSize(width: 1280, height: 800)
     }
 }

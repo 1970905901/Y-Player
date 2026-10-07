@@ -205,7 +205,7 @@ public enum PlayerEngineResolution: Sendable, Hashable {
 /// 解析结果 `PlayerEngineResolution` 仍是普通值类型，可自由传递。
 @MainActor
 public struct PlayerCoordinator {
-    public init() {}
+    public init() { }
 
     /// 按用户设置解析内核（**不降级**）。
     public func resolve(settings: PlaybackSettings) -> PlayerEngineResolution {
@@ -239,6 +239,7 @@ public struct PlayerCoordinator {
         }
     }
 }
+
 /// 播放错误。
 public enum PlayerError: Error, Sendable, Equatable {
     case engineUnavailable(PlayerEngineKind)

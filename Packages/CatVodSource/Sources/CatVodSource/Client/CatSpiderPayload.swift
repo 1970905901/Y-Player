@@ -1,5 +1,5 @@
-import Foundation
 import CatVodCore
+import Foundation
 
 /// CatSpider 请求载荷值。
 ///
@@ -64,7 +64,8 @@ public enum CatSpiderResponseDecoder {
             // 允许返回“JSON 文本的字符串”这种二次编码形态。
             if let text = String(data: data, encoding: .utf8),
                let nested = text.data(using: .utf8),
-               let root = try? JSONSerialization.jsonObject(with: nested, options: [.fragmentsAllowed]) {
+               let root = try? JSONSerialization.jsonObject(with: nested, options: [.fragmentsAllowed])
+            {
                 return try rewrite(root, path: path)
             }
             throw CatVodError.decoding(path: path, reason: "响应不是合法 JSON")

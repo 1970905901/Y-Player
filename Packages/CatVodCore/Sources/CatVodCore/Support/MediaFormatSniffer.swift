@@ -9,13 +9,13 @@ public enum MediaFormatSniffer {
     /// 常见媒体扩展名（小写，不含点）。
     public static let videoExtensions: Set<String> = [
         "m3u8", "m3u", "mp4", "m4v", "mkv", "flv", "avi", "mov", "wmv", "webm",
-        "ts", "m2ts", "mpd", "mpg", "mpeg", "rmvb", "rm", "3gp", "f4v", "ogv"
+        "ts", "m2ts", "mpd", "mpg", "mpeg", "rmvb", "rm", "3gp", "f4v", "ogv",
     ]
 
     /// 常见媒体 MIME 片段。
     public static let videoMIMEFragments: [String] = [
         "video/", "application/vnd.apple.mpegurl", "application/x-mpegurl",
-        "application/dash+xml", "audio/"
+        "application/dash+xml", "audio/",
     ]
 
     /// 判断地址是否像可直接播放的媒体直链。
@@ -33,7 +33,7 @@ public enum MediaFormatSniffer {
         // 取路径部分并去掉查询串/片段，再判断扩展名。
         let path: Substring
         if let cutoff = lowered.firstIndex(where: { $0 == "?" || $0 == "#" }) {
-            path = lowered[lowered.startIndex..<cutoff]
+            path = lowered[lowered.startIndex ..< cutoff]
         } else {
             path = lowered[lowered.startIndex...]
         }

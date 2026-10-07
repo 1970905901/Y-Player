@@ -148,7 +148,7 @@ final class VodXMLParser: NSObject, XMLParserDelegate {
         let episodes = currentEpisodes.filter { !$0.isEmpty }
         if !episodes.isEmpty {
             item.vodPlayFrom = currentFlags.isEmpty
-                ? (0..<episodes.count).map { "线路 \($0 + 1)" }.joined(separator: PlaylistParser.lineSeparator)
+                ? (0 ..< episodes.count).map { "线路 \($0 + 1)" }.joined(separator: PlaylistParser.lineSeparator)
                 : currentFlags.joined(separator: PlaylistParser.lineSeparator)
             item.vodPlayURL = episodes.joined(separator: PlaylistParser.lineSeparator)
         }

@@ -38,7 +38,7 @@ public actor URLSessionTransport: HTTPTransport {
         public static let `default` = Configuration(
             defaultHeaders: [
                 "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-                    + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+                    + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
             ]
         )
 
@@ -90,7 +90,7 @@ public actor URLSessionTransport: HTTPTransport {
     /// 把 `HTTPRequest` 归一化为 `URLRequest`：执行广告拦截与 header 合并。
     ///
     /// 声明为 `nonisolated` 便于在测试中直接断言而不必跨 actor 等待。
-    nonisolated public func prepare(_ request: HTTPRequest) throws -> URLRequest {
+    public nonisolated func prepare(_ request: HTTPRequest) throws -> URLRequest {
         guard let host = request.url.host, !host.isEmpty else {
             throw CatVodError.network(status: nil, url: request.url.absoluteString, reason: "URL 缺少 host")
         }
@@ -119,7 +119,7 @@ public actor URLSessionTransport: HTTPTransport {
     }
 
     /// host 是否命中广告规则：支持精确匹配与 `*.example.com` / `example.com` 后缀匹配。
-    nonisolated public func isBlocked(host: String) -> Bool {
+    public nonisolated func isBlocked(host: String) -> Bool {
         let lowered = host.lowercased()
         for pattern in configuration.blockedHosts {
             let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -138,7 +138,7 @@ public actor URLSessionTransport: HTTPTransport {
     }
 
     /// 规则匹配：精确、后缀（含子域）或 `contains`（上游 host 规则支持包含匹配）。
-    nonisolated public func matches(pattern: String, host: String) -> Bool {
+    public nonisolated func matches(pattern: String, host: String) -> Bool {
         let rule = pattern.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let lowered = host.lowercased()
         guard !rule.isEmpty else {

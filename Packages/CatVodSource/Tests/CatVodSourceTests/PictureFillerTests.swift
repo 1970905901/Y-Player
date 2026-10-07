@@ -1,9 +1,8 @@
 import CatVodCore
 import CatVodNet
+@testable import CatVodSource
 import Foundation
 import Testing
-
-@testable import CatVodSource
 
 /// 固定返回 / 固定失败的假传输层。
 actor PictureTransport: HTTPTransport {
@@ -13,11 +12,11 @@ actor PictureTransport: HTTPTransport {
 
     init(response: HTTPResponse) {
         self.response = response
-        self.failure = nil
+        failure = nil
     }
 
     init(failure: CatVodError) {
-        self.response = nil
+        response = nil
         self.failure = failure
     }
 
@@ -66,7 +65,7 @@ struct PictureFillerTests {
         let json = listJSON([
             (id: "1", pic: "https://img.example.com/1.jpg"),
             (id: "2", pic: "https://img.example.com/2.jpg"),
-            (id: "3", pic: "")
+            (id: "3", pic: ""),
         ])
         let result = try decode(json)
         let transport = PictureTransport(response: HTTPResponse(status: 200, body: Data(json.utf8)))
@@ -84,12 +83,12 @@ struct PictureFillerTests {
         let needsFill = try decode(listJSON([
             (id: "1", pic: ""),
             (id: "2", pic: ""),
-            (id: "3", pic: "https://img.example.com/3.jpg")
+            (id: "3", pic: "https://img.example.com/3.jpg"),
         ]))
         let filledJSON = listJSON([
             (id: "1", pic: "https://img.example.com/1.jpg"),
             (id: "2", pic: "https://img.example.com/2.jpg"),
-            (id: "3", pic: "https://img.example.com/3.jpg")
+            (id: "3", pic: "https://img.example.com/3.jpg"),
         ])
         let transport = PictureTransport(response: HTTPResponse(status: 200, body: Data(filledJSON.utf8)))
         let filler = PictureFiller(client: CMSClient(transport: transport))
@@ -111,18 +110,18 @@ struct PictureFillerTests {
     func failureKeepsOriginal() async throws {
         let original = try decode(listJSON([
             (id: "1", pic: ""),
-            (id: "2", pic: "")
+            (id: "2", pic: ""),
         ]))
         let transport = PictureTransport(failure: CatVodError.network(status: 502, url: "https://api.example.com", reason: "上游不可用"))
         let filler = PictureFiller(client: CMSClient(transport: transport))
 
         let filled = await filler.fill(site: cmsSite(), result: original)
         #expect(filled.list.count == 2)
-        #expect(filled.list.allSatisfy { $0.vodPic.isEmpty })
+        #expect(filled.list.allSatisfy(\.vodPic.isEmpty))
     }
 
     @Test("不支持的站点类型不补图")
-    func unsupportedKinds() async throws {
+    func unsupportedKinds() throws {
         let json = listJSON([(id: "1", pic: "")])
         let result = try decode(json)
         let transport = PictureTransport(response: HTTPResponse(status: 200, body: Data(json.utf8)))

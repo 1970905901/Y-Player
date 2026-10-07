@@ -1,9 +1,8 @@
 import CatVodCore
 import CatVodNet
+@testable import CatVodSource
 import Foundation
 import Testing
-
-@testable import CatVodSource
 
 /// 按 URL 返回预设响应的传输层（同模块测试共享）。
 actor StubTransport: HTTPTransport {

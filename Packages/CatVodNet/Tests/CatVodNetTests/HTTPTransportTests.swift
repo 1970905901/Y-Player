@@ -1,7 +1,6 @@
+@testable import CatVodNet
 import Foundation
 import Testing
-
-@testable import CatVodNet
 
 @Suite("HTTP 基础类型")
 struct HTTPTransportTests {
@@ -27,7 +26,7 @@ struct HTTPTransportTests {
     func headerMerge() {
         let merged = HTTPHeaderMerger.merge([
             ["User-Agent": "A", "Referer": "R1"],
-            ["User-Agent": "B"]
+            ["User-Agent": "B"],
         ])
         #expect(merged["User-Agent"] == "B")
         #expect(merged["Referer"] == "R1")

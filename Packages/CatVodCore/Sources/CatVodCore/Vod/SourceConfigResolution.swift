@@ -16,7 +16,7 @@ public extension SourceConfig {
 
     /// 在当前平台/构建中可运行的站点（已排除隐藏站点）。
     var usableSites: [Site] {
-        visibleSites.filter { $0.availability.isAvailable }
+        visibleSites.filter(\.availability.isAvailable)
     }
 
     /// 参与聚合搜索的站点（可运行、允许搜索、且参与快速搜索）。
@@ -31,7 +31,7 @@ public extension SourceConfig {
 
     /// 可用的解析器。
     var usableParsers: [ParserRule] {
-        parses.filter { $0.availability.isAvailable }
+        parses.filter(\.availability.isAvailable)
     }
 
     /// 按 key 查站点；找不到返回 nil。

@@ -60,6 +60,7 @@ public final class AppModel: ObservableObject {
             UserDefaults.standard.set(configURL, forKey: StorageKey.configURL)
         }
     }
+
     /// 播放内核：由用户在设置里**手动选择**，不自动切换。
     @Published public var preferredEngine: PlayerEngineKind {
         didSet {
@@ -67,6 +68,7 @@ public final class AppModel: ObservableObject {
             refreshPlaybackNotice()
         }
     }
+
     /// 解码方式（硬解/软解）：由用户手动选择，不自动切换。
     @Published public var decoderMode: DecoderMode {
         didSet {
@@ -74,6 +76,7 @@ public final class AppModel: ObservableObject {
             refreshPlaybackNotice()
         }
     }
+
     /// 设置页提示：所选内核不可用、解码方式对所选内核无效等（如实告知，不静默处理）。
     @Published public private(set) var playbackNotice: String = ""
 
@@ -92,13 +95,13 @@ public final class AppModel: ObservableObject {
     public init(cacheDirectory: URL? = nil, defaults: UserDefaults = .standard) {
         let base = cacheDirectory ?? Self.defaultCacheDirectory()
         self.cacheDirectory = base
-        self.sessionTransport = URLSessionTransport()
+        sessionTransport = URLSessionTransport()
 
-        self.configURL = defaults.string(forKey: StorageKey.configURL) ?? ""
+        configURL = defaults.string(forKey: StorageKey.configURL) ?? ""
         let storedEngine = defaults.string(forKey: StorageKey.preferredEngine)
-        self.preferredEngine = storedEngine.flatMap(PlayerEngineKind.init(rawValue:)) ?? .system
+        preferredEngine = storedEngine.flatMap(PlayerEngineKind.init(rawValue:)) ?? .system
         let storedDecoder = defaults.string(forKey: StorageKey.decoderMode)
-        self.decoderMode = storedDecoder.flatMap(DecoderMode.init(rawValue:)) ?? .hardware
+        decoderMode = storedDecoder.flatMap(DecoderMode.init(rawValue:)) ?? .hardware
         refreshPlaybackNotice()
     }
 

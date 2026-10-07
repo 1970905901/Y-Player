@@ -19,11 +19,11 @@ let package = Package(
     name: "CatVodPlayer",
     platforms: [.iOS(.v15), .macOS(.v13)],
     products: [
-        .library(name: "CatVodPlayer", targets: ["CatVodPlayer"])
+        .library(name: "CatVodPlayer", targets: ["CatVodPlayer"]),
     ],
     dependencies: [
         .package(path: "../CatVodCore"),
-        .package(path: "../CatVodNet")
+        .package(path: "../CatVodNet"),
     ],
     targets: [
         .target(
@@ -35,6 +35,6 @@ let package = Package(
             name: "CatVodPlayerTests",
             dependencies: ["CatVodPlayer"],
             swiftSettings: [.swiftLanguageMode(.v5)]
-        )
+        ),
     ]
 )

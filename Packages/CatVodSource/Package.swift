@@ -6,11 +6,11 @@ let package = Package(
     name: "CatVodSource",
     platforms: [.iOS(.v15), .macOS(.v13)],
     products: [
-        .library(name: "CatVodSource", targets: ["CatVodSource"])
+        .library(name: "CatVodSource", targets: ["CatVodSource"]),
     ],
     dependencies: [
         .package(path: "../CatVodCore"),
-        .package(path: "../CatVodNet")
+        .package(path: "../CatVodNet"),
     ],
     targets: [
         .target(
@@ -22,6 +22,6 @@ let package = Package(
             name: "CatVodSourceTests",
             dependencies: ["CatVodSource"],
             swiftSettings: [.swiftLanguageMode(.v6)]
-        )
+        ),
     ]
 )

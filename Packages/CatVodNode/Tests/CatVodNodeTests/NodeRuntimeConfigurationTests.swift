@@ -1,7 +1,6 @@
+@testable import CatVodNode
 import Foundation
 import Testing
-
-@testable import CatVodNode
 
 @Suite("Node 运行配置（env 契约）")
 struct NodeRuntimeConfigurationTests {
@@ -34,7 +33,7 @@ struct NodeRuntimeConfigurationTests {
     func removesAutostartBlocker() {
         let env = configuration().processEnvironment(base: [
             "CATVOD_DISABLE_AUTOSTART": "1",
-            "PATH": "/usr/bin"
+            "PATH": "/usr/bin",
         ])
         #expect(env["CATVOD_DISABLE_AUTOSTART"] == nil)
         #expect(env["PATH"] == "/usr/bin")

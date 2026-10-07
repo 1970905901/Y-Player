@@ -1,8 +1,7 @@
 #if os(macOS)
+@testable import CatVodNode
 import Foundation
 import Testing
-
-@testable import CatVodNode
 
 /// 用 `/bin/sh` 冒充 node：
 /// 脚本文件名固定为 `index.js`（满足自启动契约的文件名条件），可执行文件由 `executableOverride` 指定，

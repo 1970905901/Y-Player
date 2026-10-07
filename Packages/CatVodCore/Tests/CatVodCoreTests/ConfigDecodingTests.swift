@@ -12,7 +12,7 @@ func fixtureData(_ name: String) throws -> Data {
 }
 
 func decodeConfig(_ name: String) throws -> SourceConfig {
-    try JSONDecoder().decode(SourceConfig.self, from: try fixtureData(name))
+    try JSONDecoder().decode(SourceConfig.self, from: fixtureData(name))
 }
 
 @Suite("配置解码：上游文档示例")

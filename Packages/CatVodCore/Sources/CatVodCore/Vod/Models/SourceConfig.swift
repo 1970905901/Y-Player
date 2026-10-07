@@ -46,7 +46,7 @@ public struct SourceConfig: Codable, Sendable, Hashable {
     /// 错误消息；非空时加载会直接失败。
     public var msg: String = ""
 
-    public init() {}
+    public init() { }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)

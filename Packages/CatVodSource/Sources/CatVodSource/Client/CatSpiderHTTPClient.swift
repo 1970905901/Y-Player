@@ -74,7 +74,7 @@ public struct CatSpiderHTTPClient: Sendable {
     ) async throws -> SpiderResult {
         var payload: [String: PayloadValue] = [
             "id": .string(id),
-            "page": .int(max(page, 1))
+            "page": .int(max(page, 1)),
         ]
         if !filters.isEmpty {
             payload["filters"] = .object(filters)
@@ -89,14 +89,14 @@ public struct CatSpiderHTTPClient: Sendable {
     public func search(keyword: String, page: Int) async throws -> SpiderResult {
         try await post(.search, payload: [
             "wd": .string(keyword),
-            "page": .int(max(page, 1))
+            "page": .int(max(page, 1)),
         ], as: SpiderResult.self)
     }
 
     public func play(flag: String, id: String) async throws -> SpiderResult {
         try await post(.play, payload: [
             "flag": .string(flag),
-            "id": .string(id)
+            "id": .string(id),
         ], as: SpiderResult.self)
     }
 

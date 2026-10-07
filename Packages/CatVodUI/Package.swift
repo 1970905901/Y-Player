@@ -6,12 +6,12 @@ let package = Package(
     name: "CatVodUI",
     platforms: [.iOS(.v15), .macOS(.v13)],
     products: [
-        .library(name: "CatVodUI", targets: ["CatVodUI"])
+        .library(name: "CatVodUI", targets: ["CatVodUI"]),
     ],
     dependencies: [
         .package(path: "../CatVodCore"),
         .package(path: "../CatVodSource"),
-        .package(path: "../CatVodPlayer")
+        .package(path: "../CatVodPlayer"),
     ],
     targets: [
         .target(
@@ -23,6 +23,6 @@ let package = Package(
             name: "CatVodUITests",
             dependencies: ["CatVodUI"],
             swiftSettings: [.swiftLanguageMode(.v5)]
-        )
+        ),
     ]
 )

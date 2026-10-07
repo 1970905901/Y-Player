@@ -23,7 +23,7 @@ public enum NodeReadiness {
             return nil
         }
         let digits = tail[tail.index(after: colon)...].prefix { $0.isNumber }
-        guard !digits.isEmpty, let port = Int(digits), (1...65535).contains(port) else {
+        guard !digits.isEmpty, let port = Int(digits), (1 ... 65535).contains(port) else {
             return nil
         }
         return port

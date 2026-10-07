@@ -1,9 +1,8 @@
 import CatVodCore
 import CatVodNet
+@testable import CatVodSource
 import Foundation
 import Testing
-
-@testable import CatVodSource
 
 /// 记录请求的假传输层（同测试 target 内共享）。
 actor CatSpiderRequestRecorder: HTTPTransport {

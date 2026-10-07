@@ -53,7 +53,7 @@ public actor NodeRuntimeAdapter {
     // MARK: - 平台能力
 
     /// 当前平台/构建是否具备 Node 运行时。
-    nonisolated public static var isRuntimeAvailable: Bool {
+    public nonisolated static var isRuntimeAvailable: Bool {
         locateNodeExecutable() != nil
     }
 
@@ -61,7 +61,7 @@ public actor NodeRuntimeAdapter {
     ///
     /// 顺序：环境变量 `YPLAYER_NODE`（调试）→ 随包 `Resources/node/node` → Homebrew / 系统路径。
     /// iOS 返回 nil（需要 libnode，M1.6 未接入）。
-    nonisolated public static func locateNodeExecutable() -> URL? {
+    public nonisolated static func locateNodeExecutable() -> URL? {
         #if os(macOS)
         var candidates: [String] = []
         if let override = ProcessInfo.processInfo.environment["YPLAYER_NODE"], !override.isEmpty {
@@ -73,7 +73,7 @@ public actor NodeRuntimeAdapter {
         candidates.append(contentsOf: [
             "/opt/homebrew/bin/node",
             "/usr/local/bin/node",
-            "/usr/bin/node"
+            "/usr/bin/node",
         ])
         return candidates
             .first { FileManager.default.isExecutableFile(atPath: $0) }
@@ -120,6 +120,7 @@ public actor NodeRuntimeAdapter {
         readyPort = nil
         failWaiters(with: NodeRuntimeError.stopped)
     }
+
     // MARK: - 内部（供 +Start.swift 使用）
 
     func consume(_ text: String) {

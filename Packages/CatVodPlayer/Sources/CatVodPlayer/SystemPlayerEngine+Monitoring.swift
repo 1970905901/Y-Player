@@ -44,12 +44,12 @@ extension AVPlayerEngine {
                 guard let self else {
                     return
                 }
-                switch self.pollStatus() {
+                switch pollStatus() {
                 case .ready:
-                    self.handleReady()
+                    handleReady()
                     return
                 case let .failed(reason):
-                    self.handleFailure(reason)
+                    handleFailure(reason)
                     return
                 case .pending:
                     try? await Task.sleep(nanoseconds: 100_000_000)

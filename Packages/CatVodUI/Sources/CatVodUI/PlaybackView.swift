@@ -73,15 +73,14 @@ public struct PlaybackView: View {
         }
     }
 
+    @ViewBuilder
     private var playerArea: some View {
-        Group {
-            if let player {
-                VideoPlayer(player: player)
-                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
-            } else {
-                ProgressView()
-                    .frame(maxWidth: .infinity, minHeight: 200)
-            }
+        if let player {
+            VideoPlayer(player: player)
+                .aspectRatio(16.0 / 9.0, contentMode: .fit)
+        } else {
+            ProgressView()
+                .frame(maxWidth: .infinity, minHeight: 200)
         }
     }
 }

@@ -48,7 +48,7 @@ public struct InterfaceManagementView: View {
                 let removed = model.clearSourceCache()
                 cacheActionMessage = "已清理 \(removed) 个缓存文件"
             }
-            Button("取消", role: .cancel) {}
+            Button("取消", role: .cancel) { }
         } message: {
             Text("下次加载接口需要重新下载配置（JS 源约 6 MB）。站点与播放设置不受影响。")
         }

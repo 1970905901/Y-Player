@@ -1,7 +1,6 @@
+@testable import CatVodNode
 import Foundation
 import Testing
-
-@testable import CatVodNode
 
 @Suite("Node 就绪行解析（对齐 js2p 契约）")
 struct NodeReadinessTests {

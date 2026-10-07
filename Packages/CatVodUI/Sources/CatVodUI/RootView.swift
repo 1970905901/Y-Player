@@ -17,7 +17,7 @@ import SwiftUI
 public struct RootView: View {
     @StateObject private var model = AppModel()
 
-    public init() {}
+    public init() { }
 
     public var body: some View {
         TabView {

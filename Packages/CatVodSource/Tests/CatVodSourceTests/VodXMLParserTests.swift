@@ -1,9 +1,8 @@
 import CatVodCore
 import CatVodNet
+@testable import CatVodSource
 import Foundation
 import Testing
-
-@testable import CatVodSource
 
 @Suite("苹果CMS XML 解析（type=0）")
 struct VodXMLParserTests {

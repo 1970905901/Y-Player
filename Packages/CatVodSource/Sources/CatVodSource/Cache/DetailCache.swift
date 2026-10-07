@@ -47,7 +47,7 @@ public actor DetailCache {
             count == 0
         }
 
-        public init() {}
+        public init() { }
     }
 
     private struct Entry: Sendable {
@@ -65,19 +65,19 @@ public actor DetailCache {
     }
 
     /// 缓存键：站点 key + vodID。
-    nonisolated public static func key(site: Site, vodID: String) -> String {
+    public nonisolated static func key(site: Site, vodID: String) -> String {
         "\(site.key)|\(vodID)"
     }
 
     /// 挡板 1：该站点的详情是否允许缓存。
     ///
     /// 只有 CMS 通道（`type 0/1/2/4`）允许缓存；`type=3` 的 Spider / 设置类站点一律直连不缓存。
-    nonisolated public static func shouldCache(site: Site) -> Bool {
+    public nonisolated static func shouldCache(site: Site) -> Bool {
         site.kind != .spider
     }
 
     /// 挡板 2：该结果是否值得缓存。
-    nonisolated public static func isCacheable(_ result: SpiderResult) -> Bool {
+    public nonisolated static func isCacheable(_ result: SpiderResult) -> Bool {
         guard !result.list.isEmpty else {
             return false
         }

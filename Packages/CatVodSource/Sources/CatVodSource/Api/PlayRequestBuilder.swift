@@ -62,11 +62,11 @@ public enum PlayRequestBuilder {
                 requiresParsing: !isDirect
             )
         case .httpApiBase64Ext:
-            return PlayRequest(
+            return try PlayRequest(
                 siteKey: site.key,
                 flag: flag,
                 playID: playID,
-                source: .http(try httpPlayRequest(site: site, flag: flag, playID: playID)),
+                source: .http(httpPlayRequest(site: site, flag: flag, playID: playID)),
                 sitePlayUrl: site.playUrl,
                 requiresParsing: true
             )
@@ -96,7 +96,7 @@ public enum PlayRequestBuilder {
     public static func httpPlayRequest(site: Site, flag: String, playID: String) throws -> HTTPRequest {
         try ApiURLBuilder.makeRequestForPlay(site: site, params: [
             "play": playID,
-            "flag": flag
+            "flag": flag,
         ])
     }
 }

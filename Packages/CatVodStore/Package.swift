@@ -9,10 +9,10 @@ let package = Package(
     name: "CatVodStore",
     platforms: [.iOS(.v15), .macOS(.v13)],
     products: [
-        .library(name: "CatVodStore", targets: ["CatVodStore"])
+        .library(name: "CatVodStore", targets: ["CatVodStore"]),
     ],
     dependencies: [
-        .package(path: "../CatVodCore")
+        .package(path: "../CatVodCore"),
     ],
     targets: [
         .target(
@@ -24,6 +24,6 @@ let package = Package(
             name: "CatVodStoreTests",
             dependencies: ["CatVodStore"],
             swiftSettings: [.swiftLanguageMode(.v6)]
-        )
+        ),
     ]
 )

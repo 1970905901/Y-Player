@@ -1,8 +1,7 @@
 import CatVodCore
+@testable import CatVodStore
 import Foundation
 import Testing
-
-@testable import CatVodStore
 
 /// 内存实现：M1/M2 用于单测与预览，M2 之后与 GRDB 实现共存。
 actor InMemoryAppDatabase: AppDatabase {
@@ -52,10 +51,10 @@ struct AppDatabaseTests {
         let database = InMemoryAppDatabase()
         try await database.upsert(sites: [
             Site(key: "a", name: "A", type: 1, api: "https://a.example.com"),
-            Site(key: "b", name: "B", type: 1, api: "https://b.example.com")
+            Site(key: "b", name: "B", type: 1, api: "https://b.example.com"),
         ])
         try await database.upsert(sites: [
-            Site(key: "a", name: "A2", type: 1, api: "https://a.example.com")
+            Site(key: "a", name: "A2", type: 1, api: "https://a.example.com"),
         ])
 
         let sites = try await database.sites()

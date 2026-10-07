@@ -1,8 +1,7 @@
 import CatVodCore
+@testable import CatVodSource
 import Foundation
 import Testing
-
-@testable import CatVodSource
 
 // 测试辅助（同 target 内共享：见 SourceCacheCleanupTests.swift）
 

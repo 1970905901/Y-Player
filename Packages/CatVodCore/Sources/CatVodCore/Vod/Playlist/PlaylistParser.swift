@@ -64,7 +64,7 @@ public enum PlaylistParser {
                 // 源省略集名：整段视为播放地址。
                 return Episode(name: "", url: text)
             }
-            let name = String(text[text.startIndex..<range.lowerBound])
+            let name = String(text[text.startIndex ..< range.lowerBound])
             let url = String(text[range.upperBound...])
             guard !url.isEmpty else {
                 return nil
@@ -86,7 +86,7 @@ public enum PlaylistParser {
             return []
         }
 
-        return (0..<count).map { index in
+        return (0 ..< count).map { index in
             let name = index < names.count && !names[index].isEmpty ? names[index] : "线路 \(index + 1)"
             let episodes = index < groups.count ? episodes(groups[index]) : []
             return Line(name: name, episodes: episodes)
@@ -107,7 +107,7 @@ public enum PlaylistParser {
         }
         // 以「线路名与播放列表」的并集为准：声明了线路却没有对应数据也要报出来，
         // 否则 `playURL` 为空这种最常见的坏数据会被静默忽略。
-        for index in 0..<max(names.count, groups.count) {
+        for index in 0 ..< max(names.count, groups.count) {
             let group = index < groups.count ? groups[index] : ""
             if episodes(group).isEmpty {
                 issues.append("第 \(index + 1) 个线路没有可用选集")

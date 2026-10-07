@@ -1,9 +1,8 @@
 import CatVodCore
 import CatVodNet
+@testable import CatVodSource
 import Foundation
 import Testing
-
-@testable import CatVodSource
 
 /// 记录请求次数的假传输层。
 actor DetailCountingTransport: HTTPTransport {

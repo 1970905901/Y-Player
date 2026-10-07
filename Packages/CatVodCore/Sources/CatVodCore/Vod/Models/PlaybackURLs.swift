@@ -74,7 +74,7 @@ public struct PlaybackURLs: Codable, Sendable, Hashable {
             selectedIndex = 0
         case .object(let object):
             entries = Self.objectEntries(object)
-            selectedIndex = (object["position"]?.intValue ?? 0).clamped(to: 0...(max(entries.count - 1, 0)))
+            selectedIndex = (object["position"]?.intValue ?? 0).clamped(to: 0 ... max(entries.count - 1, 0))
         default:
             entries = []
             selectedIndex = 0

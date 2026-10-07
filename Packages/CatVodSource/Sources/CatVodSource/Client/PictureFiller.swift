@@ -31,7 +31,7 @@ public struct PictureFiller: Sendable {
             return false
         }
         // 注意：不用 `count(where:)`（Swift 6 标准库新增，需要 iOS 18/macOS 15 运行时），本项目最低 iOS 15。
-        let missing = result.list.filter { $0.vodPic.isEmpty }.count
+        let missing = result.list.filter(\.vodPic.isEmpty).count
         return Double(missing) / Double(result.list.count) >= missingRatioThreshold
     }
 

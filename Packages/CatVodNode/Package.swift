@@ -12,7 +12,7 @@ let package = Package(
     name: "CatVodNode",
     platforms: [.iOS(.v15), .macOS(.v13)],
     products: [
-        .library(name: "CatVodNode", targets: ["CatVodNode"])
+        .library(name: "CatVodNode", targets: ["CatVodNode"]),
     ],
     targets: [
         .target(
@@ -23,6 +23,6 @@ let package = Package(
             name: "CatVodNodeTests",
             dependencies: ["CatVodNode"],
             swiftSettings: [.swiftLanguageMode(.v5)]
-        )
+        ),
     ]
 )

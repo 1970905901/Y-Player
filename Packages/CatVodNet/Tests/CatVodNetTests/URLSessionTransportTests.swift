@@ -1,8 +1,7 @@
 import CatVodCore
+@testable import CatVodNet
 import Foundation
 import Testing
-
-@testable import CatVodNet
 
 @Suite("URLSession 传输：配置归一化")
 struct URLSessionTransportTests {
@@ -19,7 +18,7 @@ struct URLSessionTransportTests {
         let transport = makeTransport(
             URLSessionTransport.Configuration(defaultHeaders: ["User-Agent": "Default", "Accept": "*/*"])
         )
-        let request = HTTPRequest(url: try url("https://api.example.com/vod"), headers: ["User-Agent": "Custom"])
+        let request = try HTTPRequest(url: url("https://api.example.com/vod"), headers: ["User-Agent": "Custom"])
         let prepared = try transport.prepare(request)
 
         #expect(prepared.value(forHTTPHeaderField: "User-Agent") == "Custom")
@@ -31,10 +30,10 @@ struct URLSessionTransportTests {
         let transport = makeTransport(
             URLSessionTransport.Configuration(hostHeaders: ["example.com": ["Referer": "https://example.com/"]])
         )
-        let injected = try transport.prepare(HTTPRequest(url: try url("https://api.example.com/vod")))
+        let injected = try transport.prepare(HTTPRequest(url: url("https://api.example.com/vod")))
         #expect(injected.value(forHTTPHeaderField: "Referer") == "https://example.com/")
 
-        let untouched = try transport.prepare(HTTPRequest(url: try url("https://other.com/vod")))
+        let untouched = try transport.prepare(HTTPRequest(url: url("https://other.com/vod")))
         #expect(untouched.value(forHTTPHeaderField: "Referer") == nil)
     }
 
@@ -48,18 +47,18 @@ struct URLSessionTransportTests {
         #expect(!transport.isBlocked(host: "example.com"))
 
         #expect(throws: CatVodError.self) {
-            _ = try transport.prepare(HTTPRequest(url: try url("https://ad.example.com/banner.js")))
+            _ = try transport.prepare(HTTPRequest(url: url("https://ad.example.com/banner.js")))
         }
     }
 
     @Test("超时：请求级优先，否则用默认值")
     func timeoutResolution() throws {
         let transport = makeTransport(URLSessionTransport.Configuration(defaultTimeout: 9))
-        let withDefault = try transport.prepare(HTTPRequest(url: try url("https://api.example.com/vod")))
+        let withDefault = try transport.prepare(HTTPRequest(url: url("https://api.example.com/vod")))
         #expect(withDefault.timeoutInterval == 9)
 
         let withOverride = try transport.prepare(
-            HTTPRequest(url: try url("https://api.example.com/vod"), timeout: 20)
+            HTTPRequest(url: url("https://api.example.com/vod"), timeout: 20)
         )
         #expect(withOverride.timeoutInterval == 20)
     }
@@ -67,7 +66,7 @@ struct URLSessionTransportTests {
     @Test("方法、请求体与 URL 原样透传")
     func methodAndBody() throws {
         let transport = makeTransport(.default)
-        let request = HTTPRequest.json(url: try url("http://127.0.0.1:9988/spider/cat/home"), body: Data("{}".utf8))
+        let request = try HTTPRequest.json(url: url("http://127.0.0.1:9988/spider/cat/home"), body: Data("{}".utf8))
         let prepared = try transport.prepare(request)
 
         #expect(prepared.httpMethod == "POST")
@@ -83,7 +82,7 @@ struct URLSessionTransportTests {
         config.headers = [HeaderRule(host: "example.com", header: ["Referer": "https://example.com/"])]
 
         let transport = URLSessionTransport(configuration: URLSessionTransport.Configuration(config: config))
-        let prepared = try transport.prepare(HTTPRequest(url: try url("https://api.example.com/vod")))
+        let prepared = try transport.prepare(HTTPRequest(url: url("https://api.example.com/vod")))
         #expect(prepared.value(forHTTPHeaderField: "Referer") == "https://example.com/")
         // isBlocked 为 nonisolated，无需 await
         #expect(transport.isBlocked(host: "ad.example.com"))

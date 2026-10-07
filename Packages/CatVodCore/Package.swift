@@ -6,7 +6,7 @@ let package = Package(
     name: "CatVodCore",
     platforms: [.iOS(.v15), .macOS(.v13)],
     products: [
-        .library(name: "CatVodCore", targets: ["CatVodCore"])
+        .library(name: "CatVodCore", targets: ["CatVodCore"]),
     ],
     targets: [
         .target(
@@ -18,6 +18,6 @@ let package = Package(
             dependencies: ["CatVodCore"],
             resources: [.copy("Fixtures")],
             swiftSettings: [.swiftLanguageMode(.v6)]
-        )
+        ),
     ]
 )

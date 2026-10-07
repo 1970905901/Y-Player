@@ -55,7 +55,7 @@ public enum ApiURLBuilder {
     public static func detailRequest(site: Site, vodID: String) throws -> HTTPRequest {
         try makeRequest(site: site, api: site.api, params: [
             "ac": ac(for: site),
-            "ids": vodID
+            "ids": vodID,
         ])
     }
 
@@ -71,7 +71,7 @@ public enum ApiURLBuilder {
         var params: [String: String] = [
             "wd": keyword,
             "quick": quick ? "true" : "false",
-            "extend": ""
+            "extend": "",
         ]
         if page != 1 {
             params["pg"] = String(page)
@@ -86,7 +86,7 @@ public enum ApiURLBuilder {
         }
         return try makeRequest(site: site, api: site.api, params: [
             "ac": ac(for: site),
-            "ids": ids.joined(separator: ",")
+            "ids": ids.joined(separator: ","),
         ])
     }
 

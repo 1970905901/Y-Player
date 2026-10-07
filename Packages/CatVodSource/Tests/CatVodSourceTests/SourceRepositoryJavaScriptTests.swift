@@ -1,8 +1,7 @@
 import CatVodCore
+@testable import CatVodSource
 import Foundation
 import Testing
-
-@testable import CatVodSource
 
 @Suite("js2p 增量更新")
 struct SourceRepositoryJavaScriptTests {
@@ -15,7 +14,7 @@ struct SourceRepositoryJavaScriptTests {
         let digest = MD5.hexDigest(of: bundle)
         let stub = StubTransport(responses: [
             jsURL + ".md5": (200, Data(digest.utf8)),
-            jsURL: (200, bundle)
+            jsURL: (200, bundle),
         ])
         let repository = SourceRepository(transport: stub, cacheDirectory: directory)
 
@@ -39,7 +38,7 @@ struct SourceRepositoryJavaScriptTests {
         let directory = try makeTempDirectory()
         let stub = StubTransport(responses: [
             jsURL + ".md5": (200, Data(MD5.hexDigest(of: "expected").utf8)),
-            jsURL: (200, Data("tampered".utf8))
+            jsURL: (200, Data("tampered".utf8)),
         ])
         let repository = SourceRepository(transport: stub, cacheDirectory: directory)
         await #expect(throws: CatVodError.self) {
@@ -53,7 +52,7 @@ struct SourceRepositoryJavaScriptTests {
         let bundle = Data(repeating: 0x42, count: 512)
         let stub = StubTransport(responses: [
             jsURL + ".md5": (200, Data(MD5.hexDigest(of: bundle).utf8)),
-            jsURL: (200, bundle)
+            jsURL: (200, bundle),
         ])
         let repository = SourceRepository(transport: stub, cacheDirectory: directory)
         _ = try await repository.load(configURL: jsURL)

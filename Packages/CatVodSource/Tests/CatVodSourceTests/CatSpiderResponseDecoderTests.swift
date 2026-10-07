@@ -1,8 +1,7 @@
 import CatVodCore
+@testable import CatVodSource
 import Foundation
 import Testing
-
-@testable import CatVodSource
 
 @Suite("CatSpider 响应解包（对齐 CatSpider.java#unwrap）")
 struct CatSpiderResponseDecoderTests {

@@ -6,7 +6,7 @@ import Testing
 struct SpiderResultDecodingTests {
     @Test("分类、别名与筛选")
     func categoriesAndFilters() throws {
-        let result = try JSONDecoder().decode(SpiderResult.self, from: try fixtureData("spider-result"))
+        let result = try JSONDecoder().decode(SpiderResult.self, from: fixtureData("spider-result"))
 
         #expect(result.categories.count == 2)
         #expect(result.categories[0].typeID == "movie")
@@ -27,7 +27,7 @@ struct SpiderResultDecodingTests {
 
     @Test("列表条目样式与分页字段")
     func listAndPaging() throws {
-        let result = try JSONDecoder().decode(SpiderResult.self, from: try fixtureData("spider-result"))
+        let result = try JSONDecoder().decode(SpiderResult.self, from: fixtureData("spider-result"))
         #expect(result.hasList)
         #expect(result.page == 2)
         #expect(result.pagecount == 5)
@@ -44,7 +44,7 @@ struct SpiderResultDecodingTests {
 
     @Test("播放列表：$$$ 线路与 # 选集")
     func playlistFromVod() throws {
-        let result = try JSONDecoder().decode(SpiderResult.self, from: try fixtureData("spider-result"))
+        let result = try JSONDecoder().decode(SpiderResult.self, from: fixtureData("spider-result"))
         let item = result.list[0]
         let lines = PlaylistParser.parse(playFrom: item.vodPlayFrom, playURL: item.vodPlayURL)
 
@@ -59,7 +59,7 @@ struct SpiderResultDecodingTests {
 
     @Test("播放结果：多地址、header、字幕弹幕与 DRM 能力")
     func playResult() throws {
-        let result = try JSONDecoder().decode(SpiderResult.self, from: try fixtureData("spider-play"))
+        let result = try JSONDecoder().decode(SpiderResult.self, from: fixtureData("spider-play"))
 
         #expect(result.requiresParsing)
         #expect(result.url.entries.count == 2)
@@ -71,7 +71,7 @@ struct SpiderResultDecodingTests {
         #expect(result.format == "application/x-mpegURL")
         #expect(result.subs.count == 1)
         #expect(result.danmaku.count == 1)
-        #expect(result.position == 128000)
+        #expect(result.position == 128_000)
         #expect(result.flag == "主线")
         #expect(result.jxFrom == "演示解析")
 

@@ -1,9 +1,8 @@
 import CatVodCore
+@testable import CatVodUI
 import Foundation
 import SwiftUI
 import Testing
-
-@testable import CatVodUI
 
 @Suite("UI 平台 shim")
 struct PlatformShimsTests {

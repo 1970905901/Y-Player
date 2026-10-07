@@ -20,7 +20,8 @@ extension SourceRepository {
 
         if !forceRefresh,
            fileManager.fileExists(atPath: cacheURL.path),
-           !ConfigLocator.needsDownload(remoteDigest: remoteDigest ?? "", localDigest: storedDigest) {
+           !ConfigLocator.needsDownload(remoteDigest: remoteDigest ?? "", localDigest: storedDigest)
+        {
             // 摘要一致：跳过 6 MB 下载。
             return LoadedSource(
                 kind: .javaScript,
@@ -39,7 +40,8 @@ extension SourceRepository {
         let digest = MD5.hexDigest(of: response.body)
         if let remote = remoteDigest?.trimmingCharacters(in: .whitespacesAndNewlines),
            !remote.isEmpty,
-           !MD5.matches(digest, remote) {
+           !MD5.matches(digest, remote)
+        {
             throw CatVodError.config(reason: "JS 源摘要校验失败（远端 \(remote)，本地 \(digest)）")
         }
         try response.body.write(to: cacheURL, options: .atomic)

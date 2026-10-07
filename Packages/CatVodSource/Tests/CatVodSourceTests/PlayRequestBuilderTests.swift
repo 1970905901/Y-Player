@@ -1,9 +1,8 @@
 import CatVodCore
 import CatVodNet
+@testable import CatVodSource
 import Foundation
 import Testing
-
-@testable import CatVodSource
 
 @Suite("播放请求构造（对齐 SiteApi.playerContent）")
 struct PlayRequestBuilderTests {

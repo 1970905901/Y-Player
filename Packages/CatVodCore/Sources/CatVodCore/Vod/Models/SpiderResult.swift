@@ -57,7 +57,7 @@ public struct SpiderResult: Codable, Sendable, Hashable {
     public var total: Int = 0
 
     /// 空结果（所有字段取默认值）。
-    public init() {}
+    public init() { }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)

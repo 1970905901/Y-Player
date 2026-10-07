@@ -1,8 +1,7 @@
 import CatVodCore
+@testable import CatVodSource
 import Foundation
 import Testing
-
-@testable import CatVodSource
 
 // 清理与淘汰（辅助函数见 SourceCacheTests.swift）
 
