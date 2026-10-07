@@ -55,6 +55,7 @@ public struct VodDetailView: View {
         }
         .adaptiveListStyle()
         .navigationTitle(vod?.vodName.isEmpty == false ? (vod?.vodName ?? "详情") : "详情")
+        .refreshable { await loadDetail(force: true) }
         .task { await loadDetail() }
     }
 

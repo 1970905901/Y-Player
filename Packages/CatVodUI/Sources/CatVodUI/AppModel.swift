@@ -86,6 +86,8 @@ public final class AppModel: ObservableObject {
 
     private let cacheDirectory: URL
     private let sessionTransport: URLSessionTransport
+    /// 详情缓存（进程内共享）。
+    private let detailCache = DetailCache()
 
     public init(cacheDirectory: URL? = nil, defaults: UserDefaults = .standard) {
         let base = cacheDirectory ?? Self.defaultCacheDirectory()
@@ -135,6 +137,8 @@ public final class AppModel: ObservableObject {
         do {
             let loaded = try await repository.load(configURL: target, forceRefresh: forceRefresh)
             state = .loaded(loaded)
+            // 配置已变更：缓存里的详情可能对应旧站点/旧线路，直接清空。
+            await detailCache.invalidateAll()
         } catch let error as CatVodError {
             state = .failed(error.errorDescription ?? "加载失败")
         } catch {
@@ -154,6 +158,14 @@ public final class AppModel: ObservableObject {
     /// 站点客户端（CMS 通道）。
     public func makeCMSClient() -> CMSClient {
         CMSClient(transport: transportForConfiguration())
+    }
+
+    /// 详情获取（带缓存）。
+    ///
+    /// 共享同一个 ``DetailCache``：详情页在「列表 → 详情 → 返回 → 再进」之间复用结果；
+    /// `type=3` 的设置类 / Spider 站点由缓存内部挡板直接跳过（见 `DetailCache.shouldCache`）。
+    public func makeDetailProvider() -> DetailProvider {
+        DetailProvider(client: makeCMSClient(), cache: detailCache)
     }
 
     /// js2p 通道客户端：本地 Node 服务就绪后传入 baseURL（M1.6 落地）。

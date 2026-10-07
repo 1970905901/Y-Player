@@ -8,11 +8,17 @@ import SwiftUI
 
 extension VodDetailView {
     /// 拉取详情并解析线路/选集。
-    func loadDetail() async {
-        guard !isLoading, detail.list.isEmpty, let site else {
-            if site == nil {
-                errorText = "缺少站点信息，无法加载详情"
-            }
+    ///
+    /// - Parameter force: 为 true 时绕过本地缓存重新请求（下拉刷新、换源）。
+    func loadDetail(force: Bool = false) async {
+        guard !isLoading else {
+            return
+        }
+        guard let site else {
+            errorText = "缺少站点信息，无法加载详情"
+            return
+        }
+        if !force, !detail.list.isEmpty {
             return
         }
         isLoading = true
@@ -20,7 +26,11 @@ extension VodDetailView {
         defer { isLoading = false }
 
         do {
-            let result = try await model.makeCMSClient().detail(site: site, vodID: vodID)
+            let result = try await model.makeDetailProvider().detail(
+                site: site,
+                vodID: vodID,
+                forceRefresh: force
+            )
             detail = result
             if let item = result.list.first {
                 lines = PlaylistParser.parse(playFrom: item.vodPlayFrom, playURL: item.vodPlayURL)
@@ -32,7 +42,7 @@ extension VodDetailView {
                 errorText = "详情为空"
             }
         } catch {
-            errorText = (error as? CatVodError)?.errorDescription ?? error.localizedDescription
+            errorText = userFacingMessage(error)
         }
     }
 
