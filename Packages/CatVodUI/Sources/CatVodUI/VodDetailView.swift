@@ -153,7 +153,11 @@ public struct VodDetailView: View {
     @ViewBuilder
     private func destination(for episode: PlaylistParser.Episode) -> some View {
         if let resource = makeResource(for: episode) {
-            PlaybackView(resource: resource, title: episode.displayName)
+            PlaybackView(
+                resource: resource,
+                title: episode.displayName,
+                settings: model.playbackSettings
+            )
         } else {
             UnsupportedPlaybackView(reason: unsupportedReason(for: episode))
         }

@@ -49,6 +49,7 @@ public final class AppModel: ObservableObject {
     private enum StorageKey {
         static let configURL = "yplayer.configURL"
         static let preferredEngine = "yplayer.preferredEngine"
+        static let decoderMode = "yplayer.decoderMode"
     }
 
     // MARK: - 输出状态
@@ -59,12 +60,27 @@ public final class AppModel: ObservableObject {
             UserDefaults.standard.set(configURL, forKey: StorageKey.configURL)
         }
     }
+    /// 播放内核：由用户在设置里**手动选择**，不自动切换。
     @Published public var preferredEngine: PlayerEngineKind {
         didSet {
             UserDefaults.standard.set(preferredEngine.rawValue, forKey: StorageKey.preferredEngine)
+            refreshPlaybackNotice()
         }
     }
+    /// 解码方式（硬解/软解）：由用户手动选择，不自动切换。
+    @Published public var decoderMode: DecoderMode {
+        didSet {
+            UserDefaults.standard.set(decoderMode.rawValue, forKey: StorageKey.decoderMode)
+            refreshPlaybackNotice()
+        }
+    }
+    /// 设置页提示：所选内核不可用、解码方式对所选内核无效等（如实告知，不静默处理）。
     @Published public private(set) var playbackNotice: String = ""
+
+    /// 当前播放设置。
+    public var playbackSettings: PlaybackSettings {
+        PlaybackSettings(engine: preferredEngine, decoderMode: decoderMode)
+    }
 
     // MARK: - 依赖
 
@@ -79,6 +95,8 @@ public final class AppModel: ObservableObject {
         self.configURL = defaults.string(forKey: StorageKey.configURL) ?? ""
         let storedEngine = defaults.string(forKey: StorageKey.preferredEngine)
         self.preferredEngine = storedEngine.flatMap(PlayerEngineKind.init(rawValue:)) ?? .system
+        let storedDecoder = defaults.string(forKey: StorageKey.decoderMode)
+        self.decoderMode = storedDecoder.flatMap(DecoderMode.init(rawValue:)) ?? .hardware
         refreshPlaybackNotice()
     }
 
@@ -146,9 +164,9 @@ public final class AppModel: ObservableObject {
         )
     }
 
-    /// 当前播放内核选择结果（含降级原因）。
-    public func playbackSelection() -> PlayerCoordinator.Selection {
-        PlayerCoordinator().select(preferred: preferredEngine)
+    /// 严格解析播放内核（**不降级**）：不可用时返回原因，由 UI 提示用户修改设置。
+    public func resolvePlayback() -> PlayerEngineResolution {
+        PlayerCoordinator().resolve(settings: playbackSettings)
     }
 
     private func refreshPlaybackNotice() {
@@ -156,8 +174,14 @@ public final class AppModel: ObservableObject {
             playbackNotice = "当前是 JS 源（js2p）：站点清单需等内嵌 Node 服务就绪后加载（M1.6）"
             return
         }
-        let selection = PlayerCoordinator().select(preferred: preferredEngine)
-        playbackNotice = selection.didFallback ? selection.reason : ""
+        var notes: [String] = []
+        if case let .unavailable(_, reason) = resolvePlayback() {
+            notes.append(reason)
+        }
+        if !playbackSettings.isDecoderModeEffective {
+            notes.append("\(decoderMode.displayName)对\(preferredEngine.displayName)无效：系统播放器由系统自行决定解码方式")
+        }
+        playbackNotice = notes.joined(separator: "\n")
     }
 
     private static func defaultCacheDirectory() -> URL {

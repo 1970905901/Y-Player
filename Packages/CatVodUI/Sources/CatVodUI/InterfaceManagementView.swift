@@ -132,20 +132,33 @@ public struct InterfaceManagementView: View {
     // MARK: - 播放内核
 
     private var playbackSection: some View {
-        let selection = model.playbackSelection()
-        return Section("播放内核") {
-            Picker("优先内核", selection: $model.preferredEngine) {
+        let resolution = model.resolvePlayback()
+        return Section("播放设置") {
+            Picker("播放内核", selection: $model.preferredEngine) {
                 ForEach(PlayerEngineKind.allCases, id: \.self) { kind in
-                    Text(kind.displayName + (kind.isAvailable ? "" : "（当前不可用）")).tag(kind)
+                    Text(kind.displayName + (kind.isAvailable ? "" : "（未接入）")).tag(kind)
                 }
             }
-            InfoRow(title: "实际使用", value: selection.kind.displayName)
-            if selection.didFallback {
-                Text(selection.reason)
+            Picker("解码方式", selection: $model.decoderMode) {
+                ForEach(DecoderMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            switch resolution {
+            case let .ready(kind):
+                InfoRow(title: "将使用", value: kind.displayName)
+            case let .unavailable(kind, reason):
+                InfoRow(title: "不可用", value: kind.displayName)
+                Text(reason)
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
+            if !model.playbackSettings.isDecoderModeEffective {
+                Text("提示：系统播放器不支持强制硬解/软解，该选项对当前内核无效（切到 MPV / 自研 FFmpeg 内核后生效）。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            if !model.playbackNotice.isEmpty, !selection.didFallback {
+            if !model.playbackNotice.isEmpty {
                 Text(model.playbackNotice)
                     .font(.footnote)
                     .foregroundStyle(.secondary)

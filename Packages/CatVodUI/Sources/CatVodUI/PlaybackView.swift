@@ -12,6 +12,8 @@ import SwiftUI
 public struct PlaybackView: View {
     let resource: MediaResource
     let title: String
+    /// 播放设置（内核 + 解码方式）：来自设置页，**运行时严格遵循，不自动降级**。
+    let settings: PlaybackSettings
 
     @State private var engine: AVPlayerEngine?
     @State private var player: AVPlayer?
@@ -20,9 +22,14 @@ public struct PlaybackView: View {
     @State private var errorText = ""
     @State private var eventTask: Task<Void, Never>?
 
-    public init(resource: MediaResource, title: String) {
+    public init(
+        resource: MediaResource,
+        title: String,
+        settings: PlaybackSettings = PlaybackSettings()
+    ) {
         self.resource = resource
         self.title = title
+        self.settings = settings
     }
 
     public var body: some View {
@@ -86,25 +93,34 @@ extension PlaybackView {
         guard engine == nil else {
             return
         }
-        let selection = PlayerCoordinator().select(preferred: .system)
-        engineText = selection.kind.displayName
-        guard selection.kind == .system else {
-            errorText = "当前构建仅实现系统播放内核：\(selection.reason)"
+        let coordinator = PlayerCoordinator()
+        engineText = settings.engine.displayName
+
+        // 策略：严格按用户设置执行，**不自动降级**。不可用就提示，让用户改设置。
+        if case let .unavailable(kind, reason) = coordinator.resolve(settings: settings) {
+            errorText = "\(kind.displayName)：\(reason)\n请到「接口 → 播放设置」更换内核。"
             return
         }
         guard !resource.url.isEmpty else {
             errorText = "播放地址为空"
             return
         }
+        guard let created = coordinator.makeEngine(kind: settings.engine, decoderMode: settings.decoderMode) else {
+            errorText = "\(settings.engine.displayName) 内核尚未实现，无法播放（不会自动切换其他内核）。"
+            return
+        }
+        guard let systemEngine = created as? AVPlayerEngine else {
+            errorText = "当前播放页仅接入了系统播放内核。"
+            return
+        }
 
-        let engine = AVPlayerEngine()
-        self.engine = engine
-        player = await engine.systemPlayer()
-        eventTask = Task { await consume(engine) }
+        engine = systemEngine
+        player = systemEngine.systemPlayer()
+        eventTask = Task { await consume(systemEngine) }
 
         do {
-            try await engine.load(resource)
-            await engine.play()
+            try await systemEngine.load(resource)
+            await systemEngine.play()
         } catch let error as PlayerError {
             errorText = error.message
         } catch {

@@ -140,69 +140,96 @@ public enum TrackKind: String, Sendable, CaseIterable {
     case subtitle
 }
 
-/// 播放内核选择与降级。
+/// 解码方式（硬解 / 软解）。
 ///
-/// 规则：
-/// - 按「用户偏好 → 可用性探测」选内核：偏好不可用时自动降级；
-/// - 降级顺序：`preferred` → `.mpv` → `.ffmpeg` → `.system`（系统 AVPlayer 永远可用，作为最后兜底）；
-/// - 结果附带原因文本，便于 UI 如实告知用户「为什么没用上 MPV」。
-public struct PlayerCoordinator: Sendable {
-    /// 选择结果。
-    public struct Selection: Sendable, Hashable {
-        public var kind: PlayerEngineKind
-        /// 是否发生了降级。
-        public var didFallback: Bool
-        /// 偏好内核不可用时的原因（未降级时为空串）。
-        public var reason: String
+/// 由用户在设置页**手动选择**，不允许运行时偷偷切换（见 ``PlaybackSettings``）。
+public enum DecoderMode: String, Sendable, CaseIterable {
+    /// 硬件解码（VideoToolbox / 内核自带硬解）。
+    case hardware
+    /// 软件解码。
+    case software
 
-        public init(kind: PlayerEngineKind, didFallback: Bool, reason: String = "") {
-            self.kind = kind
-            self.didFallback = didFallback
-            self.reason = reason
+    public var displayName: String {
+        switch self {
+        case .hardware: "硬件解码"
+        case .software: "软件解码"
         }
     }
 
-    /// 兜底顺序。
-    public static let fallbackOrder: [PlayerEngineKind] = [.mpv, .ffmpeg, .system]
+    /// 该解码方式对指定内核是否有效。
+    ///
+    /// 说明：系统播放器（`AVPlayer`）不提供“强制软解/硬解”的开关，由系统自行决定；
+    /// 因此对 `.system` 该设置无效，UI 必须如实标注而不是假装生效。
+    public func isSupported(by engine: PlayerEngineKind) -> Bool {
+        switch engine {
+        case .system: false
+        case .mpv, .ffmpeg: true
+        }
+    }
+}
 
+/// 播放设置：内核与解码方式**均由用户手动选择**。
+public struct PlaybackSettings: Sendable, Hashable {
+    public var engine: PlayerEngineKind
+    public var decoderMode: DecoderMode
+
+    public init(engine: PlayerEngineKind = .system, decoderMode: DecoderMode = .hardware) {
+        self.engine = engine
+        self.decoderMode = decoderMode
+    }
+
+    /// 所选解码方式在当前内核是否有效（无效时 UI 需要提示）。
+    public var isDecoderModeEffective: Bool {
+        decoderMode.isSupported(by: engine)
+    }
+}
+
+/// 播放内核解析结果。
+///
+/// **策略：严格按用户设置执行，不做自动降级。**
+/// 用户选了不可用的内核时，返回 `.unavailable` 并由 UI 明确提示，
+/// 而不是静默切换到别的内核（避免“设置不生效”与画质/兼容性意外变化）。
+public enum PlayerEngineResolution: Sendable, Hashable {
+    /// 可用：按用户选择的内核播放。
+    case ready(PlayerEngineKind)
+    /// 不可用：给出原因，交由用户修改设置。
+    case unavailable(kind: PlayerEngineKind, reason: String)
+}
+
+/// 播放内核解析与创建。
+public struct PlayerCoordinator: Sendable {
     public init() {}
 
-    /// 选择内核。
-    public func select(preferred: PlayerEngineKind) -> Selection {
-        if preferred.isAvailable {
-            return Selection(kind: preferred, didFallback: false)
+    /// 按用户设置解析内核（**不降级**）。
+    public func resolve(settings: PlaybackSettings) -> PlayerEngineResolution {
+        guard settings.engine.isAvailable else {
+            return .unavailable(kind: settings.engine, reason: Self.unavailableReason(for: settings.engine))
         }
-        for candidate in Self.fallbackOrder where candidate.isAvailable {
-            return Selection(
-                kind: candidate,
-                didFallback: true,
-                reason: "\(preferred.displayName) 在当前构建中不可用，已回退到 \(candidate.displayName)"
-            )
-        }
-        // `.system` 恒可用，理论上不会走到这里。
-        return Selection(kind: .system, didFallback: true, reason: "\(preferred.displayName) 不可用")
+        return .ready(settings.engine)
     }
 
-    /// 按选择结果创建内核实例。
+    /// 创建内核实例；未接入的内核（`.mpv` / `.ffmpeg`，分别对应 M3/M4）返回 nil。
     ///
-    /// M2 只有 `.system` 可创建；`.mpv`/`.ffmpeg` 实现随 M3/M4 接入，
-    /// 此处返回 nil 由调用方按 `select(preferred:)` 的结果降级。
-    public func makeEngine(kind: PlayerEngineKind) -> (any PlayerEngine)? {
+    /// 这不是降级：调用方必须把 nil 视为“该内核尚未实现”并提示用户，不得改用其它内核。
+    public func makeEngine(kind: PlayerEngineKind, decoderMode: DecoderMode) -> (any PlayerEngine)? {
         switch kind {
         case .system:
-            return AVPlayerEngine()
+            return AVPlayerEngine(decoderMode: decoderMode)
         case .mpv, .ffmpeg:
             return nil
         }
     }
 
-    /// 选择并创建内核（一步到位，自动降级）。
-    public func makePreferredEngine(preferred: PlayerEngineKind) -> (engine: any PlayerEngine, selection: Selection)? {
-        let selection = select(preferred: preferred)
-        guard let engine = makeEngine(kind: selection.kind) else {
-            return nil
+    /// 不可用原因（UI 直接展示）。
+    public static func unavailableReason(for kind: PlayerEngineKind) -> String {
+        switch kind {
+        case .system:
+            return "系统播放器不可用（异常状态，请反馈）"
+        case .mpv:
+            return "MPV 内核尚未接入本构建（计划 M3）"
+        case .ffmpeg:
+            return "自研 FFmpeg 内核尚未接入本构建（计划 M4）"
         }
-        return (engine, selection)
     }
 }
 /// 播放错误。
