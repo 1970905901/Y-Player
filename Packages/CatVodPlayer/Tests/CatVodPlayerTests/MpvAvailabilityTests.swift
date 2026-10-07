@@ -1,5 +1,5 @@
-import Testing
 @testable import CatVodPlayer
+import Testing
 
 @Suite("MPV 内核可用性（MPVKit 依赖是否真的生效）")
 struct MpvAvailabilityTests {

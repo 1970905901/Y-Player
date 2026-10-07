@@ -4,7 +4,7 @@
 // 依赖引入节奏（刻意分阶段，保证 CI 每步可绿）：
 //   M3：启用 MPVKit（LGPL 变体），同时提供 libmpv 与 Libav*（自研 FFmpegEngine 复用同一套二进制）。
 //       启用方式：在 dependencies 中加入
-//         .package(url: "https://github.com/mpvkit/MPVKit.git", exactVersion: "1.0.0")
+//         .package(url: "https://github.com/mpvkit/MPVKit.git", exact: "1.0.0")
 //       并在 target dependencies 中加入 "MPVKit"，随后更新 ThirdParty/mpvkit.lock.json。
 //   M4：自研 FFmpegEngine 直接使用 MPVKit 提供的 Libav* / Libass，不引入第二套 FFmpeg。
 //
@@ -26,7 +26,8 @@ let package = Package(
         .package(path: "../CatVodNet"),
         // M3：MPV 内核（LGPL 变体）。版本与 29 个 binaryTarget 的校验和登记在
         // ThirdParty/mpvkit.lock.json；升级 MPVKit 时必须同步更新（Tools/sync_mpvkit_lock.py）。
-        .package(url: "https://github.com/mpvkit/MPVKit.git", exactVersion: "1.0.0"),
+        // 注意 pin 的写法是 `exact:`（不是 `exactVersion:`）——后者不存在，manifest 会编译失败。
+        .package(url: "https://github.com/mpvkit/MPVKit.git", exact: "1.0.0"),
     ],
     targets: [
         .target(
