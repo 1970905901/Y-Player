@@ -56,7 +56,9 @@ public extension AppModel {
         guard let port = localProxyPort else {
             return resource
         }
-        guard let url = LocalProxyURLBuilder(port: port).proxyURL(for: resource.url, headers: resource.headers) else {
+        // 端点按媒体类型选：清单走 `/m3u8`（要改写子清单/分片/密钥，见 M06c），其余走 `/proxy`。
+        let builder = LocalProxyURLBuilder(port: port, path: LocalProxyURLBuilder.path(forMediaURL: resource.url))
+        guard let url = builder.proxyURL(for: resource.url, headers: resource.headers) else {
             return resource
         }
         var copy = resource

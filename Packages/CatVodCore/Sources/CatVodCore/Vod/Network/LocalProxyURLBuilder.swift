@@ -25,22 +25,35 @@ public struct LocalProxyRequest: Sendable, Hashable {
 public struct LocalProxyURLBuilder: Sendable {
     /// 服务基地址，例如 `http://127.0.0.1:9978`。
     public var baseURL: URL
+    /// 端点路径（不带 `/`）：默认 `proxy`；HLS 清单用 `m3u8`（见 ``path(forMediaURL:contentType:)``）。
+    public var path: String
 
-    public init(baseURL: URL) {
+    public init(baseURL: URL, path: String = "proxy") {
         self.baseURL = baseURL
+        self.path = path
     }
 
     /// 由 host/port 构造。
-    public init(host: String = "127.0.0.1", port: UInt16) {
+    public init(host: String = "127.0.0.1", port: UInt16, path: String = "proxy") {
         baseURL = URL(string: "http://\(host):\(port)") ?? URL(fileURLWithPath: "/")
+        self.path = path
     }
 
-    /// `/proxy` 地址；参数非法时返回 nil。
+    /// 按媒体地址自动选端点：HLS 清单走 `m3u8`，其余走 `proxy`。
+    ///
+    /// 为什么清单必须走 `/m3u8`：`/proxy` 只转发**被请求的那一条**地址，清单里的子清单 / 分片 / 密钥
+    /// 地址不会被改写 —— 播放器会直接向上游取它们，站点 header 就丢了（分片 403 的常见原因）。
+    /// `/m3u8` 会把整条链路的地址都指回本机（见 ``HLSPlaylistRewriter``）。
+    public static func path(forMediaURL url: String, contentType: String = "") -> String {
+        HLSPlaylistRewriter.isPlaylist(url: url, contentType: contentType) ? "m3u8" : "proxy"
+    }
+
+    /// `/proxy` 或 `/m3u8` 地址；参数非法时返回 nil。
     public func proxyURL(for request: LocalProxyRequest) -> URL? {
         guard !request.url.isEmpty else {
             return nil
         }
-        let target = baseURL.appendingPathComponent("proxy")
+        let target = baseURL.appendingPathComponent(path)
         guard var components = URLComponents(url: target, resolvingAgainstBaseURL: false) else {
             return nil
         }

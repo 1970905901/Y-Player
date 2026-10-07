@@ -56,4 +56,25 @@ struct LocalProxyURLBuilderTests {
         let url = try #require(builder.healthURL())
         #expect(url.absoluteString == "http://127.0.0.1:9978/health")
     }
+
+    @Test("端点选择：HLS 清单走 m3u8，其余走 proxy（M06c）")
+    func endpointSelection() {
+        #expect(LocalProxyURLBuilder.path(forMediaURL: "https://cdn.example.com/live/a.m3u8") == "m3u8")
+        #expect(LocalProxyURLBuilder.path(forMediaURL: "https://cdn.example.com/live/a.m3u?token=1") == "m3u8")
+        #expect(LocalProxyURLBuilder.path(forMediaURL: "https://cdn.example.com/v.mp4") == "proxy")
+        let mime = "application/vnd.apple.mpegurl"
+        #expect(LocalProxyURLBuilder.path(forMediaURL: "https://cdn.example.com/live/play", contentType: mime) == "m3u8")
+    }
+
+    @Test("m3u8 端点：路径是 /m3u8，参数形态与 /proxy 完全一致（同一套编解码）")
+    func m3u8Endpoint() throws {
+        let playlistBuilder = LocalProxyURLBuilder(port: 9978, path: "m3u8")
+        let headers = ["Referer": "https://site.example.com/"]
+        let url = try #require(playlistBuilder.proxyURL(for: "https://cdn.example.com/live/seg.ts", headers: headers))
+        #expect(url.path == "/m3u8")
+
+        let decoded = try #require(LocalProxyURLBuilder.decode(url: url))
+        #expect(decoded.url == "https://cdn.example.com/live/seg.ts")
+        #expect(decoded.headers == headers)
+    }
 }

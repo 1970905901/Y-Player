@@ -43,7 +43,8 @@
 3. **代理真正生效**（`connectionProxyDictionary` 走 HTTP/SOCKS + 认证）：本轮只做**选择内核**与地址解析；
    会话池与 `URLSession` 委托认证属 M06b。
 4. `doh` 解析与 `hosts` 覆盖：M06b。
-5. `hlsRules`/`ads` 的 m3u8 改写（上游 `M3u8.java`）：M06c。
+5. ~~`hlsRules`/`ads` 的 m3u8 改写（上游 `M3u8.java`）~~ → 已在 **M06c** 完成；
+   注意 `hlsRules` 的**消费点**（播放侧按规则清理清单）仍未接，见 `M06c-m3u8清单改写.md`。
 6. **只监听 `127.0.0.1`**：上游为投屏监听全网卡，本项目暂不暴露（本服务会替播放器带站点 header，
    绝不能对局域网开放）；投屏属 M9+。
 
