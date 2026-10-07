@@ -27,10 +27,14 @@
 - 结果：29 条校验和 + `binaryTargetChecksumsSource`；升级 MPVKit 时必须重跑该脚本（lock 文件的存在意义就是「升级必须留痕」）。
 
 ### 第 2 步（已提交，CI 可完全验证）：只接依赖 + 编译期探针
-- `Packages/CatVodPlayer/Package.swift` 加入 `.package(url: "https://github.com/mpvkit/MPVKit.git", exactVersion: "1.0.0")` 与 target 依赖 `"MPVKit"`，并提交 `Package.resolved`；
-- **新增 `MpvAvailability` + 两个单测**：把「MPVKit 依赖是否真的让我们能 `import Libmpv`」变成可断言事实。
+- `Packages/CatVodPlayer/Package.swift` 加入 `.package(url: "https://github.com/mpvkit/MPVKit.git", exact: "1.0.0")` 与 target 依赖 `"MPVKit"`；
+  （pin 的标签是 `exact:` —— `exactVersion:` 不存在，写上会让 manifest 编译失败，CI 抓过一次 ✗）
+- **新增 `MpvAvailability` + 3 个单测**：把「依赖是否真的让 `import Libmpv` 可用」变成可断言事实。
   在这之前 `#if canImport(Libmpv)` 从未被验证过 —— 「引擎没实现」和「依赖没接对」在代码里长得一模一样。
-  现在 CI 一旦不能导入 libmpv / Libavcodec，测试立刻红（失败即信息，不是谜团）。
+- **接入依赖同时暴露了一个真问题（已修）**：`PlayerEngineKind.isAvailable` 原来直接看 `canImport(Libmpv)`，
+  于是 MPVKit 一接进来它就返回 `true`，而 `MpvEngine` 还没实装 —— 界面会宣称 MPV 可用却播不了。
+  现在语义收紧为 **「能用」= 引擎已实装 + 依赖可用**，依赖侧的事实只由 `MpvAvailability` 暴露；
+  并由单测把这一对事实钉死（`canImportLibmpv == true` 且 `mpv.isAvailable == false`）。
 - CI 会证明：SwiftPM 能解析、29 个 xcframework 能下载校验、双端能链接、App 能构建；
 - 代价：SwiftPM 缓存键变化 → 首次会冷下载（体积大，之后命中缓存）；这是它唯一的成本。
 

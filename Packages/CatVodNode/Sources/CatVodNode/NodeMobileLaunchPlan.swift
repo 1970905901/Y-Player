@@ -42,7 +42,11 @@ public struct NodeMobileLaunchPlan: Sendable, Equatable {
         }
         cArguments.append(nil)
         return cArguments.withUnsafeMutableBufferPointer { buffer in
-            body(Int32(arguments.count), buffer.baseAddress!)
+            // 缓冲区由上面的 arguments 保证非空，但仍不用 `!`（SwiftLint force_unwrapping）。
+            guard let base = buffer.baseAddress else {
+                fatalError("argv 缓冲区不应为空（arguments 至少含 argv[0]）")
+            }
+            return body(Int32(arguments.count), base)
         }
     }
 }

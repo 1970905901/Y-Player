@@ -21,26 +21,23 @@ public enum PlayerEngineKind: String, Sendable, CaseIterable {
         }
     }
 
-    /// 该内核在当前构建中是否可用。
+    /// 该内核在当前构建中是否**可用**。
     ///
-    /// M3 启用 MPVKit 之前 `mpv` 返回 false；M4 完成前 `ffmpeg` 返回 false。
+    /// 语义（刻意收紧，M03P1 接入 MPVKit 时修正）：
+    /// **「能用」= 引擎已实装 + 依赖可用**，而不是「依赖链接上了」。
+    /// 之前这里直接看 `canImport(Libmpv)`，一旦 MPVKit 接进来就会立刻返回 true，
+    /// 而 `MpvEngine` 还没实装 —— 界面会宣称 MPV 可用却根本播不了。
+    /// 依赖侧的事实现在只由 ``MpvAvailability`` 暴露，两者不混用。
+    ///
     /// **策略（M02P3）**：不可用时由 UI 明确提示并引导用户改设置，**不自动退回 `.system`**。
     public var isAvailable: Bool {
         switch self {
         case .system:
             return true
         case .mpv:
-            #if canImport(Libmpv)
-            return true
-            #else
-            return false
-            #endif
+            return MpvAvailability.isEngineImplemented
         case .ffmpeg:
-            #if canImport(Libavformat)
-            return true
-            #else
-            return false
-            #endif
+            return MpvAvailability.isFFmpegEngineImplemented
         }
     }
 }

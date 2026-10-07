@@ -31,4 +31,16 @@ public enum MpvAvailability {
     public static var summary: String {
         "libmpv=\(canImportLibmpv ? "可用" : "不可用")，Libavcodec=\(canImportLibavcodec ? "可用" : "不可用")"
     }
+
+    // MARK: - 实装状态（与「依赖是否链接」严格分开）
+
+    /// `MpvEngine` 是否已实装。
+    ///
+    /// 依赖已接（`canImportLibmpv == true`）**不等于**引擎可用：渲染路径还没定（M03P1 第 3 步）、
+    /// 引擎代码还没写（第 4 步）。因此 `PlayerEngineKind.mpv.isAvailable` 继续为 false，
+    /// 界面就不会宣称一个播不了的内核「可用」。
+    public static let isEngineImplemented = false
+
+    /// 自研 `FFmpegEngine`（M4）是否已实装。
+    public static let isFFmpegEngineImplemented = false
 }

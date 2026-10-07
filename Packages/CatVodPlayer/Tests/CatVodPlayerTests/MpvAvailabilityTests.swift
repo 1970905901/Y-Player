@@ -12,4 +12,15 @@ struct MpvAvailabilityTests {
     func libavcodecImportable() {
         #expect(MpvAvailability.canImportLibavcodec)
     }
+
+    @Test("依赖链接 ≠ 引擎可用：MPVKit 已接入，但 MpvEngine 未实装")
+    func dependencyLinkedButEngineNotImplemented() {
+        // 这一对断言是本次接入暴露出的真问题：只要看 canImport 就返回 true，
+        // 界面会宣称 MPV 可用却播不了。两者必须分开。
+        #expect(MpvAvailability.canImportLibmpv)
+        #expect(MpvAvailability.isEngineImplemented == false)
+        #expect(PlayerEngineKind.mpv.isAvailable == false)
+        #expect(PlayerEngineKind.ffmpeg.isAvailable == false)
+        #expect(PlayerEngineKind.system.isAvailable)
+    }
 }
