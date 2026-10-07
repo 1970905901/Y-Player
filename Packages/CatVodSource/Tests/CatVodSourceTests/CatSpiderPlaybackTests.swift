@@ -13,7 +13,7 @@ struct CatSpiderPlaybackTests {
         let result = try await client.play(flag: "线路1", id: "video-1")
 
         let request = await recorder.lastRequest()
-        #expect(request?.url.path == "/spider/play")
+        #expect(request?.url.path.hasSuffix("/play") == true)
         let payload = catSpiderBody(of: request)
         #expect(payload["flag"] as? String == "线路1")
         #expect(payload["id"] as? String == "video-1")
@@ -28,7 +28,7 @@ struct CatSpiderPlaybackTests {
         let result = try await client.detail(id: "1")
 
         let request = await recorder.lastRequest()
-        #expect(request?.url.path == "/spider/detail")
+        #expect(request?.url.path.hasSuffix("/detail") == true)
         #expect(catSpiderBody(of: request)["id"] as? String == "1")
 
         let lines = PlaylistParser.parse(
@@ -47,7 +47,10 @@ struct CatSpiderPlaybackTests {
         _ = try await client.configuration()
 
         let requests = await recorder.requests
-        #expect(requests.map(\.url.path) == ["/spider/init", "/spider/home", "/spider/config"])
+        // 站点 api 为 `.../spider/<key>`，因此真实路径是 `/spider/<key>/<route>`；
+        // 这里断言“末段路由名”，避免与站点 key 耦合。
+        #expect(requests.map(\.url.lastPathComponent) == ["init", "home", "config"])
+        #expect(requests.allSatisfy { $0.url.path.hasPrefix("/spider/") })
         let allPost = requests.allSatisfy { $0.method == .post }
         #expect(allPost)
     }

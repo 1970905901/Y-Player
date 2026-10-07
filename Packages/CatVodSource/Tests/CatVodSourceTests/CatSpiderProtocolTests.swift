@@ -69,7 +69,7 @@ struct CatSpiderProtocolTests {
         _ = try await client.category(id: "movie", page: 3, filters: ["area": "大陆"])
 
         let request = await recorder.lastRequest()
-        #expect(request?.url.path == "/spider/category")
+        #expect(request?.url.path.hasSuffix("/category") == true)
         let payload = catSpiderBody(of: request)
         #expect(payload["id"] as? String == "movie")
         #expect(payload["page"] as? Int == 3)
@@ -83,7 +83,7 @@ struct CatSpiderProtocolTests {
         _ = try await client.search(keyword: "海贼", page: 2)
 
         let request = await recorder.lastRequest()
-        #expect(request?.url.path == "/spider/search")
+        #expect(request?.url.path.hasSuffix("/search") == true)
         let payload = catSpiderBody(of: request)
         #expect(payload["wd"] as? String == "海贼")
         #expect(payload["page"] as? Int == 2)
