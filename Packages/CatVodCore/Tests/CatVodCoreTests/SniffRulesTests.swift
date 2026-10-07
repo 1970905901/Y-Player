@@ -87,7 +87,7 @@ struct SniffRulesTests {
     }
 
     @Test("文本抽取：JSON 对象与含 `$` 的内容原样返回，否则抽 AI_PUSH")
-    func textExtraction() {
+    func textExtraction() throws {
         let json = #"{"url":"https://cdn.example.com/a.m3u8"}"#
         #expect(SniffRules.mediaURL(inText: json) == json)
         let dollar = "价格 $9 的 https://cdn.example.com/a.m3u8"
@@ -95,7 +95,11 @@ struct SniffRulesTests {
         #expect(SniffRules.mediaURL(inText: "下载 thunder://QUFodHRwOi8v 提取码 1234") == "thunder://QUFodHRwOi8v")
         #expect(SniffRules.mediaURL(inText: "没有链接") == "没有链接")
         let html = "<video src=\"https://cdn.example.com/live/a.m3u8?x=1\"></video>"
-        #expect(SniffRules.firstMediaURL(inText: html) == "https://cdn.example.com/live/a.m3u8?x=1")
+        // 默认正则里的 `(?:\?.*)?` 是**贪婪**的（一直吃到行尾），这一点与上游一致：
+        // 文本兜底只用于「从提示文本里捞线索」，真正取址靠导航回调 / JS 上报（见 WebSniffSession）。
+        let fromHTML = try #require(SniffRules.firstMediaURL(inText: html))
+        #expect(fromHTML.hasPrefix("https://cdn.example.com/live/a.m3u8?x=1"))
+        #expect(SniffRules.firstMediaURL(inText: "打开 https://cdn.example.com/live/b.m3u8 播放") == "https://cdn.example.com/live/b.m3u8")
         #expect(SniffRules.firstMediaURL(inText: "<html></html>") == nil)
     }
 }

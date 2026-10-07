@@ -149,20 +149,28 @@ struct ParsePlaybackView: View {
     // MARK: - Web 嗅探（type=0 / type=4 的 Web 侧）
 
     /// 启动 Web 嗅探会话（单页或聚合页）。
+    ///
+    /// 回调写成**方法引用**而不是内联闭包：SwiftFormat 的 `redundantSelf` 不接受在逃逸闭包里
+    /// 显式写 `self.`（CI 已拦一次），而方法引用既不需要 `self.` 也不会丢捕获语义。
     private func startWebSniffing(request: WebSniffSession.Request) {
         let session = WebSniffSession()
-        // 注意 `self.`：这是逃逸闭包，结构体里必须显式写明捕获语义。
-        session.onSuccess = { playback in
-            self.finish(with: playback)
-        }
-        session.onFailure = { reason in
-            self.webFailure = reason
-            self.webPending = false
-            self.reportFailureIfDone()
-        }
+        session.onSuccess = handleWebSuccess
+        session.onFailure = handleWebFailure
         webPending = true
         webSession = session
         session.start(request)
+    }
+
+    /// Web 通道成功：直接进播放页（先到先得）。
+    private func handleWebSuccess(_ playback: ParsedPlayback) {
+        finish(with: playback)
+    }
+
+    /// Web 通道失败：记下原因，等另一条通道也结束再给结论。
+    private func handleWebFailure(_ reason: String) {
+        webFailure = reason
+        webPending = false
+        reportFailureIfDone()
     }
 
     /// `type=0` 的解析页地址：解析器地址 + 待解析地址（上游 `item.getUrl() + webUrl`）。

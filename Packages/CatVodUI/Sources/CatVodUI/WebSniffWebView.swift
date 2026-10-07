@@ -10,7 +10,7 @@ struct SniffWebViewHost: UIViewRepresentable {
         session.makeWebView()
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func updateUIView(_ uiView: WKWebView, context: Context) { }
 }
 #else
 /// macOS：同上，走 `NSViewRepresentable`。
@@ -21,7 +21,7 @@ struct SniffWebViewHost: NSViewRepresentable {
         session.makeWebView()
     }
 
-    func updateNSView(_ nsView: WKWebView, context: Context) {}
+    func updateNSView(_ nsView: WKWebView, context: Context) { }
 }
 #endif
 

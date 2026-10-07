@@ -337,7 +337,8 @@ extension WebSniffSession: WKNavigationDelegate {
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
         if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-           let trust = challenge.protectionSpace.serverTrust {
+           let trust = challenge.protectionSpace.serverTrust
+        {
             completionHandler(.useCredential, URLCredential(trust: trust))
             return
         }
