@@ -79,7 +79,9 @@ xcodegen generate                           # 工程已把 NodeMobile.xcframewor
 
 反向用例（都要给出可读原因，不能静默）：
 
-- 删掉 `ThirdParty/nodejs-mobile/` 再生成工程：应能**编译**，界面显示「当前构建没有内嵌 Node 运行时…」；
+- 删掉 `ThirdParty/nodejs-mobile/`：**xcodegen 会因为找不到该 framework 路径而报错**，这是刻意的
+  （工程声明了依赖就不该悄悄降级）；要临时去掉 libnode，请同时移除 `project.yml` 里那两行依赖，
+  此时 `canImport(NodeMobile)` 为假，界面显示「当前构建没有内嵌 Node 运行时…」；
 - macOS 上不装 node：显示「未找到 node 可执行文件…」；
 - 宿主起来但未探活通过：显示「就绪行已出现，但 `GET /health` 未通过」并附宿主输出。
 
