@@ -73,7 +73,8 @@ struct CatSpiderProtocolTests {
         let payload = catSpiderBody(of: request)
         #expect(payload["id"] as? String == "movie")
         #expect(payload["page"] as? Int == 3)
-        #expect((payload["filters"] as? [String: String])["area"] == "大陆")
+        let filters = payload["filters"] as? [String: String]
+        #expect(filters?["area"] == "大陆")
     }
 
     @Test("search：wd + page")
