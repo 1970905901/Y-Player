@@ -1,6 +1,7 @@
 # M01P6 Node 运行时 PoC（js2p 主接口落地）
 
-- 状态：待执行（需 macOS/真机）
+- 状态：**部分完成** —— 宿主侧（契约落码 + macOS 进程链路 + 单测）已完成，见 `M16P1-Node宿主适配.md`；
+  仍需 macOS/真机的是「真实 bundle 端到端」与「iOS libnode 接入」
 - 依赖结论：`docs/js2p宿主契约.md`（M1.5 已判定必须随包内嵌真 Node）
 - 目标：在 iOS 与 macOS 上跑通「内嵌 Node 执行 bundle → 起本地服务 → 调 `/spider` 路由」
 
@@ -9,6 +10,8 @@
 1. **iOS**：集成 nodejs-mobile **v18.20.4**（iPhone arm64 + 模拟器 arm64/x86_64），随包内嵌（framework 或静态库）。
 2. **macOS**：随包 `node` 可执行文件 + `Process` 启动（或自编译 libnode），验证 Gatekeeper 处理方式。
 3. **统一适配层**：`NodeRuntimeAdapter` 负责分配端口、注入环境变量、采集 stdout/stderr、解析就绪行、暴露 baseURL。
+   → **宿主侧已完成**（`Packages/CatVodNode`，见 `M16P1-Node宿主适配.md`）：配置/env/就绪解析/超时/早退/诊断输出 + 单测；
+   iOS 分支仍需 libnode 产物。
 4. **端到端**：`index.js`（6.29MB）下载 → MD5 校验 → 执行 → `/init /home /category /detail /search /play` 全链路（复用 `CatSpiderHTTPClient`）。
 
 ## 二、验收标准（可量化）

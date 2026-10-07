@@ -65,6 +65,8 @@ jobs:
       # 这里加一次编译（macOS 平台）作为快速信号。
       - name: CatVodUI (build only)
         run: swift build --package-path Packages/CatVodUI
+      - name: CatVodNode tests
+        run: swift test --package-path Packages/CatVodNode
 
   build:
     name: Build apps (unsigned)

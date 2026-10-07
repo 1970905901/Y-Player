@@ -22,6 +22,7 @@ Packages/             SwiftPM 本地包
   CatVodCore/         协议模型、宽松解码、播放列表/URL 规则（仅 Foundation，可跨平台单测）
   CatVodNet/          HTTP 传输抽象、请求管线、本地 HTTP 服务
   CatVodSource/       站点客户端、CatSpider 协议、js2p 宿主与 JS 运行时、解析与嗅探
+  CatVodNode/         内嵌 Node 运行时的宿主适配（js2p 契约落码；macOS 进程链路，iOS 待 libnode）
   CatVodPlayer/       播放内核抽象 + MpvEngine + FFmpegEngine
   CatVodStore/        持久化（站点/收藏/历史/进度）
   CatVodUI/           跨端 SwiftUI 组件与平台 shim
@@ -47,6 +48,10 @@ xcodegen generate
 swift test --package-path Packages/CatVodCore
 swift test --package-path Packages/CatVodNet
 swift test --package-path Packages/CatVodSource
+swift test --package-path Packages/CatVodPlayer
+swift test --package-path Packages/CatVodStore
+swift test --package-path Packages/CatVodNode
+swift build --package-path Packages/CatVodUI
 
 # 3. iOS 未签名构建
 xcodebuild build -project YPlayer.xcodeproj -scheme YPlayer-iOS \
@@ -70,7 +75,7 @@ xcodebuild build -project YPlayer.xcodeproj -scheme YPlayer-macOS \
 - **单类型单文件**；公开 API 必须写 DocC 注释，并标注对应的上游字段/文件
 - **UI 用各系统各自的原生外观**：iOS 15 用 iOS 15 的原生 API，iOS 16+ 自动使用 `NavigationStack` 等新原生实现，macOS 走 macOS 原生；版本分支只允许出现在 `CatVodUI/Platform/` 的基础件里（见 [`docs/UI 规范.md`](docs/UI%20规范.md)）
 - 禁止强解包（`force_unwrapping`）；错误统一走 `CatVodError`
-- 并发：网络与存储用 `actor`，UI 层 `@MainActor`；`CatVodCore`/`CatVodNet`/`CatVodSource`/`CatVodStore` 使用 Swift 6 语言模式，`CatVodPlayer`/`CatVodUI` 先保持 Swift 5 模式（C API 交互密集，后续迁移）
+- 并发：网络与存储用 `actor`，UI 层 `@MainActor`；`CatVodCore`/`CatVodNet`/`CatVodSource`/`CatVodStore` 使用 Swift 6 语言模式，`CatVodPlayer`/`CatVodNode`/`CatVodUI` 先保持 Swift 5 模式（C API / 进程管道交互密集，后续迁移）
 - 每个任务一份 `docs/任务记录/Mxx-*.md`，记录调研、决策、验收与回滚
 - 提交信息使用 Conventional Commits
 
