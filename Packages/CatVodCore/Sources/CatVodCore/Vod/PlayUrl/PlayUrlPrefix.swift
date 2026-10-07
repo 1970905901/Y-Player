@@ -38,6 +38,27 @@ public enum PlayUrlPrefix {
         return .web(url: text)
     }
 
+    /// 只看**前缀**的指令：`json:` → `.json`，`parse:` → `.parser`，其余（含裸地址、空串）返回 `nil`。
+    ///
+    /// 为什么要它：上游 `ParseJob.setParse`（webhtv）里裸地址**不覆盖**已经选中的解析器 ——
+    /// 裸地址只在「结果需要解析但没有解析器可选」时作为 `type=0` 的解析页兜底。
+    /// ``route(_:)`` 会把裸地址当成 `.web`，用在那两行判断里就会得出与上游相反的结论。
+    public static func prefixedInstruction(_ raw: String) -> PlaybackInstruction? {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            return nil
+        }
+        if text.hasPrefix(jsonPrefix) {
+            let url = String(text.dropFirst(jsonPrefix.count))
+            return url.isEmpty ? nil : .json(url: url)
+        }
+        if text.hasPrefix(parsePrefix) {
+            let name = String(text.dropFirst(parsePrefix.count))
+            return name.isEmpty ? nil : .parser(name: name)
+        }
+        return nil
+    }
+
     /// 结果级 `playUrl` 优先，为空时回退站点级 `playUrl`。
     ///
     /// 依据 webhtv `docs/integration/player.md`：`playUrl` 来自播放结果，
