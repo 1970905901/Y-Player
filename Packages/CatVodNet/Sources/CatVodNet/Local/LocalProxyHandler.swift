@@ -13,6 +13,10 @@ import Foundation
 /// | `/health` | 就绪探测（设置页与自检用） |
 /// | `/` | 服务标识 |
 /// | 其它 | 404（抛 ``HTTPUnhandledError``，由 FlyingFox 统一转 404） |
+///
+/// ⚠️ 命名注意：FlyingFox 也有 `HTTPRequest`/`HTTPResponse`，与本包 `HTTPTransport.swift`
+/// 里的同名类型冲突。本模块内的裸名会解析成**本包**的类型，因此服务端代码一律显式写
+/// `FlyingFox.HTTPRequest` / `FlyingFox.HTTPResponse`（CI 抓过这个错）。
 public struct LocalProxyHandler: HTTPHandler {
     /// 路由分类。
     public enum Route: Sendable, Equatable {
@@ -43,7 +47,7 @@ public struct LocalProxyHandler: HTTPHandler {
         return nil
     }
 
-    public func handleRequest(_ request: HTTPRequest) async throws -> HTTPResponse {
+    public func handleRequest(_ request: FlyingFox.HTTPRequest) async throws -> FlyingFox.HTTPResponse {
         guard let route = Self.route(forPath: request.path) else {
             throw HTTPUnhandledError()
         }
@@ -61,7 +65,7 @@ public struct LocalProxyHandler: HTTPHandler {
     }
 
     /// `/proxy`：解析 → 取回 → 过滤响应 header → 回给客户端。
-    private func forward(_ request: HTTPRequest) async -> HTTPResponse {
+    private func forward(_ request: FlyingFox.HTTPRequest) async -> FlyingFox.HTTPResponse {
         do {
             guard let plan = try await LocalProxyRequestDecoder.decode(request, defaultTimeout: timeout) else {
                 return Self.errorResponse(status: .badRequest, reason: "缺少或无法解析 url 参数")
@@ -69,7 +73,7 @@ public struct LocalProxyHandler: HTTPHandler {
             let response = try await upstream.fetch(plan)
             let responseHeaders = ProxyForwardingPolicy.clientResponseHeaders(upstream: response.headers)
             let body = request.method == .HEAD ? Data() : response.body
-            return HTTPResponse(
+            return FlyingFox.HTTPResponse(
                 statusCode: Self.statusCode(response.status),
                 headers: Self.makeHeaders(responseHeaders),
                 body: body
@@ -110,16 +114,16 @@ public struct LocalProxyHandler: HTTPHandler {
         return headers
     }
 
-    static func textResponse(status: HTTPStatusCode, body: String) -> HTTPResponse {
+    static func textResponse(status: HTTPStatusCode, body: String) -> FlyingFox.HTTPResponse {
         var headers = HTTPHeaders()
         headers[.contentType] = "text/plain; charset=utf-8"
         for (key, value) in ProxyForwardingPolicy.corsResponseHeaders {
             headers[HTTPHeader(key)] = value
         }
-        return HTTPResponse(statusCode: status, headers: headers, body: Data(body.utf8))
+        return FlyingFox.HTTPResponse(statusCode: status, headers: headers, body: Data(body.utf8))
     }
 
-    static func errorResponse(status: HTTPStatusCode, reason: String) -> HTTPResponse {
+    static func errorResponse(status: HTTPStatusCode, reason: String) -> FlyingFox.HTTPResponse {
         var headers = HTTPHeaders()
         headers[.contentType] = "application/json; charset=utf-8"
         for (key, value) in ProxyForwardingPolicy.corsResponseHeaders {
@@ -127,14 +131,14 @@ public struct LocalProxyHandler: HTTPHandler {
         }
         let payload = ["error": reason]
         let body = (try? JSONEncoder().encode(payload)) ?? Data()
-        return HTTPResponse(statusCode: status, headers: headers, body: body)
+        return FlyingFox.HTTPResponse(statusCode: status, headers: headers, body: body)
     }
 
-    static func emptyResponse(status: HTTPStatusCode) -> HTTPResponse {
+    static func emptyResponse(status: HTTPStatusCode) -> FlyingFox.HTTPResponse {
         var headers = HTTPHeaders()
         for (key, value) in ProxyForwardingPolicy.corsResponseHeaders {
             headers[HTTPHeader(key)] = value
         }
-        return HTTPResponse(statusCode: status, headers: headers)
+        return FlyingFox.HTTPResponse(statusCode: status, headers: headers)
     }
 }

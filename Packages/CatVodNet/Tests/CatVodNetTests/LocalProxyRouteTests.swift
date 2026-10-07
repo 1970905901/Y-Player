@@ -10,24 +10,34 @@ struct LocalProxyRouteTests {
 
     private func makeRequest(
         path: String = "/proxy",
-        query: [HTTPRequest.QueryItem] = [],
+        query: [FlyingFox.HTTPRequest.QueryItem] = [],
         headers: [HTTPHeader: String] = [:],
         method: HTTPMethod = .GET,
         body: Data = Data()
-    ) -> HTTPRequest {
-        HTTPRequest(method: method, version: .http11, path: path, query: query, headers: headers, body: body)
+    ) -> FlyingFox.HTTPRequest {
+        FlyingFox.HTTPRequest(method: method, version: .http11, path: path, query: query, headers: headers, body: body)
     }
 
     private func makeHandler(upstream: any HTTPTransport) -> LocalProxyHandler {
         LocalProxyHandler(upstream: LocalProxyUpstreamClient(transport: upstream))
     }
 
+    /// `/proxy?url=…&h=…` 的查询项（`h` 只在有 header 时带上）。
+    private func query(_ url: String, headers: [String: String] = [:]) -> [FlyingFox.HTTPRequest.QueryItem] {
+        var items = [FlyingFox.HTTPRequest.QueryItem(name: "url", value: url)]
+        if !headers.isEmpty {
+            let encoded = LocalProxyURLBuilder.encodeHeaders(headers)
+            items.append(FlyingFox.HTTPRequest.QueryItem(name: "h", value: encoded))
+        }
+        return items
+    }
+
     @Test("query 形态：url + h 还原成目标与注入 header")
     func decodeFromQuery() async throws {
         let injected = ["Referer": "https://site.example.com/"]
         let request = makeRequest(query: [
-            HTTPRequest.QueryItem(name: "url", value: target),
-            HTTPRequest.QueryItem(name: "h", value: LocalProxyURLBuilder.encodeHeaders(injected)),
+            FlyingFox.HTTPRequest.QueryItem(name: "url", value: target),
+            FlyingFox.HTTPRequest.QueryItem(name: "h", value: LocalProxyURLBuilder.encodeHeaders(injected)),
         ])
         let decoded = try #require(try await LocalProxyRequestDecoder.decode(request))
         #expect(decoded.url.absoluteString == target)

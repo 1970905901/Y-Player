@@ -13,7 +13,7 @@ import Foundation
 public enum LocalProxyRequestDecoder {
     /// 解析结果。
     public static func decode(
-        _ request: HTTPRequest,
+        _ request: FlyingFox.HTTPRequest,
         defaultTimeout: TimeInterval = 30
     ) async throws -> LocalProxyForwardRequest? {
         var target = request.query["url"]
@@ -54,18 +54,18 @@ public enum LocalProxyRequestDecoder {
         var method: String?
     }
 
-    private static func payload(from request: HTTPRequest) async throws -> Payload {
+    private static func payload(from request: FlyingFox.HTTPRequest) async throws -> Payload {
         let data = try await request.bodyData
         return try JSONDecoder().decode(Payload.self, from: data)
     }
 
     /// 上游方法：只有明确写了 `POST` 才会用 POST，其余一律 GET（播放场景绝大多数是 GET）。
     private static func upstreamMethod(_ value: String?) -> HTTPRequest.Method {
-        value?.uppercased() == HTTPRequest.Method.post.rawValue ? .post : .get
+        value?.uppercased() == "POST" ? .post : .get
     }
 
     /// 把本机请求带过来的 header 取出来（FlyingFox 的 header 名大小写不敏感，这里统一成标准写法）。
-    private static func clientHeaders(from request: HTTPRequest) -> [String: String] {
+    private static func clientHeaders(from request: FlyingFox.HTTPRequest) -> [String: String] {
         var client: [String: String] = [:]
         for (key, value) in request.headers {
             client[key.rawValue] = value
