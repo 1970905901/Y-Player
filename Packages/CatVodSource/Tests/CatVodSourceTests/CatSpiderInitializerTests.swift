@@ -31,8 +31,16 @@ private actor CatSpiderRouteRecorder: HTTPTransport {
         paths().filter { $0 == path }.count
     }
 
-    func body(ofFirst path: String) -> [String: Any] {
-        catSpiderBody(of: requests.first { $0.url.lastPathComponent == path })
+    /// 返回**可 Sendable** 的文本体：直接返回 `[String: Any]` 会被 Swift 6 拒绝
+    /// （`non-sendable result type '[String : Any]' cannot be sent from actor-isolated context`，
+    /// 这是 SwiftPM tests 本轮抓到的编译错误）。
+    func bodyText(ofFirst path: String) -> String? {
+        guard let request = requests.first(where: { $0.url.lastPathComponent == path }),
+              let data = request.body
+        else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
     }
 }
 
@@ -75,8 +83,9 @@ struct CatSpiderInitializerTests {
 
         _ = try await client.home(site: spiderSite())
 
-        let body = await transport.body(ofFirst: "init")
-        #expect(body.isEmpty)
+        // 载荷编码按字典序，空对象就是 `{}`（逐行对齐 CatSpider.java 的 new JsonObject()）。
+        let body = await transport.bodyText(ofFirst: "init")
+        #expect(body == "{}")
     }
 
     @Test("并发调用共享同一次 init（不会各发一遍）")
