@@ -116,11 +116,10 @@ jobs:
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
 
-  # 在 iOS 模拟器里**真的跑起来**：验证动态库嵌入（否则启动即 dyld 缺库）、
-  # 内嵌 Node（libnode）能否就绪、以及内核可用性语义是否如实。
-  # 这是唯一能覆盖「只编译会漏掉」那类问题的作业 —— 也是「没有 Mac」时最接近真机的验证。
-  simulator-tests:
-    name: iOS simulator tests
+  # 产出**未签名 IPA**：实机验证是唯一能给出真实性能/观感的方式，
+  # 而在 Windows 上用 Sideloadly / AltStore 侧载不需要 Mac（见 docs/构建与分发.md 第四节）。
+  ipa:
+    name: Unsigned IPA (sideload artifact)
     runs-on: macos-15
     needs: [core-tests]
     steps:
@@ -138,15 +137,24 @@ jobs:
         run: |
           python3 Scripts/fetch_nodejs_mobile.py
           xcodegen generate
-      - name: Run tests on an iPhone simulator
+      - name: Archive iOS (unsigned) and package IPA
         run: |
-          DEVICE_ID=$(bash Scripts/pick_simulator.sh)
-          echo "simulator=$DEVICE_ID"
-          xcodebuild test \
+          xcodebuild archive \
             -project YPlayer.xcodeproj \
             -scheme "$SCHEME_IOS" \
-            -destination "id=$DEVICE_ID" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/YPlayer-iOS.xcarchive \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+          mkdir -p build/Payload
+          cp -R build/YPlayer-iOS.xcarchive/Products/Applications/YPlayer.app build/Payload/
+          cd build && zip -qry YPlayer-unsigned.ipa Payload
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: YPlayer-unsigned-ipa
+          path: build/YPlayer-unsigned.ipa
+          if-no-files-found: error
 
   release:
     name: Release (unsigned ipa / mac app)

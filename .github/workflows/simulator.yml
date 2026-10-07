@@ -1,0 +1,49 @@
+name: simulator
+
+# 为什么独立于 build.yml：
+# iOS 模拟器测试要构建 App、启动模拟器、在模拟器里下载 6.29 MB bundle 并启动 libnode，
+# 每次推送都跑会明显拖慢主流程。它验证的是「只编译会漏掉」的那类问题
+# （动态库嵌入 / 内嵌 Node 能否就绪 / 内核可用性语义），适合按需或定期跑。
+# 真机验证优先：未签名 IPA 由 build.yml 的 `ipa` 作业产出，Windows 上即可侧载。
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 1"
+
+concurrency:
+  group: simulator
+  cancel-in-progress: false
+
+env:
+  XCODE_VERSION: "16.4"
+  SCHEME_IOS: YPlayer-iOS
+
+jobs:
+  simulator-tests:
+    name: iOS simulator tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_${{ env.XCODE_VERSION }}.app
+      - name: Install XcodeGen
+        run: command -v xcodegen >/dev/null || brew install xcodegen
+      - name: Cache nodejs-mobile (embedded Node runtime)
+        uses: actions/cache@v4
+        with:
+          path: ThirdParty/.cache
+          key: nodejs-mobile-v18.20.4-8c5ca3a0d1e38de7
+      - name: Fetch embedded Node runtime (iOS) and generate project
+        run: |
+          python3 Scripts/fetch_nodejs_mobile.py
+          xcodegen generate
+      - name: Run tests on an iPhone simulator
+        run: |
+          DEVICE_ID=$(bash Scripts/pick_simulator.sh)
+          echo "simulator=$DEVICE_ID"
+          xcodebuild test \
+            -project YPlayer.xcodeproj \
+            -scheme "$SCHEME_IOS" \
+            -destination "id=$DEVICE_ID" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
