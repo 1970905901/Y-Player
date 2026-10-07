@@ -24,11 +24,14 @@ let package = Package(
     dependencies: [
         .package(path: "../CatVodCore"),
         .package(path: "../CatVodNet"),
+        // M3：MPV 内核（LGPL 变体）。版本与 29 个 binaryTarget 的校验和登记在
+        // ThirdParty/mpvkit.lock.json；升级 MPVKit 时必须同步更新（Tools/sync_mpvkit_lock.py）。
+        .package(url: "https://github.com/mpvkit/MPVKit.git", exactVersion: "1.0.0"),
     ],
     targets: [
         .target(
             name: "CatVodPlayer",
-            dependencies: ["CatVodCore", "CatVodNet"],
+            dependencies: ["CatVodCore", "CatVodNet", "MPVKit"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(

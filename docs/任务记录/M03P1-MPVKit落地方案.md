@@ -1,6 +1,8 @@
 # M03P1 MPVKit 落地方案（依赖接入 → 渲染 PoC → 引擎实现）
 
-- 状态：**方案已定，第 1 步（lock 文件对齐）已完成**；第 2 步（接依赖）待执行；第 3 步需要 Mac/真机
+- 状态：**第 1 步（lock 对齐）已随 CI 验证**；**第 2 步（接依赖 + 编译期探针）已提交、待 CI 验证**；第 3 步需要 Mac/真机
+- 渲染路径**首选候选 B：MoltenVK + libplacebo**（MPVKit 已自带这两者）—— 但必须由第 3 步的 PoC 证实：
+  官方 README 明确说 Metal 后端只有补丁级支持，所以「首选」是实验假设，不是结论。
 - 依赖：M2（`PlayerEngine` 抽象与 `PlayerCoordinator` 严格选择）、`docs/任务记录/M02P3-播放设置手动选择.md`
 - 目标：把 M3 的 MPV 内核真正接进来，同时**每一步都让 CI 保持可绿**
 
@@ -24,8 +26,11 @@
 - 新增 `Tools/sync_mpvkit_lock.py`：从 manfiest 解析全部 binaryTarget，按依赖图筛出 LGPL 变体用到的目标，写回 lock 文件并清空 `unverifiedChecksums`；
 - 结果：29 条校验和 + `binaryTargetChecksumsSource`；升级 MPVKit 时必须重跑该脚本（lock 文件的存在意义就是「升级必须留痕」）。
 
-### 第 2 步（下一步，CI 可完全验证）：只接依赖，不写引擎代码
+### 第 2 步（已提交，CI 可完全验证）：只接依赖 + 编译期探针
 - `Packages/CatVodPlayer/Package.swift` 加入 `.package(url: "https://github.com/mpvkit/MPVKit.git", exactVersion: "1.0.0")` 与 target 依赖 `"MPVKit"`，并提交 `Package.resolved`；
+- **新增 `MpvAvailability` + 两个单测**：把「MPVKit 依赖是否真的让我们能 `import Libmpv`」变成可断言事实。
+  在这之前 `#if canImport(Libmpv)` 从未被验证过 —— 「引擎没实现」和「依赖没接对」在代码里长得一模一样。
+  现在 CI 一旦不能导入 libmpv / Libavcodec，测试立刻红（失败即信息，不是谜团）。
 - CI 会证明：SwiftPM 能解析、29 个 xcframework 能下载校验、双端能链接、App 能构建；
 - 代价：SwiftPM 缓存键变化 → 首次会冷下载（体积大，之后命中缓存）；这是它唯一的成本。
 
