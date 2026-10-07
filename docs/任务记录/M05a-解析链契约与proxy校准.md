@@ -1,6 +1,6 @@
 # M05a 解析链契约 + `proxy:` 前缀校准
 
-- 状态：待 CI 验证（本机无 Swift 工具链，编译/单测由 CI 判定）
+- 状态：CI 已通过（2026-10-07，随 `aad4160` / `02877ac` 验证；见 `M05b-type1-JSON解析.md` 的「验证记录」）
 - 时间：2026-10-07
 - 范围：M5 的**第一步**——把解析链的协议事实固化成可单测的契约，并把 M01 留下的「`proxy:` 等前缀待校准」结清
 - 前置：M02P11（`0ba3026` / `e8d3bbf`，Tab 与设置/追剧页）
@@ -40,11 +40,11 @@ M01 写的是「`proxy:` 等 playUrl 前缀待 M5 用 `ParseJob.java` 校准」�
 
 ## 三、明确未做（留给 M5b / M5c）
 
-1. **`type=1` 的真实请求**（M5b）：契约与校验已就绪，执行器要接 `CatVodNet.HTTPTransport`（可注入假传输做单测）。
+1. ~~**`type=1` 的真实请求**（M5b）~~ → 已在 **M05b** 完成（`JSONParser` + `ParsePlaybackView`，含 9 例单测）。
 2. **`type=0` Web 嗅探**（M5c）：需要 M6a 的本地 `/proxy` + 完整 header 透传，以及平台 WebKit 承载层。
 3. **`type=2/3` JAR 解析**：Apple 平台无 JVM，永久不支持（`ParseJobResolver` 会直接给出原因）。
 4. **`type=4` 聚合的并发执行**：契约里能识别（`ParserKind.aggregate`），执行属 M5c（含「谁先成功算谁」）。
-5. 界面接线：`VodDetailView` 目前对需要解析的集仍渲染「M5 实现」的说明；等 M5b 落地后改为真解析 + 失败原因。
+5. ~~**界面接线**~~ → 已在 **M05b** 完成（详情页里需要解析的集走 ``ParsePlaybackView``）。
 
 ## 四、验收
 
