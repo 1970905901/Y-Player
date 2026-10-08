@@ -30,10 +30,16 @@ public enum SiteNameRules {
         rawName: String,
         customName: String,
         interfaceRules: [GroupRule] = [],
+        userRules: [GroupRule] = [],
         disabledIDs: Set<String> = []
     ) -> [String] {
         let name = effectiveName(rawName: rawName, customName: customName)
-        return GroupRuleConfig.extract(name, interfaceRules: interfaceRules, disabledIDs: disabledIDs)
+        return GroupRuleConfig.extract(
+            name,
+            interfaceRules: interfaceRules,
+            userRules: userRules,
+            disabledIDs: disabledIDs
+        )
     }
 
     /// 搜索命中：**生效名 / 原始名 / 站点 key** 任一包含关键词即算（大小写不敏感）。

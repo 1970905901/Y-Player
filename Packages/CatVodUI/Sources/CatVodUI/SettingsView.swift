@@ -25,6 +25,7 @@ public struct SettingsView: View {
             sourceSection
             homeSection
             playbackSection
+            siteGroupSection
             dataSection
             syncSection
             aboutSection
@@ -89,6 +90,37 @@ public struct SettingsView: View {
 
     private var trimmedConfigURL: String {
         model.configURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - 站点分组规则
+
+    /// 站点分组：分组条（抽标签）与它的规则从哪来、怎么关。
+    ///
+    /// 放在「播放」之后、有独立页面（``SiteGroupRulesView``）：分组条只在站点面板里看得见，
+    /// 但「为什么这个分组没了」的答案在规则里 —— 两者挨着放，找起来不用跳。
+    private var siteGroupSection: some View {
+        Section("站点分组") {
+            NavigationLink {
+                SiteGroupRulesView(model: model)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("分组规则")
+                    Text(siteGroupSummary)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+        }
+    }
+
+    /// 一行摘要：现在有几条规则在生效、当前接口给了几条、自己加了几条。
+    private var siteGroupSummary: String {
+        let entries = model.siteGroupRuleEntries
+        let enabled = entries.filter(\.isEnabled).count
+        let userCount = entries.filter { $0.rule.source == GroupRule.sourceUser }.count
+        let interfaceCount = entries.filter { $0.rule.source == GroupRule.sourceInterface }.count
+        return "已启用 \(enabled) / \(entries.count) 条；接口给 \(interfaceCount) 条，自建 \(userCount) 条"
     }
 
     // MARK: - 首页

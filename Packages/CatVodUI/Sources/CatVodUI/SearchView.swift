@@ -234,9 +234,8 @@ public struct SearchView: View {
                 DiscoverSitePanel(
                     sites: browsableSites,
                     selectedKey: selectedSiteKey,
-                    rules: model.siteGroupRules,
+                    ruleInput: model.siteRuleInput,
                     savedGroupOrder: model.siteGroupOrder,
-                    names: model.siteNamesForCurrentConfig,
                     onMoveGroup: { group, direction in
                         model.moveSiteGroup(group, direction: direction)
                     },

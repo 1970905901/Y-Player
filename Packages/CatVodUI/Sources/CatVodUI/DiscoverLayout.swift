@@ -86,7 +86,22 @@ struct DiscoverSiteRow: Identifiable, Equatable {
     var id: String { key }
 }
 
-/// 站点切换面板的行模型与分组（M06d）。
+/// 站点面板做「抽标签 / 显示名 / 搜索」需要的**全部输入**（M06g）。
+///
+/// 打包成一个 `Hashable` 值，是为了让面板能用 `.task(id:)` 一处盯住所有会影响标签的输入：
+/// 改自定义名、开关某条规则、加一条自建规则 —— 任一变化都要重抽标签（抽标签要跑正则，不能每次渲染都算）。
+struct DiscoverSiteRuleInput: Hashable {
+    /// 接口配置里的规则（`SourceConfig.groupRules`）。
+    var interfaceRules: [GroupRule] = []
+    /// 用户自建规则。
+    var userRules: [GroupRule] = []
+    /// 被本地关掉的规则 id。
+    var disabledIDs: Set<String> = []
+    /// 站点自定义名（站点 key → 名字）。
+    var names: [String: String] = [:]
+}
+
+/// 站点切换面板的行模型与分组（M06e / M06f / M06g）。
 ///
 /// 单测价值：录屏里的面板有三种容易做错的状态 —— 站点名为空、当前站点、站点顺序，
 /// 它们在真机上都不好复现（上游配置随时会变），所以把判定放进纯函数。
@@ -142,19 +157,15 @@ enum DiscoverSiteList {
 
     /// 每个站点从**生效名**（自定义名优先，否则原始名，再否则 `key`）里抽出来的标签；
     /// 抽不出标签的站点不出现在结果里。
-    static func tags(
-        sites: [Site],
-        rules: [GroupRule],
-        disabledIDs: Set<String> = [],
-        names: [String: String] = [:]
-    ) -> [String: [String]] {
+    static func tags(sites: [Site], input: DiscoverSiteRuleInput) -> [String: [String]] {
         var result: [String: [String]] = [:]
         for site in sites {
             let values = SiteNameRules.groups(
                 rawName: site.name,
-                customName: names[site.key] ?? "",
-                interfaceRules: rules,
-                disabledIDs: disabledIDs
+                customName: input.names[site.key] ?? "",
+                interfaceRules: input.interfaceRules,
+                userRules: input.userRules,
+                disabledIDs: input.disabledIDs
             )
             if !values.isEmpty {
                 result[site.key] = values

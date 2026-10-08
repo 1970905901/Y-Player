@@ -16,34 +16,8 @@ import SwiftUI
 /// 按 `docs/UI 规范.md` 不得为统一观感而抬高下限）。
 @MainActor
 public final class AppModel: ObservableObject {
-    /// 配置加载状态。
-    public enum LoadState: Sendable {
-        case idle
-        case loading
-        case loaded(LoadedSource)
-        case failed(String)
-
-        public var isLoading: Bool {
-            if case .loading = self {
-                return true
-            }
-            return false
-        }
-
-        public var loadedSource: LoadedSource? {
-            if case let .loaded(source) = self {
-                return source
-            }
-            return nil
-        }
-
-        public var failureReason: String? {
-            if case let .failed(reason) = self {
-                return reason
-            }
-            return nil
-        }
-    }
+    // 状态类型（`LoadState` / `LiveState`）见 `AppModel+States.swift` —— 类体只留「状态 + 存储 + init」，
+    // 这样 `type_body_length` 才有余量（存储属性必须在类体里，类型声明放扩展即可）。
 
     // MARK: - 持久化键
 
@@ -69,6 +43,7 @@ public final class AppModel: ObservableObject {
         static let livePassOverrides = "yplayer.livePassOverrides"
         static let siteGroupOrder = "yplayer.siteGroupOrder"
         static let siteNames = "yplayer.siteNames"
+        static let siteGroupRules = "yplayer.siteGroupRules"
     }
 
     // MARK: - 输出状态
@@ -241,15 +216,16 @@ public final class AppModel: ObservableObject {
     // MARK: - js2p 宿主（JS 源）
 
     /// 宿主状态：界面据此显示「不可用 / 启动中 / 运行中 / 失败」，而不是一句笼统的占位文案。
-    @Published public private(set) var hostStatus: JS2PHostStatus = .idle
+    @Published public internal(set) var hostStatus: JS2PHostStatus = .idle
 
     /// 宿主提供的站点。
     ///
     /// JS 源时这是站点的**唯一**来源：`LoadedSource.config` 是空配置（站点清单要由 Node 执行后给出）。
-    @Published public private(set) var hostSites: [Site] = []
+    @Published public internal(set) var hostSites: [Site] = []
 
     /// 宿主会话（非 JS 源时为空）。
-    private var js2pHost: JS2PHostService?
+    /// 宿主服务实例（`internal`：`AppModel+Host.swift` 那簇宿主方法要读写它）。
+    var js2pHost: JS2PHostService?
 
     /// js2p 站点的一次性 `POST /init` 记忆。
     ///
@@ -260,34 +236,7 @@ public final class AppModel: ObservableObject {
 
     // MARK: - 直播（M07c-2）
 
-    /// 直播清单的加载状态（写法与 ``LoadState`` 一致：界面据此显示加载中 / 失败原因）。
-    public enum LiveState: Sendable {
-        case idle
-        case loading
-        case loaded(LiveSource)
-        case failed(String)
-
-        public var isLoading: Bool {
-            if case .loading = self {
-                return true
-            }
-            return false
-        }
-
-        public var loadedSource: LiveSource? {
-            if case let .loaded(source) = self {
-                return source
-            }
-            return nil
-        }
-
-        public var failureReason: String? {
-            if case let .failed(reason) = self {
-                return reason
-            }
-            return nil
-        }
-    }
+    // 直播清单的加载状态：`LiveState` 见 `AppModel+States.swift`（与 `LoadState` 一起搬出去的理由同它）。
 
     /// 当前选中的直播源名（落 `UserDefaults`；空表示用配置里的第一个源）。
     ///
@@ -381,6 +330,18 @@ public final class AppModel: ObservableObject {
     /// 否则清掉覆盖时没法把频道地址还回去，也不必为此再拉一次清单。
     var rawLiveSource: LiveSource?
 
+    /// 站点分组规则的**本地设置**：**接口摘要 → {关掉的规则 id, 用户自建规则}**（上游 `GroupRuleStore`）。
+    ///
+    /// 桶键同 ``siteNames``（接口地址摘要）：这是要落盘的东西，不存明文地址。
+    @Published public internal(set) var siteGroupRuleSettings: [String: SiteGroupRuleSettings] {
+        didSet {
+            UserDefaults.standard.set(
+                SiteGroupRuleBook.encode(siteGroupRuleSettings),
+                forKey: StorageKey.siteGroupRules
+            )
+        }
+    }
+
     /// 站点**自定义名**：**接口摘要 → {站点 key: 自定义名}**（上游 `SiteNameStore`，键 `site_names`）。
     ///
     /// 桶键是接口地址的摘要（`ConfigIdentity.key(for:)`）：地址可能带 token，落盘的东西不存明文。
@@ -429,9 +390,9 @@ public final class AppModel: ObservableObject {
     /// 可见性是「模块内」而不是 `private`：``AppModel+Cache`` 扩展文件要按它推导首页缓存目录
     /// （`private` 只对声明所在文件开放，跨文件读会编译失败）。
     let cacheDirectory: URL
-    private let sessionTransport: URLSessionTransport
+    let sessionTransport: URLSessionTransport
     /// 详情缓存（进程内共享）。
-    private let detailCache = DetailCache()
+    let detailCache = DetailCache()
 
     public init(cacheDirectory: URL? = nil, defaults: UserDefaults = .standard) {
         let base = cacheDirectory ?? Self.defaultCacheDirectory()
@@ -497,6 +458,9 @@ public final class AppModel: ObservableObject {
         // 站点自定义名：默认空（= 全都用配置里的原始名）。
         siteNames = SiteNameBook.decode(defaults.string(forKey: StorageKey.siteNames))
 
+        // 站点分组规则的本地设置：默认空（= 四条内置全开、没有自建规则）。
+        siteGroupRuleSettings = SiteGroupRuleBook.decode(defaults.string(forKey: StorageKey.siteGroupRules))
+
         // 引擎日志：默认关（与参考图的开关初始状态一致）。
         isEngineLogEnabled = defaults.object(forKey: StorageKey.engineLogEnabled) as? Bool ?? false
         refreshPlaybackNotice()
@@ -542,7 +506,7 @@ public final class AppModel: ObservableObject {
     /// 通知界面「站点清单可能已经整体换过」。
     ///
     /// 多调一次是安全的：界面按版本号去重（版本号没变就不动），所以嵌套调用点不必精心安排。
-    private func bumpSiteCatalogRevision() {
+    func bumpSiteCatalogRevision() {
         siteCatalogRevision += 1
     }
 
@@ -634,95 +598,9 @@ public final class AppModel: ObservableObject {
 
     // MARK: - js2p 宿主
 
-    /// 按加载结果维护宿主：JS 源启动/刷新，其它源停止。
-    private func refreshHost(for source: LoadedSource, forceRestart: Bool) async {
-        guard source.kind == .javaScript, let scriptURL = source.cachedURL else {
-            await stopHost()
-            return
-        }
-        guard JS2PHostService.isRuntimeAvailable else {
-            hostSites = []
-            js2pHost = nil
-            hostStatus = .unavailable(reason: JS2PHostService.runtimeUnavailableReason)
-            return
-        }
-
-        hostStatus = .starting
-        let service = js2pHost ?? JS2PHostService(
-            transport: sessionTransport,
-            scriptURL: scriptURL,
-            persistsHostOutput: isEngineLogEnabled
-        )
-        js2pHost = service
-        // 开关可能在宿主启动之后被改过（设置 → 数据 → 日志管理）：每次刷新都对一次。
-        await service.setLogPersistence(isEngineLogEnabled)
-        do {
-            let snapshot = try await service.sites(forceRestartHost: forceRestart)
-            hostSites = snapshot.sites
-            let baseURL = await service.currentBaseURL()
-            hostStatus = .running(
-                baseURL: baseURL?.absoluteString ?? "",
-                siteCount: snapshot.sites.count,
-                disabledSiteCount: snapshot.disabledSiteCount
-            )
-            // 站点集合变了：旧详情可能属于别的站点，不能复用。
-            await detailCache.invalidateAll()
-        } catch {
-            hostSites = []
-            hostStatus = .failed(reason: userFacingMessage(error))
-        }
-    }
-
-    /// 重启宿主（接口页按钮）。
-    public func restartHost() async {
-        guard let source = state.loadedSource, source.kind == .javaScript else {
-            return
-        }
-        await refreshHost(for: source, forceRestart: true)
-        // 宿主重启会换掉站点清单（端口、站点集合都可能变）：首页/搜索据此作废旧内容。
-        bumpSiteCatalogRevision()
-    }
-
-    /// 停止宿主并清空宿主站点。
-    public func stopHost() async {
-        await js2pHost?.stop()
-        js2pHost = nil
-        hostSites = []
-        hostStatus = .idle
-        bumpSiteCatalogRevision()
-    }
-
-    /// 宿主落盘日志路径（没有落盘能力时为 nil）。
-    ///
-    /// 日志开关（``isEngineLogEnabled``）决定宿主是否把输出写文件；
-    /// 「设置 → 数据 → 日志管理 → 导出」用它拿到要导出的内容。
-    public func hostLogPath() async -> URL? {
-        await js2pHost?.hostLogPath()
-    }
-
-    /// 宿主最近输出：内存里的尾部 + 落盘日志的尾部（见 ``JS2PHostService``）。
-    ///
-    /// 「源地址 → Node 宿主 → 查看宿主输出」与「设置 → 数据 → 日志管理」共用它；
-    /// 没有宿主（未加载 JS 源 / 平台不支持）时返回空数组，界面据此显示「暂无输出」。
-    public func hostDiagnostics(limit: Int = 20) async -> [String] {
-        guard let host = js2pHost else {
-            return []
-        }
-        return await host.hostDiagnostics(limit: limit)
-    }
-
-    /// 把日志开关应用到正在运行的宿主。
-    ///
-    /// 宿主不能重建（内嵌 node 每进程只能起一个实例），所以开关必须能**运行中改**；
-    /// 宿主还没起来时什么都不做 —— 下次 ``refreshHost(for:forceRestart:)`` 会带上当前值。
-    private func applyLogPreferenceToHost() {
-        guard let host = js2pHost else {
-            return
-        }
-        Task {
-            await host.setLogPersistence(isEngineLogEnabled)
-        }
-    }
+    // 宿主维护（`refreshHost` / `restartHost` / `stopHost` / `hostLogPath` / `hostDiagnostics` /
+    // `applyLogPreferenceToHost`）已搬到 `AppModel+Host.swift`：那一簇的依赖只有 `js2pHost` /
+    // `sessionTransport` / `detailCache` 三个存储属性，是类体里最好搬的一块。
 
     /// 列表补图（best-effort）：首页 / 分类 / 搜索拿到列表后按需补封面。
     public func makePictureFiller() -> PictureFiller {

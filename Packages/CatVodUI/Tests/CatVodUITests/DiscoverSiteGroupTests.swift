@@ -20,7 +20,7 @@ struct DiscoverSiteGroupTests {
     func tagsFromDisplayName() {
         let sites = [makeSite(key: "wogg", name: "玩偶|4K"), makeSite(key: "noName", name: "")]
 
-        let tags = DiscoverSiteList.tags(sites: sites, rules: rules)
+        let tags = DiscoverSiteList.tags(sites: sites, input: input())
 
         #expect(tags["wogg"] == ["4K"])
         #expect(tags["noName"] == nil)
@@ -33,7 +33,7 @@ struct DiscoverSiteGroupTests {
             makeSite(key: "b", name: "乙|首页"),
             makeSite(key: "c", name: "丙|4K"),
         ]
-        let tags = DiscoverSiteList.tags(sites: sites, rules: rules)
+        let tags = DiscoverSiteList.tags(sites: sites, input: input())
 
         #expect(DiscoverSiteList.groups(sites: sites, tags: tags) == ["4K", "首页"])
         #expect(DiscoverSiteList.groups(sites: sites, tags: tags, savedOrder: ["首页"]) == ["首页", "4K"])
@@ -42,7 +42,7 @@ struct DiscoverSiteGroupTests {
     @Test("点某个分组只留这个分组的站点；空分组名 = 不筛（点第二次取消）")
     func filteringByGroup() {
         let sites = [makeSite(key: "a", name: "甲|4K"), makeSite(key: "b", name: "乙|首页")]
-        let tags = DiscoverSiteList.tags(sites: sites, rules: rules)
+        let tags = DiscoverSiteList.tags(sites: sites, input: input())
 
         let only4K = DiscoverSiteList.rows(sites: sites, selectedKey: "a", tags: tags, selectedGroup: "4K")
         #expect(only4K.map(\.key) == ["a"])
@@ -59,7 +59,7 @@ struct DiscoverSiteGroupTests {
     func noTagsMeansNoGroupBar() {
         let sites = [makeSite(key: "a", name: "普通线路")]
 
-        let tags = DiscoverSiteList.tags(sites: sites, rules: rules)
+        let tags = DiscoverSiteList.tags(sites: sites, input: input())
 
         #expect(DiscoverSiteList.groups(sites: sites, tags: tags).isEmpty)
     }
@@ -69,12 +69,11 @@ struct DiscoverSiteGroupTests {
         let sites = [makeSite(key: "a", name: "[主力]站点A")]
         let extra = GroupRule.user(name: "井号", regex: "#(.+)$")
 
-        #expect(DiscoverSiteList.tags(sites: sites, rules: rules + [extra])["a"] == ["主力"])
+        #expect(DiscoverSiteList.tags(sites: sites, input: input(rules: rules + [extra]))["a"] == ["主力"])
 
         let disabled = DiscoverSiteList.tags(
             sites: sites,
-            rules: rules,
-            disabledIDs: [GroupRuleConfig.builtinBracket]
+            input: input(disabledIDs: [GroupRuleConfig.builtinBracket])
         )
         #expect(disabled["a"] == nil)
     }
@@ -96,12 +95,12 @@ struct DiscoverSiteGroupTests {
 
         #expect(DiscoverSiteList.title(for: sites[0], names: names) == "[主力][短剧]我的一号站")
 
-        let renamed = DiscoverSiteList.tags(sites: sites, rules: rules, names: names)
+        let renamed = DiscoverSiteList.tags(sites: sites, input: input(names: names))
         #expect(renamed["a"] == ["主力", "短剧"])
         #expect(DiscoverSiteList.groups(sites: sites, tags: renamed) == ["主力", "短剧"])
 
         // 没改名时用的是原始名
-        #expect(DiscoverSiteList.tags(sites: sites, rules: rules)["a"] == ["荐", "采集"])
+        #expect(DiscoverSiteList.tags(sites: sites, input: input())["a"] == ["荐", "采集"])
     }
 
     @Test("改名成没有标签的名字：分组条上这个站点就没了")
@@ -109,7 +108,7 @@ struct DiscoverSiteGroupTests {
         let sites = [makeSite(key: "a", name: "[荐]影视天堂")]
         let names = ["a": "我的站"]
 
-        let tags = DiscoverSiteList.tags(sites: sites, rules: rules, names: names)
+        let tags = DiscoverSiteList.tags(sites: sites, input: input(names: names))
 
         #expect(tags["a"] == nil)
         #expect(DiscoverSiteList.groups(sites: sites, tags: tags).isEmpty)
@@ -139,11 +138,47 @@ struct DiscoverSiteGroupTests {
             makeSite(key: "b", name: "乙|4K"),
             makeSite(key: "c", name: "甲|首页"),
         ]
-        let tags = DiscoverSiteList.tags(sites: sites, rules: rules)
+        let tags = DiscoverSiteList.tags(sites: sites, input: input())
 
         let result = rows(sites, tags: tags, selectedGroup: "4K", keyword: "甲")
 
         #expect(result.map(\.key) == ["a"])
+    }
+
+    @Test("自建规则参与抽标签；关掉某条规则后它抽的标签立刻消失")
+    func userRulesAndDisableChangeGroupBar() {
+        let piped = [makeSite(key: "a", name: "某站|4K")]
+        let tilde = [makeSite(key: "b", name: "某站~杂谈")]
+        let userRule = GroupRule.user(name: "波浪号", regex: "~(.+)$")
+
+        // 自建规则抽出来的标签进分组条
+        #expect(DiscoverSiteList.tags(sites: tilde, input: input(userRules: [userRule]))["b"] == ["杂谈"])
+
+        // 关掉它：这个站点就没标签了
+        let withoutUser = input(userRules: [userRule], disabledIDs: [userRule.id])
+        #expect(DiscoverSiteList.tags(sites: tilde, input: withoutUser)["b"] == nil)
+
+        // 关掉内置的竖线规则：`某站|4K` 不再属于 4K 分组
+        #expect(DiscoverSiteList.tags(sites: piped, input: input())["a"] == ["4K"])
+        #expect(DiscoverSiteList.tags(
+            sites: piped,
+            input: input(disabledIDs: [GroupRuleConfig.builtinPipe])
+        )["a"] == nil)
+    }
+
+    /// 造面板输入（默认就是「四条内置、全开、无改名」）—— M06g 起抽标签的入口统一走 `input:`。
+    private func input(
+        rules: [GroupRule] = GroupRuleConfig.builtins,
+        userRules: [GroupRule] = [],
+        disabledIDs: Set<String> = [],
+        names: [String: String] = [:]
+    ) -> DiscoverSiteRuleInput {
+        DiscoverSiteRuleInput(
+            interfaceRules: rules,
+            userRules: userRules,
+            disabledIDs: disabledIDs,
+            names: names
+        )
     }
 
     private func rows(
