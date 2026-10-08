@@ -63,22 +63,3 @@ public extension KeyedDecodingContainer {
         return ""
     }
 }
-
-/// 单值宽松转换（供非容器场景使用）。
-public enum LenientCoercion {
-    public static func string(_ value: AnyJSONValue?) -> String {
-        value?.stringValue ?? ""
-    }
-
-    public static func int(_ value: AnyJSONValue?) -> Int {
-        value?.intValue ?? 0
-    }
-
-    public static func double(_ value: AnyJSONValue?) -> Double {
-        value?.doubleValue ?? 0
-    }
-
-    public static func bool(_ value: AnyJSONValue?) -> Bool {
-        value?.boolValue ?? false
-    }
-}

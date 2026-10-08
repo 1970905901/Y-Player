@@ -49,19 +49,3 @@ extension CatVodError: LocalizedError {
         }
     }
 }
-
-/// 统一日志分类（OSLog subsystem 固定为 bundle id）。
-public enum CatVodLog {
-    public static let subsystem = "com.YPlayer.cat"
-
-    public enum Category: String, Sendable {
-        case config
-        case network
-        case source
-        case jsRuntime
-        case parse
-        case player
-        case store
-        case ui
-    }
-}
