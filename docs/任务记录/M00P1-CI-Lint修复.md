@@ -1,6 +1,6 @@
 # M00P1 CI Lint 链路修复（SwiftFormat / SwiftLint）
 
-- 状态：待 CI 验证
+- 状态：已修复（2026-10-08 统一回填：本行原写「待 CI 验证」，此后 lint 作业多次在 CI 上拦住真实违规）
 - 时间：2026-10-07
 - 现象：GitHub Actions 里 `Lint (SwiftLint / SwiftFormat)` 作业**显示 success**，但界面上挂着两个红色注解：
   - `Process completed with exit code 127`
