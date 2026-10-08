@@ -44,4 +44,67 @@ struct GroupRuleConfigTests {
     func emptyTextIsIgnored() {
         #expect(GroupRuleConfig.extract("").isEmpty)
     }
+
+    @Test("候选顺序：内置 → 接口 → 用户（顺序决定标签先后，照上游 entries()）")
+    func entryOrderMatchesUpstream() {
+        let interfaceRule = GroupRule(id: "i1", name: "接口", regex: "I(.+)$", source: GroupRule.sourceInterface)
+        let userRule = GroupRule(id: "u1", name: "用户", regex: "U(.+)$", source: GroupRule.sourceUser)
+
+        let entries = GroupRuleConfig.entries(interfaceRules: [interfaceRule], userRules: [userRule])
+
+        #expect(entries.map(\.rule.id) == (GroupRuleConfig.builtins.map(\.id) + ["i1", "u1"]))
+        #expect(entries.allSatisfy(\.isEnabled))
+    }
+
+    @Test("用户自建规则参与抽标签，也能按 id 关掉")
+    func userRulesParticipate() {
+        let userRule = GroupRule(
+            id: "u1",
+            name: "用户",
+            regex: "U(.+)$",
+            source: GroupRule.sourceUser,
+            wrapBracket: true
+        )
+
+        #expect(GroupRuleConfig.extract("站点U爸妈用", userRules: [userRule]) == ["[爸妈用]"])
+        #expect(GroupRuleConfig.extract("站点U爸妈用", userRules: [userRule], disabledIDs: ["u1"]).isEmpty)
+
+        // 用户规则自己写 `enabled=false` 也不生效
+        let off = GroupRule(
+            id: "u2",
+            name: "关掉",
+            regex: "U(.+)$",
+            enabled: false,
+            source: GroupRule.sourceUser
+        )
+        #expect(GroupRuleConfig.extract("站点U爸妈用", userRules: [off]).isEmpty)
+    }
+
+    @Test("内置规则只看「有没有被本地关掉」，不看它自己的 enabled（上游判法）")
+    func builtinIgnoresOwnEnabledFlag() {
+        #expect(GroupRuleConfig.entries().first?.isEnabled == true)
+        #expect(GroupRuleConfig.entries(disabledIDs: [GroupRuleConfig.builtinBracket]).first?.isEnabled == false)
+    }
+
+    @Test("条数统计：生效 N / 候选 M（设置页那一行用它）")
+    func counts() {
+        let userRule = GroupRule(id: "u1", name: "用户", regex: "U(.+)$", source: GroupRule.sourceUser)
+        let builtinCount = GroupRuleConfig.builtins.count
+
+        #expect(GroupRuleConfig.totalCount(userRules: [userRule]) == builtinCount + 1)
+        #expect(GroupRuleConfig.enabledCount(userRules: [userRule]) == builtinCount + 1)
+        #expect(GroupRuleConfig.enabledCount(userRules: [userRule], disabledIDs: ["u1"]) == builtinCount)
+
+        // 编不出正则的规则不算「生效」，但仍算「候选」
+        let broken = GroupRule(id: "b1", name: "坏", regex: "(", source: GroupRule.sourceUser)
+        #expect(GroupRuleConfig.enabledCount(userRules: [broken]) == builtinCount)
+        #expect(GroupRuleConfig.totalCount(userRules: [broken]) == builtinCount + 1)
+    }
+
+    @Test("没有 id 的接口 / 用户规则直接跳过（对齐上游 `TextUtils.isEmpty(rule.getId())`）")
+    func rulesWithoutIDAreSkipped() {
+        let anonymous = GroupRule(id: "", name: "没 id", regex: "U(.+)$", source: GroupRule.sourceUser)
+
+        #expect(GroupRuleConfig.totalCount(userRules: [anonymous]) == GroupRuleConfig.builtins.count)
+    }
 }

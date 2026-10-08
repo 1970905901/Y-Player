@@ -25,30 +25,73 @@ public enum GroupRuleConfig {
         ]
     }
 
-    /// 当前生效的规则：内置 + 接口规则，各自减掉 `disabledIDs`，再滤掉编不出正则的。
+    /// 一条候选规则 + 它当前是否生效（对齐上游 `GroupRuleConfig.Entry`）。
     ///
-    /// 内置规则只看「有没有被关掉」（它们自己的 `enabled` 恒为真）；接口规则还要看它自己写的 `enabled`
-    /// —— 与上游 `entries()` 的判法一致。
-    public static func activeRules(interfaceRules: [GroupRule] = [], disabledIDs: Set<String> = []) -> [GroupRule] {
-        var active: [GroupRule] = []
-        for rule in builtins where !disabledIDs.contains(rule.id) && rule.isValid {
-            active.append(rule)
+    /// 为什么要包一层：**内置规则不看自己的 `enabled`**（它恒为真，只受「本地关掉的 id」影响），
+    /// 而接口 / 用户规则是「自己的 `enabled` × 没被关掉」—— 两者判法不同，塞在一个布尔表达式里迟早写错。
+    public struct Entry: Sendable, Equatable {
+        public let rule: GroupRule
+        public let isEnabled: Bool
+    }
+
+    /// 全部候选规则 —— **内置 → 接口 → 用户**，逐个算出「当前是否生效」。
+    ///
+    /// 顺序照上游 `entries()` 抄：它决定同一段站点名被多条规则命中时标签的先后，所以别随手调。
+    /// （上游在「接口」和「用户」之间还有一档 AI 规则，来自 `AiGroupRuleStore`：本项目还没接 AI 服务，
+    /// 位置先留在这里，接的时候插在 `interfaceRules` 与 `userRules` 之间。）
+    public static func entries(
+        interfaceRules: [GroupRule] = [],
+        userRules: [GroupRule] = [],
+        disabledIDs: Set<String> = []
+    ) -> [Entry] {
+        var items: [Entry] = []
+        for rule in builtins {
+            items.append(Entry(rule: rule, isEnabled: !disabledIDs.contains(rule.id)))
         }
-        for rule in interfaceRules where rule.enabled && !disabledIDs.contains(rule.id) && rule.isValid {
-            active.append(rule)
+        for rule in interfaceRules where !rule.id.isEmpty {
+            items.append(Entry(rule: rule, isEnabled: rule.enabled && !disabledIDs.contains(rule.id)))
         }
-        return active
+        for rule in userRules where !rule.id.isEmpty {
+            items.append(Entry(rule: rule, isEnabled: rule.enabled && !disabledIDs.contains(rule.id)))
+        }
+        return items
+    }
+
+    /// 当前生效的规则（`entries()` 里启用且正则编得出来的）。
+    public static func activeRules(
+        interfaceRules: [GroupRule] = [],
+        userRules: [GroupRule] = [],
+        disabledIDs: Set<String> = []
+    ) -> [GroupRule] {
+        entries(interfaceRules: interfaceRules, userRules: userRules, disabledIDs: disabledIDs)
+            .filter { $0.isEnabled && $0.rule.isValid }
+            .map(\.rule)
+    }
+
+    /// 生效条数 / 候选条数（设置页显示「已启用 N / 共 M」）。
+    public static func enabledCount(
+        interfaceRules: [GroupRule] = [],
+        userRules: [GroupRule] = [],
+        disabledIDs: Set<String> = []
+    ) -> Int {
+        activeRules(interfaceRules: interfaceRules, userRules: userRules, disabledIDs: disabledIDs).count
+    }
+
+    public static func totalCount(interfaceRules: [GroupRule] = [], userRules: [GroupRule] = []) -> Int {
+        entries(interfaceRules: interfaceRules, userRules: userRules).count
     }
 
     /// 从文本里抽标签（对齐上游 `GroupRuleConfig.extract`）：所有生效规则的结果合并、**去重**、保持出现顺序。
     public static func extract(
         _ text: String,
         interfaceRules: [GroupRule] = [],
+        userRules: [GroupRule] = [],
         disabledIDs: Set<String> = []
     ) -> [String] {
         guard !text.isEmpty else { return [] }
         var groups: [String] = []
-        for rule in activeRules(interfaceRules: interfaceRules, disabledIDs: disabledIDs) {
+        let rules = activeRules(interfaceRules: interfaceRules, userRules: userRules, disabledIDs: disabledIDs)
+        for rule in rules {
             for group in rule.extract(text) where !groups.contains(group) {
                 groups.append(group)
             }
