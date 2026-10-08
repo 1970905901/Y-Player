@@ -16,6 +16,10 @@ import SwiftUI
 public struct LiveView: View {
     @ObservedObject var model: AppModel
 
+    /// 节目单页用 `sheet` 弹出：一个频道一档节目，弹层比 push 更贴上游的 `EpgDialog`，
+    /// 也不会把导航栈堆成「列表 → 频道 → 节目单 → 播放」四层。
+    @State private var scheduleChannel: LiveChannel?
+
     public init(model: AppModel) {
         self.model = model
     }
@@ -83,14 +87,31 @@ public struct LiveView: View {
     private var channelList: some View {
         List {
             ForEach(rows) { row in
-                NavigationLink {
-                    LiveChannelPlaybackView(model: model, row: row)
-                } label: {
-                    LiveChannelRowView(row: row)
+                HStack(spacing: 8) {
+                    NavigationLink {
+                        LiveChannelPlaybackView(model: model, row: row)
+                    } label: {
+                        LiveChannelRowView(row: row)
+                    }
+                    // 节目单入口：一个频道的各档节目（时移回看从这里进）。
+                    Button {
+                        scheduleChannel = row.channel
+                    } label: {
+                        Image(systemName: "calendar")
+                            .font(.body)
+                            .accessibilityLabel("节目单")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!row.isPlayable)
                 }
             }
         }
         .adaptiveListStyle()
+        .sheet(item: $scheduleChannel) { channel in
+            AdaptiveNavigationContainer {
+                LiveScheduleView(model: model, channel: channel)
+            }
+        }
     }
 
     /// 当前分组的频道行：节目单按**频道各自**取（缓存就在 ``AppModel/liveGuides`` 里）。
