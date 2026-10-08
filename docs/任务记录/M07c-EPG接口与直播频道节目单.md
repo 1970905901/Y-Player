@@ -68,3 +68,23 @@
 - 界面：分组 → 频道列表（当前节目显示「正在播」，点历史节目走时移），播放复用现有 `PlaybackView`
   （系统 `AVPlayer` + 本地代理注入 header）。
 - 顺带接线：图标回填（`logo(for:fallback:)`）、时移（`LiveCatchup` + `EPGProgram.clockQuery`）、`keep`（上次观看位置）。
+
+## 六、M07c-2 进度与交接
+
+已落地（提交见 `git log`）：
+
+| 件 | 说明 |
+| --- | --- |
+| `CatVodUI/LiveLayout.swift` | 纯逻辑：分组行（名字 / 频道数 / 加密标记）、频道行（EPG 覆盖显示名与图标、`epgID` 三级回落、「正在播 / 下一档」文案、时移入口判定含 `/PLTV/` 自动套用） |
+| `CatVodUI/LiveView.swift` | 直播页：顶部分组条（当前分组加粗、加密组带锁）+ 频道列表（图标 / 名字 / 正在播 / 回看标记 / 频道号）；空态 / 加载中 / 失败三种分支都给真话；播放复用 `PlaybackView` + `proxiedMediaResource(_:)` |
+| `CatVodUI/AppModel+Live.swift` | `liveSources`（配置 `lives`）、`selectedLiveSource` / `selectedLiveGroupObject`（选择落 `UserDefaults`）、`loadLivePlaylist(force:)`（换源清节目单缓存）、`loadLiveGuide(for:)`（失败只留 `liveEPGNotice`，不弹错） |
+| `CatVodUI/HomeView` | 工具栏新增**纸飞机**入口（参考录屏的形态；不是第 4 个 Tab），没有 `lives` 时置灰 |
+| 单测 | `LiveLayoutTests`（6 例：分组行 / EPG 覆盖名字与图标 / `epgID` 回落 / 无节目单回落 / 时移入口 / 顺序与可播放） |
+
+未做（下一步）：
+
+1. **时移回看**：频道行里点历史节目 → 用 `LiveCatchup.playbackURL(_:start:end:)` 拼那一段的地址（`EPGProgram.clockQuery` 是给 rtsp 的 `rtsp_range` 用的）→ 直接进 `PlaybackView`；需要一个「当天节目单」的展开入口（上游是 `EpgDialog`）。
+2. **`keep` 上次观看位置**：`LiveSource.keep` 字段早就在模型里；要落的是「写回 `keep`」与「进页面自动回到上次频道 / 线路」。
+3. **线路切换**：一个频道有多条 `urls` 时给线路选择（`playbackURL(index:)` / `lineName(index:)` 已就绪）。
+4. **EPG 拉取时机**：现在按上游语义**逐频道拉**（点开才拉），列表首屏因此显示「暂无节目」；若要首屏就有节目名，需要加一层「可见频道批量拉 + 节流」，属体验优化，需单独评估请求量。
+
