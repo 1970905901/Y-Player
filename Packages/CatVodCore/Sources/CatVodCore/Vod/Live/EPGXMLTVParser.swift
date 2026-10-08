@@ -16,6 +16,7 @@ import Foundation
 ///
 /// 明确不做：繁简转换（上游 `Trans.s2t`）、`<programme>` 里除 `title` 之外的元数据
 /// （`<desc>`/`<icon>`/`<rating>`）、`stop` 缺失时按「下一档开始时间」推断（上游也不推断）。
+/// `<channel>` 的 `<icon src>` **会收**（上游拿它做频道图标回填，M07c）。
 public enum EPGXMLTVParser {
     /// 解析 XMLTV；不是 XML 或没有 `<tv>` 时返回 `nil`（调用方按「这个地址没有可用节目单」处理）。
     public static func parse(data: Data, timeZone: TimeZone) -> EPGGuide? {
@@ -27,6 +28,20 @@ public enum EPGXMLTVParser {
             return nil
         }
         return delegate.guide()
+    }
+
+    /// 解析**单个频道**的 XMLTV（x-tvg 接口形态，M07c）。
+    ///
+    /// 上游 `LiveApi.fetchEpgDay` 把接口返回的节目单挂在**直播频道的 `epgID`** 上
+    /// （`Epg.objectFrom(body, item.getTvgId(), zoneId)`），而不是 `<programme channel="…">`
+    /// 自己的 id：接口常按频道名拉取，返回的 id 与清单里的 `tvg-id` 对不上。
+    /// 所以这里把切片键统一改写成 `key`（``EPGGuide/rekeyed(to:)``），
+    /// 并丢掉 `<channel>` 里的名称/图标 —— 接口形态下界面用清单里的名字与图标（与上游一致）。
+    public static func parse(data: Data, key: String, timeZone: TimeZone) -> EPGGuide? {
+        guard let parsed = parse(data: data, timeZone: timeZone) else {
+            return nil
+        }
+        return parsed.rekeyed(to: key)
     }
 
     /// 把时间串规整成 ``EPGTimeParser/parseFull(_:timeZone:)`` 认的 `yyyyMMddHHmmss ±HHMM`：
@@ -84,6 +99,8 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
 
     private let timeZone: TimeZone
     private var names: [String: String] = [:]
+    /// `<channel id="…"><icon src="…"></channel>` 的图标（上游 `Tv.Channel.getSrc()`）。
+    private var logos: [String: String] = [:]
     private var programmes: [RawProgramme] = []
     private var currentChannelID = ""
     private var currentProgramme: RawProgramme?
@@ -116,6 +133,11 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
                 start: attributeDict["start"] ?? "",
                 stop: attributeDict["stop"] ?? ""
             )
+        case "icon":
+            // 只认 `<channel>` 里的图标；`<programme>` 里的 `<icon>` 是剧照，不做频道图标用。
+            if currentProgramme == nil, !currentChannelID.isEmpty, let src = attributeDict["src"], !src.isEmpty {
+                logos[currentChannelID] = src
+            }
         default:
             break
         }
@@ -191,6 +213,6 @@ private final class XMLTVDelegate: NSObject, XMLParserDelegate {
             // 同一开始时间的按标题排：`sort` 不保证稳定，加二级键让结果可预期。
             slices[index].programs.sort { ($0.startTime, $0.title) < ($1.startTime, $1.title) }
         }
-        return EPGGuide(timeZone: timeZone, channelNames: names, schedules: slices)
+        return EPGGuide(timeZone: timeZone, channelNames: names, channelLogos: logos, schedules: slices)
     }
 }

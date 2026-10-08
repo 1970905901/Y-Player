@@ -32,6 +32,20 @@ struct EPGTimeParserTests {
         #expect(EPGTimeParser.formatClock(truncated) == "20261007T040000Z")
     }
 
+    @Test("按源时区算「昨天 / 今天 / 明天」——x-tvg 接口的 `{date}`（M07c）")
+    func dayOffsets() {
+        // 源时区 07:00 时 UTC 还停在前一天 23:00：所以必须用**传入的时区**算，不能用本机时区。
+        let morning = EPGTimeParser.parse(date: "2026-10-07", time: "07:00", timeZone: shanghai)
+        #expect(EPGTimeParser.dateString(dayOffset: -1, timeZone: shanghai, from: morning) == "2026-10-06")
+        #expect(EPGTimeParser.dateString(dayOffset: 0, timeZone: shanghai, from: morning) == "2026-10-07")
+        #expect(EPGTimeParser.dateString(dayOffset: 1, timeZone: shanghai, from: morning) == "2026-10-08")
+        #expect(EPGTimeParser.dateString(dayOffset: 0, timeZone: utc, from: morning) == "2026-10-06")
+        // 跨月 / 跨年就是日历加减，不是「加减 86400 秒」。
+        let newYear = EPGTimeParser.parse(date: "2026-01-01", time: "12:00", timeZone: shanghai)
+        #expect(EPGTimeParser.dateString(dayOffset: -1, timeZone: shanghai, from: newYear) == "2025-12-31")
+        #expect(EPGTimeParser.dateString(dayOffset: 1, timeZone: shanghai, from: newYear) == "2026-01-02")
+    }
+
     @Test("解析失败一律退化为 epoch（不抛错、不静默 nil）")
     func parseFailures() {
         #expect(EPGTimeParser.formatClock(EPGTimeParser.parseFull("", timeZone: shanghai)) == "19700101T000000Z")

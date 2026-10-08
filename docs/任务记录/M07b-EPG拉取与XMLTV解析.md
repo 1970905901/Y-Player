@@ -42,10 +42,14 @@
 1. **时间写法三条加固**（上游没有）：`20261007T190000+0800`、`…Z`、`…+08:00`。
    上游 `parseFull` 只认 `yyyyMMddHHmmss ±HHMM`，这三种会被解析成 epoch；真实 XMLTV 里都见过，
    所以先规整（`EPGXMLTVParser.normalizedTime`）再交给上游同款解析逻辑。
-2. **x-tvg 接口未做**：`epg` 里含 `{…}` 的地址（如 `?ch={name}&date={date}`）本轮**明确报错**，
-   不静默返回空节目单；`EPGProgram.clockQuery` 已备好 `clock=` 窗口的拼法，M07c 接。
+2. ~~**x-tvg 接口未做**~~ → **已由 M07c 落地**（见 `docs/任务记录/M07c-EPG接口与直播频道节目单.md`）：
+   当时 `epg` 里含 `{…}` 的地址一律**明确报错**、不静默返回空节目单；现在走
+   `LiveEPGRepository.load(channel:source:existing:)` 逐频道拉。
+   ⚠️ 顺带更正当时的两处判断：接口返回的是 **XMLTV**（上游 `EpgParser.getEpg` 用 SimpleXML 解析），不是 JSON；
+   `EPGProgram.clockQuery` 也不是 EPG 请求参数，而是**时移直播地址**用的（见 M07c 差异 1 / 2）。
 3. **繁简转换不做**（上游 `Trans.s2t`）：与 M07a 的口径一致。
-4. **`<desc>` / `<icon>` / `<rating>` 不解析**：`EPGProgram` 没有这些字段，界面也用不到。
+4. **`<desc>` / `<rating>` 不解析**：`EPGProgram` 没有这些字段，界面也用不到。
+   `<channel>` 的 `<icon src>` **会收**（频道图标回填，M07c 补）。
 5. **没有缓存**：每次进直播页都重新拉。TTL 等 M07c 有界面再定，避免现在猜一个数
    （详情缓存 M02P5 的 300s 是另一码事）。
 6. **没走本地代理**：节目单是普通 GET，直接走 `HTTPTransport`；播放侧才需要 `/proxy`。

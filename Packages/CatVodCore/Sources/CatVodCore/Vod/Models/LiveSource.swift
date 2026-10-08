@@ -5,7 +5,8 @@ import Foundation
 /// 字段表对照上游 `bean/Live.java` 与 webhtv `docs/integration/live.md`。
 /// M01 先落地点播配置必需的字段；**M07a 已补齐直播侧字段与清单解析**
 /// （分组 / 频道 / 时移 / EPG 地址拆分，见 `docs/任务记录/M07a-直播模型与清单解析.md`）；
-/// EPG 的拉取与节目单、DRM/ClearKey、直播页与播放接线分别属 M07b / M07c。
+/// EPG 的文件解析与接口拉取已由 M07b / M07c 落地（`Tools/out/upstream/` 里有对照过的上游源码），
+/// 直播页与播放接线属 M07c-2，DRM/ClearKey 属内核阶段。
 public struct LiveSource: Codable, Sendable, Hashable, Identifiable {
     /// 展示名，同时是直播配置的唯一标识。
     public var name: String
@@ -47,6 +48,10 @@ public struct LiveSource: Codable, Sendable, Hashable, Identifiable {
     public var groups: [LiveGroup]
     /// 分组名拆分开关（上游字段名就是 `pass`）：true 表示组名里的 `_` 不当密码。
     public var pass: Bool
+    /// 开机自动播放该直播源（上游 `Live.boot`）。
+    ///
+    /// 上游在「开机自启」里读它；本项目还没有开机自启入口，字段先按上游补齐（M07c 复核字段表时补）。
+    public var boot: Bool
 
     public var id: String { name }
 
@@ -79,6 +84,7 @@ public struct LiveSource: Codable, Sendable, Hashable, Identifiable {
         catchup = container.lenientValue(.catchup)
         groups = container.lenientArray(.groups)
         pass = container.lenientBool(.pass)
+        boot = container.lenientBool(.boot)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -102,6 +108,7 @@ public struct LiveSource: Codable, Sendable, Hashable, Identifiable {
         case catchup
         case groups
         case pass
+        case boot
     }
 
     // MARK: - 取值语义（对齐上游 Live）

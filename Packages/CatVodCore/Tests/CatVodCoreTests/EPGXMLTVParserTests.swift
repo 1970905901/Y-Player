@@ -136,4 +136,59 @@ struct EPGXMLTVParserTests {
         #expect(merged.channelNames["cctv1"] == "CCTV-1 综合")
         #expect(first.merging(first).schedules.count == first.schedules.count)
     }
+
+    @Test("<channel> 的 `<icon src>` 收进 `channelLogos`（频道图标回填，M07c）")
+    func channelIcons() throws {
+        let xml = """
+        <tv>
+          <channel id="cctv1">
+            <display-name>CCTV-1 综合</display-name>
+            <icon src="https://logo.example.com/cctv1.png"/>
+          </channel>
+          <programme start="20261007190000 +0800" stop="20261007193000 +0800" channel="cctv1">
+            <icon src="https://still.example.com/news.jpg"/>
+            <title>新闻联播</title>
+          </programme>
+        </tv>
+        """
+        let guide = try #require(parse(xml))
+        // 只认 `<channel>` 里的图标：`<programme>` 里的剧照不进 `channelLogos`。
+        #expect(guide.channelLogos == ["cctv1": "https://logo.example.com/cctv1.png"])
+        #expect(guide.logo(for: "cctv1") == "https://logo.example.com/cctv1.png")
+        #expect(guide.logo(for: "cctv9", fallback: "https://fallback.example.com/9.png") == "https://fallback.example.com/9.png")
+
+        // 合并时图标只补空缺（已有的不被后来的覆盖）。
+        let other = try #require(parse("""
+        <tv>
+          <channel id="cctv1"><icon src="https://other.example.com/cctv1.png"/></channel>
+          <channel id="cctv9"><icon src="https://other.example.com/cctv9.png"/></channel>
+        </tv>
+        """))
+        let merged = guide.merging(other)
+        #expect(merged.channelLogos["cctv1"] == "https://logo.example.com/cctv1.png")
+        #expect(merged.channelLogos["cctv9"] == "https://other.example.com/cctv9.png")
+    }
+
+    @Test("接口形态：切片键改成频道的 `epgID`，接口自己的频道名/图标不要（M07c）")
+    func rekeyedToChannel() throws {
+        let xml = """
+        <tv>
+          <channel id="upstream-id">
+            <display-name>接口给的名字</display-name>
+            <icon src="https://logo.example.com/x.png"/>
+          </channel>
+          <programme start="20261007190000 +0800" stop="20261007193000 +0800" channel="upstream-id"><title>新闻联播</title></programme>
+        </tv>
+        """
+        let guide = try #require(EPGXMLTVParser.parse(data: Data(xml.utf8), key: "cctv1", timeZone: shanghai))
+        #expect(guide.schedules.map(\.key) == ["cctv1"])
+        #expect(guide.schedules.map(\.date) == ["2026-10-07"])
+        #expect(guide.schedule(key: "cctv1", date: "2026-10-07")?.programs.map(\.title) == ["新闻联播"])
+        // 接口形态用清单里的名字与图标，接口自己那份不带过来。
+        #expect(guide.displayName(for: "cctv1", fallback: "CCTV-1 综合") == "CCTV-1 综合")
+        #expect(guide.logo(for: "cctv1", fallback: "https://list.example.com/1.png") == "https://list.example.com/1.png")
+        // 不是 XMLTV 时仍然 `nil`（调用方据此报错，而不是当成空节目单）。
+        #expect(EPGXMLTVParser.parse(data: Data("<html>404</html>".utf8), key: "cctv1", timeZone: shanghai) == nil)
+    }
 }
+

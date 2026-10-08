@@ -54,6 +54,17 @@ public enum EPGTimeParser {
         string(from: date, format: "yyyy-MM-dd", timeZone: timeZone)
     }
 
+    /// 上游 `LocalDate.now(zoneId).plusDays(offset)`（再用 `Formatters.DATE` 输出）。
+    ///
+    /// x-tvg 接口按「昨天 / 今天 / 明天」各拉一次（上游 `LiveApi.getEpg` 的 `new int[]{-1, 0, 1}`），
+    /// 日期一律按**直播源时区**算 —— 用本机时区会在跨零点的源上取错天。
+    public static func dateString(dayOffset: Int, timeZone: TimeZone, from reference: Date = Date()) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let shifted = calendar.date(byAdding: .day, value: dayOffset, to: reference) ?? reference
+        return formatDate(shifted, timeZone: timeZone)
+    }
+
     /// 上游 `Formatters.TIME`（`HH:mm`）。
     public static func formatTime(_ date: Date, timeZone: TimeZone) -> String {
         string(from: date, format: "HH:mm", timeZone: timeZone)

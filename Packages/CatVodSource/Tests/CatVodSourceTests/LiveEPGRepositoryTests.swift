@@ -171,6 +171,169 @@ struct LiveEPGRepositoryTests {
     }
 }
 
+@Suite("EPG 接口（x-tvg）：逐频道 × 昨天 / 今天 / 明天（M07c）")
+struct LiveEPGInterfaceTests {
+    /// 与下面 `makeSource` 里的 `timeZone` 保持一致。
+    private var zone: TimeZone {
+        EPGTimeParser.timeZone(named: "Asia/Shanghai")
+    }
+
+    private func makeSource() throws -> LiveSource {
+        let json = #"{"name":"演示直播","url":"https://live.example.com/list.m3u8","timeZone":"Asia/Shanghai","ua":"UA-live"}"#
+        return try JSONDecoder().decode(LiveSource.self, from: Data(json.utf8))
+    }
+
+    /// 频道模型字段多，一律走 JSON（与生产路径同一条）。
+    private func makeChannel(_ json: String) throws -> LiveChannel {
+        try JSONDecoder().decode(LiveChannel.self, from: Data(json.utf8))
+    }
+
+    /// 带接口模板的频道（`{name}`/`{date}` 都留着，等展开）。
+    private let interfaceChannelJSON =
+        #"{"name":"CCTV-1 综合","tvgId":"cctv1","tvgName":"CCTV1","epg":"https://epg.example.com/api?ch={name}&date={date}"}"#
+
+    private func makeInterfaceChannel() throws -> LiveChannel {
+        try makeChannel(interfaceChannelJSON)
+    }
+
+    private func interfaceURL(date: String) -> String {
+        "https://epg.example.com/api?ch=CCTV1&date=\(date)"
+    }
+
+    private func threeDays() -> [String] {
+        [-1, 0, 1].map { EPGTimeParser.dateString(dayOffset: $0, timeZone: zone) }
+    }
+
+    /// 接口返回的 XMLTV：`channel` 故意与清单里的 `tvg-id` 不同 —— 接口按频道名查，返回的 id 常常不是同一个。
+    private func xmltv(date: String, title: String) -> String {
+        let compact = date.replacingOccurrences(of: "-", with: "")
+        return """
+        <tv>
+          <programme start="\(compact)190000 +0800" stop="\(compact)193000 +0800" channel="upstream-id"><title>\(title)</title></programme>
+        </tv>
+        """
+    }
+
+    @Test("三天各拉一次：`{date}` 按源时区替换，节目挂到频道的 `epgID` 上")
+    func fetchesThreeDays() async throws {
+        let dates = threeDays()
+        var responses: [String: HTTPResponse] = [:]
+        for date in dates {
+            responses[interfaceURL(date: date)] = HTTPResponse(status: 200, body: Data(xmltv(date: date, title: "节目 \(date)").utf8))
+        }
+        let recorder = RoutingRecorder(responses: responses)
+        let guide = try await LiveEPGRepository(transport: recorder)
+            .load(channel: try makeInterfaceChannel(), source: try makeSource())
+
+        #expect(guide.schedules.map(\.key) == ["cctv1", "cctv1", "cctv1"])
+        #expect(guide.schedules.map(\.date) == dates)
+        // 接口返回的 `channel="upstream-id"` 不参与匹配：键是频道的 `epgID`。
+        #expect(guide.schedule(key: "cctv1", date: dates[1])?.programs.map(\.title) == ["节目 \(dates[1])"])
+        #expect(await recorder.urls.count == 3)
+    }
+
+    @Test("`existing` 里已有的那天不再请求（上游 `noneMatch(epg -> epg.equal(date))`）")
+    func skipsLoadedDays() async throws {
+        let dates = threeDays()
+        var responses: [String: HTTPResponse] = [:]
+        for date in dates {
+            responses[interfaceURL(date: date)] = HTTPResponse(status: 200, body: Data(xmltv(date: date, title: "节目 \(date)").utf8))
+        }
+        let existing = EPGGuide(timeZone: zone, schedules: [EPGSchedule(key: "cctv1", date: dates[1], programs: [])])
+        let recorder = RoutingRecorder(responses: responses)
+        let guide = try await LiveEPGRepository(transport: recorder)
+            .load(channel: try makeInterfaceChannel(), source: try makeSource(), existing: existing)
+
+        let urls = await recorder.urls
+        #expect(urls.count == 2)
+        #expect(!urls.contains(interfaceURL(date: dates[1])))
+        // 已有的那天照旧留在结果里（界面把上次的 guide 传回来就能增量刷新）。
+        #expect(guide.schedules.count == 3)
+    }
+
+    @Test("单天坏不影响其它天；三天全坏才抛错")
+    func partialFailure() async throws {
+        let dates = threeDays()
+        var responses: [String: HTTPResponse] = [:]
+        responses[interfaceURL(date: dates[0])] = HTTPResponse(status: 500, body: Data("oops".utf8))
+        responses[interfaceURL(date: dates[1])] = HTTPResponse(status: 200, body: Data(xmltv(date: dates[1], title: "今天").utf8))
+        responses[interfaceURL(date: dates[2])] = HTTPResponse(status: 500, body: Data("oops".utf8))
+        let guide = try await LiveEPGRepository(transport: RoutingRecorder(responses: responses))
+            .load(channel: try makeInterfaceChannel(), source: try makeSource())
+        #expect(guide.schedules.map(\.date) == [dates[1]])
+
+        // 全坏：把第一个错误抛出来（这里是「地址没配假响应」的 network）。
+        let broken = RoutingRecorder(responses: [:])
+        do {
+            _ = try await LiveEPGRepository(transport: broken)
+                .load(channel: try makeInterfaceChannel(), source: try makeSource())
+            Issue.record("三天全坏应当抛错")
+        } catch let error as CatVodError {
+            guard case .network = error else {
+                Issue.record("错误类型不对：\(error)")
+                return
+            }
+        }
+    }
+
+    @Test("JSON 形态：接口回 `epg_data` 也认（`EPGJSONParser`），一样挂到频道 `epgID`")
+    func jsonForm() async throws {
+        let dates = threeDays()
+        let today = dates[1]
+        let body = #"{"date":"\#(today)","epg_data":[{"title":"午间新闻","start":"12:00","end":"12:30"}]}"#
+        var responses: [String: HTTPResponse] = [:]
+        for date in dates {
+            let payload = date == today ? body : xmltv(date: date, title: "节目")
+            responses[interfaceURL(date: date)] = HTTPResponse(status: 200, body: Data(payload.utf8))
+        }
+        let guide = try await LiveEPGRepository(transport: RoutingRecorder(responses: responses))
+            .load(channel: try makeInterfaceChannel(), source: try makeSource())
+
+        let program = try #require(guide.schedule(key: "cctv1", date: today)?.programs.first)
+        #expect(program.title == "午间新闻")
+        #expect(program.start == "12:00")
+        #expect(program.startTime == EPGTimeParser.parse(date: today, time: "12:00", timeZone: zone))
+    }
+
+    @Test("频道没有节目单地址 → unsupported，且不发请求")
+    func missingAddress() async throws {
+        let recorder = ParseRequestRecorder(response: HTTPResponse(status: 200, body: Data(xmltv(date: "2026-10-07", title: "x").utf8)))
+        let channel = try makeChannel(#"{"name":"CCTV-1","tvgId":"cctv1"}"#)
+        do {
+            _ = try await LiveEPGRepository(transport: recorder).load(channel: channel, source: try makeSource())
+            Issue.record("没有节目单地址应当明确拒绝")
+        } catch let error as CatVodError {
+            #expect(error.errorDescription?.contains("节目单地址") == true)
+        }
+        #expect(await recorder.requests.count == 0)
+    }
+
+    @Test("地址不是 http（上游直接跳过）→ unsupported，且不发请求")
+    func nonHTTPAddress() async throws {
+        let recorder = ParseRequestRecorder(response: HTTPResponse(status: 200, body: Data(xmltv(date: "2026-10-07", title: "x").utf8)))
+        let channel = try makeChannel(#"{"name":"CCTV-1","tvgId":"cctv1","epg":"epg/{date}.xml"}"#)
+        do {
+            _ = try await LiveEPGRepository(transport: recorder).load(channel: channel, source: try makeSource())
+            Issue.record("非 http 地址应当明确拒绝")
+        } catch let error as CatVodError {
+            #expect(error.errorDescription?.contains("不是 http") == true)
+        }
+        #expect(await recorder.requests.count == 0)
+    }
+
+    @Test("中文频道名：请求地址照样能构造（非 ASCII 交给 URL 编码）")
+    func chineseChannelName() async throws {
+        let date = EPGTimeParser.dateString(dayOffset: 0, timeZone: zone)
+        let recorder = ParseRequestRecorder(response: HTTPResponse(status: 200, body: Data(xmltv(date: date, title: "中文台").utf8)))
+        let channel = try makeChannel(#"{"name":"CCTV-2 财经","epg":"https://epg.example.com/api?ch={name}&date={date}"}"#)
+        let guide = try await LiveEPGRepository(transport: recorder).load(channel: channel, source: try makeSource())
+
+        #expect(guide.schedule(key: "CCTV-2 财经", date: date)?.programs.map(\.title) == ["中文台"])
+        let request = await recorder.firstRequest()
+        #expect(request?.url.absoluteString.contains("ch=CCTV-2") == true)
+    }
+}
+
 /// 按地址给不同响应的假传输层：EPG 的多地址合并必须能按地址区分响应。
 private actor RoutingRecorder: HTTPTransport {
     private let responses: [String: HTTPResponse]

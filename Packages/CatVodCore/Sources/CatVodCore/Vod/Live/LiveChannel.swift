@@ -169,10 +169,13 @@ public struct LiveChannel: Codable, Sendable, Hashable, Identifiable {
         return effective.matches(url: url) ? effective : nil
     }
 
-    /// 上游 `Channel.live(Live)`：把直播源级设置**补进没有自己设置的**频道，并展开 logo 模板。
+    /// 上游 `Channel.live(Live)`：把直播源级设置**补进没有自己设置的**频道，并展开 logo / EPG 模板。
     ///
-    /// 补的字段与上游一致：`ua` / `click` / `header` / `origin` / `catchup` / `referer`。
-    /// 上游这里还会做 EPG 应用（`LiveEpgSetting.apply`），那属节目单阶段。
+    /// 补的字段与上游一致：`ua` / `click` / `header` / `origin` / `catchup` / `referer`；
+    /// 模板展开也照搬上游两条（`Channel.java` 的 `live(Live)`）：
+    /// - `logo`：源级 `logo` 含 `{` 且频道自己不是 http 地址时，按 `{id}`/`{name}`/`{logo}` 展开；
+    /// - `epg`：源级 `epg` 含 `{` 且频道自己不是 http 地址时，取源级**接口**那一项（``LiveSource/epgAPI``）
+    ///   按 `{id}`/`{name}`/`{epg}` 展开 —— 展开后仍是模板（还带 `{date}`），拉取时再按天替换（M07c）。
     public mutating func inherit(from source: LiveSource) {
         if ua.isEmpty, !source.ua.isEmpty {
             ua = source.ua
@@ -193,11 +196,22 @@ public struct LiveChannel: Codable, Sendable, Hashable, Identifiable {
             referer = source.referer
         }
         if source.logo.contains("{"), !logo.hasPrefix("http") {
-            logo = source.logo
-                .replacingOccurrences(of: "{id}", with: epgID)
-                .replacingOccurrences(of: "{name}", with: tvgName.isEmpty ? name : tvgName)
-                .replacingOccurrences(of: "{logo}", with: logo)
+            logo = expanding(template: source.logo, into: logo)
         }
+        if source.epg.contains("{"), !epg.hasPrefix("http") {
+            epg = expanding(template: source.epgAPI, into: epg)
+        }
+    }
+
+    /// 展开源级模板里的 `{id}` / `{name}` / `{logo}` / `{epg}`（上游那两行的参数化写法）。
+    ///
+    /// `{epg}` 用频道自己的 `epg` 值（模板里常写 `…?ch={epg}`），`{date}` 不在这里替换。
+    private func expanding(template: String, into own: String) -> String {
+        template
+            .replacingOccurrences(of: "{id}", with: epgID)
+            .replacingOccurrences(of: "{name}", with: tvgName.isEmpty ? name : tvgName)
+            .replacingOccurrences(of: "{logo}", with: own)
+            .replacingOccurrences(of: "{epg}", with: own)
     }
 
     /// 去掉 `地址$线路名` 的 `$` 后半段（上游 `url.split("\\$")[0]`）。

@@ -116,6 +116,25 @@ struct LivePlaylistParserTests {
         #expect(channel.requestHeaders()["User-Agent"] == "UA-source")
     }
 
+    @Test("源级 `epg` 接口模板展开到频道（上游 `Channel.live(Live)`：`{id}`/`{name}`，M07c）")
+    func inheritsEpgTemplate() throws {
+        let source = try makeSource(#"{"name":"源","epg":"https://epg.example.com/{id}?ch={name}&date={date}"}"#)
+        let parsed = parser.parse(
+            "#EXTM3U\n#EXTINF:-1 tvg-id=\"cctv1\" tvg-name=\"CCTV1\",CCTV-1 综合\nhttp://live.example.com/a.m3u8",
+            into: source
+        )
+        let channel = try #require(parsed.groups.first?.channels.first)
+        // `{date}` 留着不动：拉取时按「昨天/今天/明天」替换（`LiveEPGRepository.load(channel:source:)`）。
+        #expect(channel.epg == "https://epg.example.com/cctv1?ch=CCTV1&date={date}")
+
+        // 没有 `tvg-id`/`tvg-name` 时 `{id}`/`{name}` 落到频道名（`epgID` 的三级回落）。
+        let plain = parser.parse(
+            "#EXTM3U\n#EXTINF:-1,CCTV-2 财经\nhttp://live.example.com/b.m3u8",
+            into: source
+        )
+        #expect(plain.groups.first?.channels.first?.epg == "https://epg.example.com/CCTV-2 财经?ch=CCTV-2 财经&date={date}")
+    }
+
     @Test("形态判定：m3u / json 数组 / 其余按 txt")
     func detection() {
         #expect(LivePlaylistParser.looksLikeM3U("#EXTM3U\n#EXTINF:-1,A\nhttp://a/x.m3u8"))
