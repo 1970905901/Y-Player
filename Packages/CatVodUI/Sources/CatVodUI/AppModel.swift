@@ -407,6 +407,12 @@ public final class AppModel: ObservableObject {
     /// 站点传输的缓存（接口换过才重建，见 ``AppModel/transportForConfiguration()``）。
     var cachedTransport: HTTPTransport?
 
+    /// 已载入的弹幕行（M08c）：渲染层要用的原始数据（搜索与下载在 `CatVodSource.DanmakuService`）。
+    @Published public internal(set) var danmakuLines: [DanmakuLine] = []
+
+    /// 播放页那一行弹幕状态（`.idle` = 不显示）。
+    @Published public internal(set) var danmakuStatus: DanmakuStatus = .idle
+
     /// 跳过广告的统计（M06k）：本机服务的 `/m3u8` 在后台线程记账，这里持有同一个盒子。
     let adSkipRecorder = AdSkipRecorder()
 

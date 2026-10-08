@@ -28,6 +28,10 @@ public struct PlaybackView: View {
     /// 为什么不让播放页直接拿 `AppModel`：这里只需要「播了」这一个信号，
     /// 传一个闭包比把整个模型塞进播放页（6 个调用点都得跟着改）更小、也更好测。
     let onStart: (() -> Void)?
+    /// 这次要搜的弹幕（M08c）；nil = 这个入口不放弹幕（直播、临时播放等）。
+    let danmaku: DanmakuRequest?
+    /// 弹幕请求的回传口：播放页不认识接口配置，把「搜什么」交给上层（`AppModel.loadDanmaku`）。
+    let onDanmaku: ((DanmakuRequest) -> Void)?
 
     @State private var engine: AVPlayerEngine?
     @State private var player: AVPlayer?
@@ -52,6 +56,8 @@ public struct PlaybackView: View {
         settings: PlaybackSettings = PlaybackSettings(),
         progressContext: PlaybackProgressContext? = nil,
         progressStore: PlaybackProgressStore? = nil,
+        danmaku: DanmakuRequest? = nil,
+        onDanmaku: ((DanmakuRequest) -> Void)? = nil,
         onStart: (() -> Void)? = nil
     ) {
         self.resource = resource
@@ -59,6 +65,8 @@ public struct PlaybackView: View {
         self.settings = settings
         self.progressContext = progressContext
         self.progressStore = progressStore
+        self.danmaku = danmaku
+        self.onDanmaku = onDanmaku
         self.onStart = onStart
     }
 
@@ -110,6 +118,10 @@ public struct PlaybackView: View {
         .task {
             // 「开始一次播放」的回传口（M06l）：换集/换台时上层用它把「跳过广告」的累计统计归零。
             onStart?()
+            // 弹幕（M08c）：把「搜什么」交给上层 —— 播放页不认识接口配置，也不该认识。
+            if let danmaku {
+                onDanmaku?(danmaku)
+            }
             await start()
         }
         .onDisappear {

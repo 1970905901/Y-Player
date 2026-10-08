@@ -59,6 +59,11 @@ struct PlaybackSettingsSection: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            if model.danmakuStatus.isVisible {
+                Label(model.danmakuStatus.text, systemImage: "text.bubble")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }
