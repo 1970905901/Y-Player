@@ -24,6 +24,15 @@ struct LiveScheduleView: View {
 
     var body: some View {
         List {
+            if sections.isEmpty {
+                // 没有节目单：把原因写出来（`liveEPGNotice` 里有仓库给的说明），
+                // 别给一个空白的弹层让人猜。
+                Section {
+                    Text(model.liveEPGNotice.isEmpty ? "这个频道暂时没有节目单。" : model.liveEPGNotice)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
             ForEach(sections, id: \.id) { schedule in
                 Section(schedule.date) {
                     ForEach(rows(for: schedule)) { row in

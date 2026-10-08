@@ -28,7 +28,13 @@ public struct LiveView: View {
     public var body: some View {
         content
             .navigationTitle("直播")
-            .task { await model.loadLivePlaylist() }
+            .task {
+                await model.loadLivePlaylist()
+                // 文件形态的节目单（`epg` 里的 `.xml` / `.gz`）：清单到手后拉一次，一份覆盖多频道
+                // （上游 `LiveActivity.onLiveParsed` → `LiveApi.parseXml`）。
+                // 接口形态（x-tvg）是逐频道的，由每行的 `.task` 排队预取（见 `LiveEPGPrefetch`）。
+                await model.loadLiveFileGuide()
+            }
     }
 
     // MARK: - 分支
@@ -54,6 +60,17 @@ public struct LiveView: View {
             Divider()
             if let target = model.liveResumeTarget {
                 resumeRow(target)
+                Divider()
+            }
+            if !model.liveEPGNotice.isEmpty {
+                // 节目单拿不到的原因 / 预取到顶的说明：不弹错，但必须能看见 ——
+                // 否则「为什么整页都是『暂无节目』」永远查不出来。
+                Text(model.liveEPGNotice)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
                 Divider()
             }
             channelList
@@ -147,6 +164,9 @@ public struct LiveView: View {
                     .buttonStyle(.plain)
                     .disabled(!row.isPlayable)
                 }
+                // 「可见即预取」：这一行真的被渲染出来了，才为它排队拉节目单
+                // （串行 + 去重 + 失败不重试 + 本次进入封顶，见 `LiveEPGPrefetch`）。
+                .task { model.requestLiveGuide(for: row.channel) }
             }
         }
         .adaptiveListStyle()

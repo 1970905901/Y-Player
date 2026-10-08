@@ -292,8 +292,29 @@ public final class AppModel: ObservableObject {
     @Published public var selectedLiveGroup: String {
         didSet {
             UserDefaults.standard.set(selectedLiveGroup, forKey: StorageKey.liveGroup)
+            // 换分组 = 换一批「可见频道」：预取封顶重新开始。
+            // 已经拉过的频道靠「今天的节目单已经有了」跳过，不会重复请求。
+            liveEPGPrefetchCount = 0
         }
     }
+
+    /// 源级**文件**节目单（`epg` 里的 `.xml` / `.gz`）：一份覆盖多频道。
+    ///
+    /// 上游 `LiveActivity` 拿到清单后调 `LiveApi.parseXml(live)`（`EpgParser.start` 逐个文件），
+    /// 这在本项目里此前**没有接线** —— 于是配了 `epg: "…/epg.xml"` 的源永远全屏「暂无节目」。
+    /// 与 ``liveGuides`` 的分工：接口形态（x-tvg）按频道存，文件形态按整份存。
+    @Published public internal(set) var liveFileGuide: EPGGuide?
+
+    /// 直播页「可见即预取」（x-tvg 接口形态）的运行时状态。界面不直接读它，读的是
+    /// ``liveGuides`` 与 ``liveEPGNotice``；因此这几个都不 `@Published`。
+    ///
+    /// 为什么需要刹车：接口形态**逐频道**拉，列表首屏不预取就全是「暂无节目」，而预取量随滚动增长。
+    /// 判定规则在 `LiveEPGPrefetch`（纯函数，已单测）。
+    var liveEPGPending: Set<String> = []
+    var liveEPGFailed: Set<String> = []
+    var liveEPGQueue: [LiveChannel] = []
+    var liveEPGPrefetchCount = 0
+    var liveEPGDraining = false
 
     /// 直播清单状态（`loaded` 里那份 `LiveSource` 带分组与频道）。
     ///
