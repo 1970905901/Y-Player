@@ -1,6 +1,7 @@
 # M03P3 MpvEngine 实装（方案第 4 步：先把 CI 能验的那半做完）
 
-- 状态：**已提交、待 CI 验证**（本轮按指示未盯 CI；`LibmpvSession` 是盲写的 C 互操作，见第五节）
+- 状态：**CI 全绿**（Lint ✅ + SwiftPM tests ✅）—— 引擎在 CI 上真的编译、链接、跑通单测；
+  盲写的 C 互操作已按 MPVKit 官方 Demo 逐条核对（见第五节）
 - 依赖：`M03P1-MPVKit落地方案.md` 第 1/2 步、M2 的 `PlayerEngine` / `PlayerCoordinator`
 - 目标：把方案第 4 步的引擎落下来，同时**不假装「能用了」** —— 画面输出（第 3 步）还没定
 
@@ -98,3 +99,18 @@
 2. 真机第一件事仍是确认 App 能启动（动态库嵌入失败会以 `dyld` 暴露，CI 只编译验不到）；
 3. 真机跑通后再补 `tracksChanged` 与字幕/音轨切换的实测对照；
 4. M4 的 `FFmpegEngine` 复用同一套分层（seam + 纯映射 + actor 状态机），不引第二份 FFmpeg。
+
+## 七、验证记录
+
+- **CI 全绿**（提交 `76f4f60` 那批：Lint ✅、SwiftPM tests ✅，同轮 `f3335bf` 的 `Build apps (unsigned)`
+  与 `Unsigned IPA` 也绿 —— App 侧同样链接了 `LibmpvSession`）：其中最值钱的一条是
+  **`LibmpvSession`（全工程唯一的 `mpv_*` 调用点）在 CI 上真的编译并链接通过了**
+  （它是在下载 29 个 xcframework、编译 `_MPVKit` / `_FFmpeg` 之后才轮的到），
+  加上 `MpvEngineTests` / `MpvEventMappingTests` / `MpvAvailabilityTests` 全过。
+  换句话说：第五节里那批「写之前最不确定的 C 交互」，CI 已经替我们验到了「能编译能链接」这一层。
+- **第一轮红是断言写错，不是实现错**（`3bd9adf`）：`teardownAndReuse` 期望 `destroyCount == 2`、实际 1 ——
+  显式 `teardown()` 已经把会话置 nil，第二次 `load` 没有旧会话可销毁。改法：断言拆两条，
+  并补上真正该验的那条 `loadDestroysPreviousSession`（连续 load 必须销毁上一份会话）。
+  记一笔：**盲写代码的第一轮 CI 红，先分清「是我的断言错还是实现错」**，别急着改实现。
+- **CI 仍然验不到的**（第 3 步真机清单）：画面出不出得来、性能、动态库是否被正确嵌入（`dyld`）、
+  以及 iOS 端的运行时行为。
