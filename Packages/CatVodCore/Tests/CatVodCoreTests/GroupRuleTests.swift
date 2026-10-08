@@ -105,10 +105,12 @@ struct GroupRuleTests {
 
     @Test("`wrapBracket`：抽出来的标签套成 `[标签]`，已经是方括号的不重复套")
     func wrapBracketWrapsTags() {
-        let rule = GroupRule.user(name: "竖线", regex: "(?i)(?:[|｜])\\s*([^|｜]+?)\\s*$", wrapBracket: true)
+        let piped = GroupRule.user(name: "竖线", regex: "(?i)(?:[|｜])\\s*([^|｜]+?)\\s*$", wrapBracket: true)
+        // 捕获组本身就是 `[主力]` 这种形状时不要再套一层
+        let bracketed = GroupRule.user(name: "整段方括号", regex: "(\\[[^\\]]+\\])", wrapBracket: true)
 
-        #expect(rule.extract("木偶|4K") == ["[4K]"])
-        #expect(rule.extract("[主力][短剧]我的站") == ["[主力]", "[短剧]"])
+        #expect(piped.extract("木偶|4K") == ["[4K]"])
+        #expect(bracketed.extract("[主力]站") == ["[主力]"])
     }
 
     @Test("AI 规则只接受线性安全子集")
