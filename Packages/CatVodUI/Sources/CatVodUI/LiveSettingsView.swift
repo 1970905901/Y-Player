@@ -1,16 +1,18 @@
 import CatVodCore
 import SwiftUI
 
-/// 直播设置：EPG 地址的本地覆盖（上游 `setting/LiveEpgSetting.java`）。
+/// 直播设置：**直播源**与 **EPG 地址覆盖**（上游：`LiveConfig` 的源列表 + `setting/LiveEpgSetting.java`）。
 ///
-/// 为什么需要它：源自己配的 EPG 常常是坏的或过期的，而用户手里往往有另一个能用的地址。
-/// 这里填的地址**对所有直播源生效**（上游也是全局一份），含 `{id}` / `{name}` / `{date}` 的
-/// 按频道逐个展开，不含 `{` 的当作「整源一个 XML 文件」。
+/// 两件事都收在这一页，作为它们**唯一**的入口：
+/// - 一个配置里可能有多个直播源（`SourceConfig.lives`），切源在这里 —— 上游也是「先选源再看分组」；
+///   只有一个源时**不显示这一组**（上游 `LiveConfig.isOnly()` 同样处理：没什么可切的）。
+/// - EPG 地址的本地覆盖：源自己配的 EPG 常常是坏的或过期的，用户手里往往有另一个能用的地址。
+///   这里是**全局一份**（上游也是），含 `{id}` / `{name}` / `{date}` 的按频道逐个展开，
+///   不含 `{` 的当作「整源一个 XML 文件」。
 ///
-/// 硬要求是「改完立刻生效」：保存即重算当前清单的频道地址、作废节目单缓存并重拉文件形态，
-/// 不做「填了但要重启才生效」。
+/// 硬要求是「改完立刻生效」：选源即重载清单；改 EPG 即重算频道地址、作废节目单缓存并重拉文件形态。
 @MainActor
-struct LiveEPGSettingView: View {
+struct LiveSettingsView: View {
     @ObservedObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var draft: String
@@ -22,6 +24,7 @@ struct LiveEPGSettingView: View {
 
     var body: some View {
         List {
+            sourceSection
             addressSection
             historySection
             Section("当前状态") {
@@ -41,7 +44,42 @@ struct LiveEPGSettingView: View {
         }
     }
 
-    // MARK: - 地址
+    // MARK: - 直播源
+
+    @ViewBuilder private var sourceSection: some View {
+        if model.liveSources.count > 1 {
+            Section("直播源") {
+                ForEach(model.liveSourceRows) { row in
+                    sourceRow(row)
+                }
+            }
+        }
+    }
+
+    private func sourceRow(_ row: LiveSourceRow) -> some View {
+        Button {
+            Task { await model.selectLiveSource(row.name) }
+        } label: {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.name)
+                    Text(row.detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if row.isSelected {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("当前直播源")
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - EPG 地址
 
     private var addressSection: some View {
         Section("EPG 地址") {

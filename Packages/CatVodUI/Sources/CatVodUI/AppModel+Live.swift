@@ -44,6 +44,25 @@ public extension AppModel {
         return source.groups.first { $0.name == selectedLiveGroup } ?? source.groups.first
     }
 
+    /// 设置页里的直播源列表：顺序即配置顺序；勾的是**当前生效**的那个
+    /// （`selectedLiveKey` 为空时是配置里的第一个，不是「没勾」）。
+    var liveSourceRows: [LiveSourceRow] {
+        LiveSourceList.rows(liveSources, selected: selectedLiveSource?.name ?? "", loaded: liveState.loadedSource)
+    }
+
+    /// 换一个直播源（直播设置里选源）：落盘后强制重载清单与文件形态节目单。
+    ///
+    /// `loadLivePlaylist(force: true)` 本身会清掉节目单缓存与预取状态（换源后同一个 `epgID` 可能
+    /// 指向另一个频道），这里不必再各清一遍。
+    func selectLiveSource(_ name: String) async {
+        guard name != selectedLiveSource?.name, liveSources.contains(where: { $0.name == name }) else {
+            return
+        }
+        selectedLiveKey = name
+        await loadLivePlaylist(force: true)
+        await loadLiveFileGuide(force: true)
+    }
+
     /// 当前源的收藏列表（没有就是空数组）。
     var liveFavoriteList: [LiveFavorite] {
         guard let sourceName = selectedLiveSource?.name else {
