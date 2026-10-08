@@ -67,21 +67,63 @@ public extension AppModel {
         return copy
     }
 
-    /// 记录当前接口的广告清理规则（M06d）。
+    /// 记录当前接口的广告清理规则（M06d；本地开关 M06h）。
     ///
     /// 两个来源，都对齐参考实现的 `HlsRuleConfig.reload()`：
-    /// 1. **`hlsRules`（规则包形态）**：只认规则自己写的 `"enabled": true`（`compileExternal` 的判法）；
+    /// 1. **`hlsRules`（规则包形态）**：基准是规则自己写的 `"enabled": true`（`compileExternal` 的判法），
+    ///    但**本地开关可以覆盖它**（``HLSAdRuleState/resolveInterfaceEnabled(_:key:overrides:)``）——
+    ///    接口说开的可以关掉，接口没开的也能自己开；
     /// 2. **解析规则的 `exclude`（legacy 兜底）**：那才是「广告地址特征」，见 `compileLegacyRules`。
+    ///    它来自接口自己的解析规则（不是广告规则包），所以**不参与开关**。
     ///
     /// 配置每次加载后调一次；**本机服务不重启** —— `/m3u8` 每个请求从 ``HLSAdRuleStore`` 现读规则。
+    /// 改开关时也调它（``AppModel/toggleHLSAdRule(_:)``），所以开关是**立刻生效**的。
     internal func refreshAdRules() {
         guard let config = state.loadedSource?.config else {
             adRuleStore.update([])
             return
         }
-        let fromPackage = config.hlsRules.filter(\.isEnabled).compactMap { try? $0.compile() }
+        let entries = HLSAdRuleState.interfaceEntries(
+            config.hlsRules,
+            origin: Self.hlsAdRuleOrigin,
+            sourceID: hlsAdRuleSourceID,
+            overrides: hlsAdRuleOverrides
+        )
+        let fromPackage = entries.filter(\.isEnabled).compactMap { try? $0.rule.compile() }
         let legacy = config.rules.compactMap { $0.compiledAdRule() }
         adRuleStore.update(fromPackage + legacy)
+    }
+
+    /// 设置页要列的接口广告规则：规则 + 状态键 + 当前是否生效。
+    var hlsAdRuleEntries: [HLSAdRuleState.Entry] {
+        HLSAdRuleState.interfaceEntries(
+            state.loadedSource?.config.hlsRules ?? [],
+            origin: Self.hlsAdRuleOrigin,
+            sourceID: hlsAdRuleSourceID,
+            overrides: hlsAdRuleOverrides
+        )
+    }
+
+    /// 开 / 关一条广告规则；`nil` = 清掉本地开关，回到规则自己写的默认值。
+    ///
+    /// 写进 `hlsAdRuleOverrides` 就会触发 `didSet` 里的 `refreshAdRules()`，所以**立刻生效**。
+    func setHLSAdRule(_ key: String, enabled: Bool?) {
+        hlsAdRuleOverrides = HLSAdRuleBook.recording(enabled, for: key, in: hlsAdRuleOverrides)
+    }
+
+    /// 这条规则被本地改过没有（界面据此显示「已改」与「恢复默认」）。
+    func hlsAdRuleOverride(_ key: String) -> Bool? {
+        hlsAdRuleOverrides[key]
+    }
+
+    /// 接口规则的「来源」标记（进状态键，见 ``HLSAdRuleState/key(origin:sourceID:ruleID:)``）。
+    static let hlsAdRuleOrigin = "hlsRules"
+
+    /// 源标识：用接口地址（`key(...)` 内部会先摘要再进键，不落明文）；
+    /// 内联配置没有地址，统一用 `inline` —— 也就是说**内联配置之间共用一套开关**（内联是贴一段 JSON 试用的路，可接受）。
+    var hlsAdRuleSourceID: String {
+        let trimmed = configURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || trimmed.hasPrefix("{") ? "inline" : trimmed
     }
 
     /// 构造本机服务：转发侧复用与站点同一套传输层配置（默认 UA、`headers[]` 注入、`ads[]` 拦截）。
