@@ -1,5 +1,6 @@
 // swift-tools-version: 6.0
-// CatVodNet：请求管线（headers/hosts/DoH/proxy/ads）与本地 HTTP 服务（M6 起用 FlyingFox）。
+// CatVodNet：请求管线（headers/proxy/ads）+ 本地 HTTP 服务（M6 起用 FlyingFox）。
+// `hosts` 覆盖与 `doh` 是**已知平台缺口**（URLSession 没有 DNS 钩子），见 M06m 记录。
 // 说明：M0/M1 保持零外部依赖以确保 CI 稳定；M6 按计划引入 FlyingFox（MIT，iOS 13+/macOS 10.15+）。
 import PackageDescription
 

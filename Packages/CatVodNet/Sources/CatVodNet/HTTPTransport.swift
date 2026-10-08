@@ -4,7 +4,10 @@ import Foundation
 ///
 /// 设计要点：`CatVodNet` 只负责「发请求」，不关心站点语义；
 /// 因此所有运行时（JSON/XML CMS、CatSpider HTTP、js2p 本地服务、JS `req()`）共用这一层，
-/// header/cookie/代理/DoH/广告拦截等横切能力都在具体实现里按 M6 的请求管线统一处理。
+/// header/cookie/代理/广告拦截等横切能力都在具体实现里统一处理。
+///
+/// ⚠️ `DoH` 与 `hosts` 覆盖**不在这条链上**：它们是平台缺口，不是还没接的线 ——
+/// 见 `URLSessionTransport` 的说明与 `docs/任务记录/M06m-DNS方案与决策.md`。
 public protocol HTTPTransport: Sendable {
     func send(_ request: HTTPRequest) async throws -> HTTPResponse
 }

@@ -97,6 +97,23 @@ struct AppModelIntegrationTests {
         #expect(fixture.model.adSkipRecorder.stats == AdSkipRecorder.Stats())
     }
 
+    @Test("配置项覆盖（M06m）：`hosts` / `doh` 解析得进模型，但本平台不生效 —— 必须出现在告警里")
+    func ignoredConfigFieldsAreReported() async throws {
+        let fixture = try AppModelFixture()
+        defer { fixture.tearDown() }
+
+        await fixture.load("""
+        {"sites":[{"key":"a","name":"甲站","type":3,"api":"/spider/a"}],
+         "hosts":["a.example.com=1.2.3.4"],
+         "doh":[{"name":"dns","url":"https://dns.example/dns-query"}]}
+        """)
+
+        let coverage = fixture.model.warnings.filter { $0.contains("在本平台不生效") }
+        #expect(coverage.count == 2)
+        #expect(coverage.contains { $0.contains("`hosts`") })
+        #expect(coverage.contains { $0.contains("`doh`") })
+    }
+
     @Test("弹幕开关（M08d 遗留 2）：关掉就**立刻清屏**，不是等下次换集")
     func disablingDanmakuClearsScreen() throws {
         let fixture = try AppModelFixture()

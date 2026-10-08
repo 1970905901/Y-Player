@@ -89,6 +89,11 @@ public extension SourceConfig {
         for (site, reason) in unavailableSiteReasons {
             warnings.append("站点 \(site.name)(\(site.key)) 不可用：\(reason)")
         }
+        // 「解析进来了、但本平台不生效」的字段（目前是 `doh` / `hosts`）也在这里报出来。
+        // 静默忽略是这项目最不能接受的状态：规则不生效，用户只会以为「这个站不行」。
+        warnings.append(contentsOf: ConfigCoverage.ignored(in: self).map {
+            "\($0.title)（`\($0.key)`）在本平台不生效：\($0.reason)"
+        })
         return warnings
     }
 }

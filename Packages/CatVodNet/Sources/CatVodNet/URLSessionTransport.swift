@@ -9,7 +9,12 @@ import FoundationNetworking
 ///
 /// 职责边界：只负责「把 `HTTPRequest` 发出去并返回 `HTTPResponse`」，
 /// 并把配置层的横切规则落在这里：默认 header、按 host 注入 header（`headers[]`）、广告域名拦截（`ads[]`）。
-/// DoH / hosts 覆盖 / SOCKS5 代理在 M6 通过自定义 `URLProtocol` 与本地代理服务补上。
+///
+/// ⚠️ 已知平台缺口：`URLSession` **没有可用的 DNS 钩子**，所以配置里的 `hosts` 覆盖与 `doh`
+/// **在本实现下不生效**（上游靠 OkHttp 的 `Dns` 接口做到，Apple 侧没有对应物）。
+/// 这两项会在「接口管理 → 告警」里如实报给用户（见 `ConfigCoverage`），
+/// 而不是静默忽略。真正要支持，得自建连接层（`Network.framework` + 按主机名校验证书），
+/// 方案与代价见 `docs/任务记录/M06m-DNS方案与决策.md`。
 public actor URLSessionTransport: HTTPTransport {
     /// 传输层配置。
     public struct Configuration: Sendable {
