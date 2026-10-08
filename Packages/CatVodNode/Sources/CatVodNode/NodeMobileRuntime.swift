@@ -255,7 +255,6 @@ extension NodeMobileRuntime {
             logHandle = nil
         }
     }
-}
 
     func markReady(port: Int) {
         guard !isReady else {
