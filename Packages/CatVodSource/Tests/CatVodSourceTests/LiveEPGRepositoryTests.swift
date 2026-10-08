@@ -325,7 +325,8 @@ struct LiveEPGInterfaceTests {
     func chineseChannelName() async throws {
         let date = EPGTimeParser.dateString(dayOffset: 0, timeZone: zone)
         let recorder = ParseRequestRecorder(response: HTTPResponse(status: 200, body: Data(xmltv(date: date, title: "中文台").utf8)))
-        let channel = try makeChannel(#"{"name":"CCTV-2 财经","epg":"https://epg.example.com/api?ch={name}&date={date}"}"#)
+        var channel = try makeChannel(#"{"name":"CCTV-2 财经"}"#)
+        channel.inherit(from: try makeSource())
         let guide = try await LiveEPGRepository(transport: recorder).load(channel: channel, source: makeSource())
 
         #expect(guide.schedule(key: "CCTV-2 财经", date: date)?.programs.map(\.title) == ["中文台"])
