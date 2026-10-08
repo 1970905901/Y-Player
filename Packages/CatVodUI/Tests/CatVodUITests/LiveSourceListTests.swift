@@ -24,9 +24,10 @@ struct LiveSourceListTests {
 
     @Test("摘要：只有**当前已解析**的那个源才报频道数，其它源只报类型")
     func detailUsesLoadedSourceOnly() throws {
-        let sources = [
-            try makeSource("{\"name\":\"主源\",\"type\":0}"),
-            try makeSource("{\"name\":\"备用源\",\"type\":3}"),
+        // `try` 要提到表达式最前面（SwiftFormat `hoistTry`）。
+        let sources = try [
+            makeSource("{\"name\":\"主源\",\"type\":0}"),
+            makeSource("{\"name\":\"备用源\",\"type\":3}"),
         ]
         let loaded = try makeLoaded(name: "主源", channels: 3)
 
