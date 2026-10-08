@@ -19,8 +19,9 @@ import Foundation
 /// （`mLive.nextChannel()` 的定义在本地没取到的那个类里，`player/Live*`），另外竖向滑动
 /// （`onFlingUp` / `onFlingDown`）也走同一对方法，`LiveSetting.isInvert()` 只用来反转滑动方向。
 ///
-/// 本项目按直播换台的通行做法定三条，都已写进测试：
-/// - **只在当前分组内换**（跨组换台在上游是另一个动作，本项目未做）；
+/// 这个枚举管**组内**换台（`neighbor`），三条语义都已写进测试：
+/// - **只在当前分组内换**：跨组是另一个动作（上游 `LiveActivity` 的 `across`），本项目在同一个类型里
+///   实现了它（`across(in:groups:step:)`，见本文件开头），按号码跳台见 `channel(number:in:)`；
 /// - **环形**：到最后一条再按「下一台」回到第一条（换台是循环的，不该在边界上失效）；
 /// - **跳过没有地址的频道**（切过去也播不了，等于把用户卡住）。
 public enum LiveChannelNavigation {
