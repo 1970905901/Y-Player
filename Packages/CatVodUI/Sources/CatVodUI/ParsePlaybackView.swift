@@ -49,7 +49,8 @@ struct ParsePlaybackView: View {
                     title: episode.displayName,
                     settings: model.playbackSettings,
                     progressContext: progressContext,
-                    progressStore: model.progressStore
+                    progressStore: model.progressStore,
+                    onStart: { model.resetAdSkip() }
                 )
             } else if errorText.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {

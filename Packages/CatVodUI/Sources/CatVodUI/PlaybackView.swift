@@ -23,6 +23,11 @@ public struct PlaybackView: View {
     let progressContext: PlaybackProgressContext?
     /// 进度存储；nil 表示不记录。
     let progressStore: PlaybackProgressStore?
+    /// 「开始一次播放」的回传口（M06l）：换集/换台时上层用它把跨集累计的东西归零（当前用于「跳过广告」统计）。
+    ///
+    /// 为什么不让播放页直接拿 `AppModel`：这里只需要「播了」这一个信号，
+    /// 传一个闭包比把整个模型塞进播放页（6 个调用点都得跟着改）更小、也更好测。
+    let onStart: (() -> Void)?
 
     @State private var engine: AVPlayerEngine?
     @State private var player: AVPlayer?
@@ -46,13 +51,15 @@ public struct PlaybackView: View {
         title: String,
         settings: PlaybackSettings = PlaybackSettings(),
         progressContext: PlaybackProgressContext? = nil,
-        progressStore: PlaybackProgressStore? = nil
+        progressStore: PlaybackProgressStore? = nil,
+        onStart: (() -> Void)? = nil
     ) {
         self.resource = resource
         self.title = title
         self.settings = settings
         self.progressContext = progressContext
         self.progressStore = progressStore
+        self.onStart = onStart
     }
 
     public var body: some View {
@@ -100,7 +107,11 @@ public struct PlaybackView: View {
             .adaptiveListStyle()
         }
         .navigationTitle(title)
-        .task { await start() }
+        .task {
+            // 「开始一次播放」的回传口（M06l）：换集/换台时上层用它把「跳过广告」的累计统计归零。
+            onStart?()
+            await start()
+        }
         .onDisappear {
             eventTask?.cancel()
             eventTask = nil

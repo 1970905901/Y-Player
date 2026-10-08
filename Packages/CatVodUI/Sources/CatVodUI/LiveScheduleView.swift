@@ -72,7 +72,12 @@ struct LiveScheduleView: View {
         if let url = row.catchupURL {
             // 已播 + 有地址：交给同一个播放页，资源走本机代理注入 header。
             NavigationLink {
-                PlaybackView(resource: resource(url: url), title: "\(channel.name) · \(row.title)", settings: model.playbackSettings)
+                PlaybackView(
+                    resource: resource(url: url),
+                    title: "\(channel.name) · \(row.title)",
+                    settings: model.playbackSettings,
+                    onStart: { model.resetAdSkip() }
+                )
             } label: {
                 label(row)
             }
@@ -81,7 +86,8 @@ struct LiveScheduleView: View {
                 PlaybackView(
                     resource: resource(url: channel.playbackURL(index: lineIndex)),
                     title: channel.name,
-                    settings: model.playbackSettings
+                    settings: model.playbackSettings,
+                    onStart: { model.resetAdSkip() }
                 )
             } label: {
                 label(row)

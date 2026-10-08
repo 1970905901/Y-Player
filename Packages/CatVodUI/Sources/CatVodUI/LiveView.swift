@@ -383,32 +383,37 @@ private struct LiveChannelPlaybackView: View {
     }
 
     var body: some View {
-        PlaybackView(resource: resource, title: title, settings: model.playbackSettings)
-            // 换频道 / 换线路 = 换资源：`PlaybackView` 自己的 `.task` 只在视图出现时跑一次，
-            // 所以用 `id` 让播放页重建（不重建就会继续播旧地址）。
-            .id(playbackKey)
-            .adaptiveToolbar {
-                HStack(spacing: 16) {
-                    zapButton(step: -1, icon: "chevron.up", label: "上一台")
-                    zapButton(step: 1, icon: "chevron.down", label: "下一台")
-                }
-            } trailing: {
-                HStack(spacing: 16) {
-                    channelMenu
-                    if current.urls.count > 1 {
-                        lineMenu
-                    }
+        PlaybackView(
+            resource: resource,
+            title: title,
+            settings: model.playbackSettings,
+            onStart: { model.resetAdSkip() }
+        )
+        // 换频道 / 换线路 = 换资源：`PlaybackView` 自己的 `.task` 只在视图出现时跑一次，
+        // 所以用 `id` 让播放页重建（不重建就会继续播旧地址）。
+        .id(playbackKey)
+        .adaptiveToolbar {
+            HStack(spacing: 16) {
+                zapButton(step: -1, icon: "chevron.up", label: "上一台")
+                zapButton(step: 1, icon: "chevron.down", label: "下一台")
+            }
+        } trailing: {
+            HStack(spacing: 16) {
+                channelMenu
+                if current.urls.count > 1 {
+                    lineMenu
                 }
             }
-            .sheet(isPresented: $isJumpPresented) {
-                AdaptiveNavigationContainer {
-                    LiveChannelJumpView(groups: groups, onPick: move(to:))
-                }
+        }
+        .sheet(isPresented: $isJumpPresented) {
+            AdaptiveNavigationContainer {
+                LiveChannelJumpView(groups: groups, onPick: move(to:))
             }
-            .task {
-                await model.loadLiveGuide(for: current)
-                model.rememberLiveChannel(current, lineIndex: lineIndex)
-            }
+        }
+        .task {
+            await model.loadLiveGuide(for: current)
+            model.rememberLiveChannel(current, lineIndex: lineIndex)
+        }
     }
 
     // MARK: - 换台

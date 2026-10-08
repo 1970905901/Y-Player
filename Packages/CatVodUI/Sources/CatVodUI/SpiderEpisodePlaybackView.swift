@@ -55,7 +55,8 @@ struct SpiderEpisodePlaybackView: View {
                     title: episode.displayName,
                     settings: model.playbackSettings,
                     progressContext: progressContext,
-                    progressStore: model.progressStore
+                    progressStore: model.progressStore,
+                    onStart: { model.resetAdSkip() }
                 )
             } else if errorText.isEmpty {
                 ProgressView("正在向站点请求播放地址…")
