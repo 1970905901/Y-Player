@@ -70,20 +70,26 @@
 ## 五、已知未做 / 盲区（写给未来的自己）
 
 1. **渲染**：`vo` 与 render API 一项没设，故意的（第 3 步定了再加）；
-2. **真实 C 交互没在 CI 上手过**（能编译、能单测，但没跑过真 libmpv）。盲写处最可能出问题的三处，
-   都在 `LibmpvSession.swift` 一个文件里，改起来不用动上层：
-   - `mpv_command` 的指针数组：C 要 `const char **`，Swift 侧是 `UnsafeMutablePointer<UnsafePointer<CChar>?>`。
-     现写法用 `Optional(UnsafePointer(...))` 显式建成 `[UnsafePointer<CChar>?]`（数组元素不会自动变可选）；
-     若仍报类型不符，退路是 `mpv_command_string`（代价：要把 URL/参数转义进一条命令串）；
-   - **C 枚举的导入模型**：`MPV_EVENT_*` / `MPV_FORMAT_*` / `MPV_END_FILE_REASON_*` 若是「结构体 + 全局常量」，
-     `switch … case MPV_EVENT_FILE_LOADED` 就照现在这样写；若 clang importer 把它们导成了 Swift 枚举，
-     符号形式会变成 `.fileLoaded` 之类 —— 只改本文件；
-   - `mpv_create()` 的返回类型：`mpv_handle` 是不完整结构体时应为 `OpaquePointer`；若被导成
-     `UnsafeMutablePointer<mpv_handle>`，把 `handle` 的声明类型换掉即可。
-3. **`tracksChanged` 没发**：`PlayerEvent` 有这个事件，但 mpv 的轨道列表要么 observe `track-list`、要么
+2. **真实 C 交互按 MPVKit 官方 Demo 核对过，但没在真机上跑过**。核对对象是
+   `Demo/Demo-iOS/Demo-iOS/Player/Metal/MPVMetalViewController.swift`（`import Libmpv` 的真代码），
+   正好回答了写之前最不确定的四件事，且**四条都与本文件现有写法一致**：
+   - 句柄类型就是 `OpaquePointer`（Demo：`var mpv: OpaquePointer!` + `mpv = mpv_create()`）；
+   - `MPV_EVENT_*` / `MPV_FORMAT_*` 是**全局常量**（Demo：`switch event!.pointee.event_id { case MPV_EVENT_PROPERTY_CHANGE: … }`、
+     `mpv_observe_property(mpv, 0, name, MPV_FORMAT_DOUBLE)`）→ 本文件的 `switch … case MPV_EVENT_FILE_LOADED` / `MPV_FORMAT_FLAG` 写法成立；
+   - `mpv_command(mpv, &cargs)` 里的 `cargs` 是「**不可变** C 指针的可选数组」（Demo 释放时写
+     `free(UnsafeMutablePointer(mutating: ptr!))`，`mutating:` 只有在元素是 `UnsafePointer` 时才需要）
+     → 形参是 `const char **`，与本文件的 `Optional(UnsafePointer(...))` 一致；
+   - `mpv_wait_event` 的「没事件」就是 `MPV_EVENT_NONE`、`mpv_error_string` 直接 `String(cString:)`（Demo：`checkError`）—— 一致。
+   仍留给 CI/真机的只有一条：MPVKit 升级换头文件时这几处符号形式可能变 —— 只会动 `LibmpvSession.swift`。
+3. **渲染路径有了官方参考点**：Demo 用的是 `vo=gpu-next` + `gpu-api=vulkan` + `gpu-context=moltenvk`
+   （正是方案第 3 步的**候选 B**），可以拿它当 PoC 的第一条命令。但 Demo 里同时留着
+   「Metal API Validation 必须关掉，否则放 HDR 视频会崩」的注释（MoltenVK #2226），
+   与方案「Metal 后端只有补丁级支持」的风险判断吻合 —— **仍必须实测再定**，别把「首选」当结论。
+4. **`tracksChanged` 没发**：`PlayerEvent` 有这个事件，但 mpv 的轨道列表要么 observe `track-list`、要么
    `mpv_get_property`，两者都得在真机上对齐语义。当前 `selectTrack` 只**下发选择**、不**上报列表** —— 明确记录，别当成 bug；
-4. **`hwdec` 只用 `auto-safe` / `no`**：`auto-safe` 之外的策略（如强制 `videotoolbox`）等真机测性能时再定；
-5. **`shutdown` 事件不改状态**：它只在我们自己销毁时出现（`teardown` 已把状态置回 `idle`）。
+5. **`hwdec` 只用 `auto-safe` / `no`**：官方 Demo 直接用 `videotoolbox`，我们的策略更保守
+   （可疑的硬解不如让 mpv 自己降级）；真机测性能时再定是否改；
+6. **`shutdown` 事件不改状态**：它只在我们自己销毁时出现（`teardown` 已把状态置回 `idle`）。
 
 ## 六、后续
 
