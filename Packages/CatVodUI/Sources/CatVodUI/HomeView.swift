@@ -302,7 +302,15 @@ public struct HomeView: View {
                     .contentShape(Rectangle())
                     .ignoresSafeArea()
                     .onTapGesture { dismissSitePanel() }
-                DiscoverSitePanel(sites: browsableSites, selectedKey: selectedSiteKey) { key in
+                DiscoverSitePanel(
+                    sites: browsableSites,
+                    selectedKey: selectedSiteKey,
+                    rules: model.siteGroupRules,
+                    savedGroupOrder: model.siteGroupOrder,
+                    onMoveGroup: { group, direction in
+                        model.moveSiteGroup(group, direction: direction)
+                    }
+                ) { key in
                     dismissSitePanel()
                     // 加载交给 `.onChange(of: selectedSiteKey)` 统一发起，避免同一次切换发两次请求。
                     selectedSiteKey = key

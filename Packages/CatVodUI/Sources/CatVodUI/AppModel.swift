@@ -67,6 +67,7 @@ public final class AppModel: ObservableObject {
         static let liveFavorites = "yplayer.liveFavorites"
         static let liveEPGSetting = "yplayer.liveEPGSetting"
         static let livePassOverrides = "yplayer.livePassOverrides"
+        static let siteGroupOrder = "yplayer.siteGroupOrder"
     }
 
     // MARK: - 输出状态
@@ -379,6 +380,16 @@ public final class AppModel: ObservableObject {
     /// 否则清掉覆盖时没法把频道地址还回去，也不必为此再拉一次清单。
     var rawLiveSource: LiveSource?
 
+    /// 站点面板**分组条**的顺序：**接口地址 → 分组名数组**（上游 `SiteGroupOrderStore`，键 `site_group_order_<cid>`）。
+    ///
+    /// 按接口分桶的理由同直播那些书：换接口时分组名整套换掉，混在一起会互相污染。
+    /// 排序规则不在这一层（在 `CatVodCore.SiteGroupOrder`），这里只管「算出来、存下来」。
+    @Published public internal(set) var siteGroupOrders: [String: [String]] {
+        didSet {
+            UserDefaults.standard.set(SiteGroupOrderBook.encode(siteGroupOrders), forKey: StorageKey.siteGroupOrder)
+        }
+    }
+
     /// 已解锁的**加密分组**（键是 ``LiveGroupAccess/key(_:)``）。
     ///
     /// **不落盘**：密码只在这次运行里有效（上游 `mHides` 也是进程内的），换源即清空
@@ -469,6 +480,9 @@ public final class AppModel: ObservableObject {
 
         // 「组名里的 `_` 不当密码」的本地覆盖：默认空（跟每个直播源自己的 `pass` 字段）。
         livePassOverrides = LivePassBook.decode(defaults.string(forKey: StorageKey.livePassOverrides))
+
+        // 站点面板分组条的顺序：默认空（= 每个接口都用「按站点顺序首次出现」的默认顺序）。
+        siteGroupOrders = SiteGroupOrderBook.decode(defaults.string(forKey: StorageKey.siteGroupOrder))
 
         // 引擎日志：默认关（与参考图的开关初始状态一致）。
         isEngineLogEnabled = defaults.object(forKey: StorageKey.engineLogEnabled) as? Bool ?? false

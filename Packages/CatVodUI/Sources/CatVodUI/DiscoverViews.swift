@@ -175,7 +175,19 @@ struct DiscoverSiteSwitchGlyph: View {
 struct DiscoverSitePanel: View {
     let sites: [Site]
     let selectedKey: String
+    /// 接口配置里的分组规则（`SourceConfig.groupRules`）；没有规则时整条分组条不出现。
+    var rules: [GroupRule] = []
+    /// 存下来的分组顺序（空 = 用「按站点顺序首次出现」的默认顺序）。
+    var savedGroupOrder: [String] = []
+    /// 分组顺序变了（长按菜单里的上移/下移）：回传分组名与方向，由上层算新顺序并落盘。
+    var onMoveGroup: ((String, Int) -> Void)?
     let onSelect: (String) -> Void
+
+    /// 当前选中的分组（空 = 不筛）。面板每次打开重置 —— 与上游「关掉就忘」一致。
+    @State private var selectedGroup = ""
+    /// 每个站点抽出来的标签。在这里缓存一次：抽标签要跑正则，不该每次渲染都重算。
+    /// 分组顺序与筛选都是基于它的**廉价**计算，所以「上移/下移之后立刻看到新顺序」不用重新抽标签。
+    @State private var tags: [String: [String]] = [:]
 
     /// 面板宽度占屏宽的比例：录屏里约占 2/3。
     static let widthFraction: CGFloat = 0.66
@@ -186,29 +198,83 @@ struct DiscoverSitePanel: View {
     /// 面板圆角。
     static let cornerRadius: CGFloat = 12
 
+    private var groups: [String] {
+        DiscoverSiteList.groups(sites: sites, tags: tags, savedOrder: savedGroupOrder)
+    }
+
     private var rows: [DiscoverSiteRow] {
-        DiscoverSiteList.rows(sites: sites, selectedKey: selectedKey)
+        DiscoverSiteList.rows(sites: sites, selectedKey: selectedKey, tags: tags, selectedGroup: selectedGroup)
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                    if index > 0 {
-                        Divider()
+        VStack(spacing: 0) {
+            groupBar
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                        if index > 0 {
+                            Divider()
+                        }
+                        Button {
+                            onSelect(row.key)
+                        } label: {
+                            label(row)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    Button {
-                        onSelect(row.key)
-                    } label: {
-                        label(row)
-                    }
-                    .buttonStyle(.plain)
                 }
             }
         }
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .shadow(radius: 14, y: 6)
+        .task {
+            tags = DiscoverSiteList.tags(sites: sites, rules: rules)
+        }
+    }
+
+    /// 分组条：**有分组才显示**（对齐上游：`groups.isEmpty()` 时整条隐藏）。
+    @ViewBuilder
+    private var groupBar: some View {
+        let values = groups
+        if !values.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(values, id: \.self) { group in
+                        groupChip(group)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+            Divider()
+        }
+    }
+
+    /// 一个分组胶囊：点一下筛选、再点一下取消（上游同款交互，没有额外的「全部」项）。
+    ///
+    /// 上游是**长按拖动**排序；iOS 上横向滚动手势会和拖动排序打架，这里改成
+    /// 长按弹出「上移 / 下移」菜单 —— 结果一样，少一个手势（差异记在 M06d 文档里）。
+    private func groupChip(_ group: String) -> some View {
+        let active = group == selectedGroup
+        return Button {
+            selectedGroup = active ? "" : group
+        } label: {
+            Text(group)
+                .font(.footnote)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(active ? Color.accentColor.opacity(0.22) : Color.secondary.opacity(0.14))
+                .foregroundStyle(active ? Color.accentColor : Color.primary)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("上移") { onMoveGroup?(group, -1) }
+            Button("下移") { onMoveGroup?(group, 1) }
+        }
+        .accessibilityLabel("分组 \(group)")
     }
 
     private func label(_ row: DiscoverSiteRow) -> some View {

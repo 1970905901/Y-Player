@@ -137,28 +137,9 @@ public struct SniffRule: Codable, Sendable, Hashable {
 // 按错的形状建模 ⇒ 真配置里的规则解析成空对象、**静默失效**（不报错、也没有一条能匹配）——
 // 所以整条删掉：`hlsRules` 用 `HLSAdRule`，解析规则的 `exclude` 走 `SniffRule+CleanerRule.swift`。
 
-/// 直播分组规则。
-public struct GroupRule: Codable, Sendable, Hashable {
-    public var name: String
-    public var hosts: [String]
-    public var regex: [String]
-
-    public init(name: String = "", hosts: [String] = [], regex: [String] = []) {
-        self.name = name
-        self.hosts = hosts
-        self.regex = regex
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        name = container.lenientString(.name)
-        hosts = container.lenientStringArray(.hosts)
-        regex = container.lenientStringArray(.regex)
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case name
-        case hosts
-        case regex
-    }
-}
+// （M06d 同批修正）这里原来还有个 `GroupRule`（`name` / `hosts` / `regex: [String]`），用来接配置的 `groupRules`。
+//
+// 同样是**形状错误**：上游的 `GroupRule` 是 `id` / `name` / `regex`（**单条字符串**）/ `enabled` / `source` /
+// `wrapBracket`，**没有 `hosts`**（见 `GroupRule.arrayFrom(fetchArray(object, "groupRules"))`）——
+// 它做的事是从**站点名**里抽标签给站点面板分组用的，与 `hosts` 无关。
+// 按错的形状建模 ⇒ 真配置里的规则解析成空规则、静默失效。现在搬到 `Vod/Sites/GroupRule.swift`。

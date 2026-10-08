@@ -231,7 +231,15 @@ public struct SearchView: View {
                     .contentShape(Rectangle())
                     .ignoresSafeArea()
                     .onTapGesture { dismissSitePanel() }
-                DiscoverSitePanel(sites: browsableSites, selectedKey: selectedSiteKey) { key in
+                DiscoverSitePanel(
+                    sites: browsableSites,
+                    selectedKey: selectedSiteKey,
+                    rules: model.siteGroupRules,
+                    savedGroupOrder: model.siteGroupOrder,
+                    onMoveGroup: { group, direction in
+                        model.moveSiteGroup(group, direction: direction)
+                    }
+                ) { key in
                     dismissSitePanel()
                     // 清空动作交给 `.onChange(of: selectedSiteKey)`，避免两处都改状态。
                     selectedSiteKey = key

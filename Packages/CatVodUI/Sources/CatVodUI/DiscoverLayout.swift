@@ -86,20 +86,63 @@ struct DiscoverSiteRow: Identifiable, Equatable {
     var id: String { key }
 }
 
-/// 站点切换面板的行模型。
+/// 站点切换面板的行模型与分组（M06d）。
 ///
 /// 单测价值：录屏里的面板有三种容易做错的状态 —— 站点名为空、当前站点、站点顺序，
 /// 它们在真机上都不好复现（上游配置随时会变），所以把判定放进纯函数。
+/// 分组条（从站点名里抽标签）同样放这里：抽错一个标签，整条分组条就歪了。
 enum DiscoverSiteList {
     /// 面板要列出的行：**保持上游站点顺序**（面板行序 = 配置里的站点序）。
-    static func rows(sites: [Site], selectedKey: String) -> [DiscoverSiteRow] {
-        sites.map { site in
-            DiscoverSiteRow(key: site.key, title: title(for: site), isSelected: site.key == selectedKey)
-        }
+    ///
+    /// `selectedGroup` 非空时只留该分组的站点（点分组条某一项之后）。
+    static func rows(
+        sites: [Site],
+        selectedKey: String,
+        tags: [String: [String]] = [:],
+        selectedGroup: String = ""
+    ) -> [DiscoverSiteRow] {
+        sites
+            .filter { matches(site: $0, tags: tags, selectedGroup: selectedGroup) }
+            .map { site in
+                DiscoverSiteRow(key: site.key, title: title(for: site), isSelected: site.key == selectedKey)
+            }
     }
 
     /// 站点显示名：上游没给名字时回落 `key`（工具栏按钮与面板用同一口径）。
     static func title(for site: Site) -> String {
         site.name.isEmpty ? site.key : site.name
+    }
+
+    /// 这个站点在不在选中的分组里（`selectedGroup` 为空 = 不筛）。
+    static func matches(site: Site, tags: [String: [String]], selectedGroup: String) -> Bool {
+        guard !selectedGroup.isEmpty else { return true }
+        return tags[site.key]?.contains(selectedGroup) ?? false
+    }
+
+    /// 每个站点从**显示名**里抽出来的标签（键是站点 `key`）；抽不出标签的站点不出现在结果里。
+    ///
+    /// 用显示名而不是原始 `name`：上游 `SiteNameRules.groups` 吃的是「生效名」（自定义名优先）——
+    /// 我们还没有自定义站点名，所以两者一样，但口径先钉在这里。
+    static func tags(sites: [Site], rules: [GroupRule], disabledIDs: Set<String> = []) -> [String: [String]] {
+        var result: [String: [String]] = [:]
+        for site in sites {
+            let values = GroupRuleConfig.extract(title(for: site), interfaceRules: rules, disabledIDs: disabledIDs)
+            if !values.isEmpty {
+                result[site.key] = values
+            }
+        }
+        return result
+    }
+
+    /// 分组条上要显示的分组：**按站点顺序**收集、去重，再按存的顺序排（对齐上游
+    /// `Site.getGroups` 用 `LinkedHashSet` 收集再交给 `SiteGroupOrderStore.sort`）。
+    static func groups(sites: [Site], tags: [String: [String]], savedOrder: [String] = []) -> [String] {
+        var all: [String] = []
+        for site in sites {
+            for tag in tags[site.key] ?? [] where !all.contains(tag) {
+                all.append(tag)
+            }
+        }
+        return SiteGroupOrder.order(all, savedOrder: savedOrder)
     }
 }

@@ -1,0 +1,91 @@
+import CatVodCore
+@testable import CatVodUI
+import Testing
+
+/// 站点面板的**分组条**：从站点名抽标签 → 收集分组 → 点选筛选。
+///
+/// 这一层是上游 `SiteDialog` 里最容易做错的部分（抽标签、分组顺序、筛选三件事都在面板生命周期里），
+/// 所以全部走纯函数，面板本身只负责摆 UI。
+@Suite("站点面板：分组条")
+struct DiscoverSiteGroupTests {
+    private func makeSite(key: String, name: String) -> Site {
+        Site(key: key, name: name, type: 3, api: "/spider/\(key)")
+    }
+
+    private var rules: [GroupRule] {
+        GroupRuleConfig.builtins
+    }
+
+    @Test("抽标签走**显示名**：没有名字的站点用 key，抽不出标签就不进表")
+    func tagsFromDisplayName() {
+        let sites = [makeSite(key: "wogg", name: "玩偶|4K"), makeSite(key: "noName", name: "")]
+
+        let tags = DiscoverSiteList.tags(sites: sites, rules: rules)
+
+        #expect(tags["wogg"] == ["4K"])
+        #expect(tags["noName"] == nil)
+    }
+
+    @Test("分组收集：按站点顺序、去重，再按存的顺序排")
+    func groupsFollowSiteOrder() {
+        let sites = [
+            makeSite(key: "a", name: "甲|4K"),
+            makeSite(key: "b", name: "乙|首页"),
+            makeSite(key: "c", name: "丙|4K"),
+        ]
+        let tags = DiscoverSiteList.tags(sites: sites, rules: rules)
+
+        #expect(DiscoverSiteList.groups(sites: sites, tags: tags) == ["4K", "首页"])
+        #expect(DiscoverSiteList.groups(sites: sites, tags: tags, savedOrder: ["首页"]) == ["首页", "4K"])
+    }
+
+    @Test("点某个分组只留这个分组的站点；空分组名 = 不筛（点第二次取消）")
+    func filteringByGroup() {
+        let sites = [makeSite(key: "a", name: "甲|4K"), makeSite(key: "b", name: "乙|首页")]
+        let tags = DiscoverSiteList.tags(sites: sites, rules: rules)
+
+        let only4K = DiscoverSiteList.rows(sites: sites, selectedKey: "a", tags: tags, selectedGroup: "4K")
+        #expect(only4K.map(\.key) == ["a"])
+        #expect(only4K.first?.isSelected == true)
+
+        let onlyHome = DiscoverSiteList.rows(sites: sites, selectedKey: "a", tags: tags, selectedGroup: "首页")
+        #expect(onlyHome.map(\.key) == ["b"])
+
+        let all = DiscoverSiteList.rows(sites: sites, selectedKey: "a", tags: tags, selectedGroup: "")
+        #expect(all.map(\.key) == ["a", "b"])
+    }
+
+    @Test("所有站点都没标签时分组为空 —— 面板据此整条隐藏")
+    func noTagsMeansNoGroupBar() {
+        let sites = [makeSite(key: "a", name: "普通线路")]
+
+        let tags = DiscoverSiteList.tags(sites: sites, rules: rules)
+
+        #expect(DiscoverSiteList.groups(sites: sites, tags: tags).isEmpty)
+    }
+
+    @Test("接口规则一起参与抽标签；被关掉的内置规则不再出标签")
+    func interfaceRulesAndDisabledBuiltin() {
+        let sites = [makeSite(key: "a", name: "[主力]站点A")]
+        let extra = GroupRule.user(name: "井号", regex: "#(.+)$")
+
+        #expect(DiscoverSiteList.tags(sites: sites, rules: rules + [extra])["a"] == ["主力"])
+
+        let disabled = DiscoverSiteList.tags(
+            sites: sites,
+            rules: rules,
+            disabledIDs: [GroupRuleConfig.builtinBracket]
+        )
+        #expect(disabled["a"] == nil)
+    }
+
+    @Test("面板给的上移/下移回调算出的新顺序：隐藏的分组不会被挤到末尾")
+    func movingGroupKeepsHiddenSlots() {
+        // 站点全集能出三个分组，但面板当前只筛出两个：
+        let full = ["4K", "首页", "影视"]
+        let visibleAfterMove = ["首页", "4K", "影视"]
+
+        #expect(SiteGroupOrder.mergedVisibleOrder(fullOrder: full, visibleOrder: visibleAfterMove)
+            == ["首页", "4K", "影视"])
+    }
+}
