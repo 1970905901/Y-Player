@@ -286,7 +286,20 @@ struct MpvEngineTests {
         try await engine.load(MediaResource(url: "https://cdn.example.com/b.m3u8"))
         let loading = await engine.currentState()
         #expect(loading == .loading)
-        // 每次 load 都先销毁旧会话（否则真机上会漏一个 libmpv 实例）
+        // 已经手动销毁过、会话已置 nil，所以这次 load 没有旧会话可销毁
+        #expect(session.destroyCount == 1)
+    }
+
+    @Test("连续 load 会自己销毁上一份会话（没手动 teardown 也不会漏）")
+    func loadDestroysPreviousSession() async throws {
+        let (engine, session) = makeEngine()
+        try await engine.load(MediaResource(url: "https://cdn.example.com/a.m3u8"))
+        #expect(session.destroyCount == 0)
+
+        try await engine.load(MediaResource(url: "https://cdn.example.com/b.m3u8"))
+        #expect(session.destroyCount == 1, "第二次 load 必须先销毁第一份会话（真机上就是漏一个 libmpv 实例）")
+
+        await engine.teardown()
         #expect(session.destroyCount == 2)
     }
 
