@@ -252,7 +252,6 @@ extension PlaybackView {
     /// 排版跟本页其它区一致（一行行文字），因为画面交给系统原生 `VideoPlayer`，我们不自绘播放控件
     /// （`docs/UI 规范.md`）。范围/步进/预设与显示格式全部对齐上游 `SpeedSetting`；
     /// 上游那套的「长按倍速」「跳过静音」不改（前者是手势、后者要内核支持，见 M02P15）。
-    @ViewBuilder
     private var speedSection: some View {
         Section("播放速度") {
             HStack {
