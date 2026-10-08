@@ -141,4 +141,50 @@ struct LiveLayoutTests {
         #expect(rows.map(\.title) == ["CCTV-1", "CCTV-2"])
         #expect(rows.map(\.isPlayable) == [true, false])
     }
+
+    @Test("时移回看：已播的档给时移地址；正在播 / 未开始的不给；没配时移全不给")
+    func programRows() {
+        let catchup = LiveCatchup(type: "append", source: "?playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}")
+        var channel = makeChannel(name: "CCTV-1", urls: ["http://a/1.m3u8"], catchup: catchup)
+        let schedule = EPGSchedule(key: "CCTV-1", date: "2026-10-08", programs: [
+            EPGProgram(
+                title: "已播",
+                start: "18:00",
+                end: "19:00",
+                startTime: now.addingTimeInterval(-3600),
+                endTime: now.addingTimeInterval(-600)
+            ),
+            EPGProgram(
+                title: "正在播",
+                start: "19:00",
+                end: "19:30",
+                startTime: now.addingTimeInterval(-600),
+                endTime: now.addingTimeInterval(600)
+            ),
+            EPGProgram(
+                title: "未开始",
+                start: "19:30",
+                end: "20:00",
+                startTime: now.addingTimeInterval(1200),
+                endTime: now.addingTimeInterval(2400)
+            ),
+        ])
+
+        let rows = LiveListLayout.programRows(channel: channel, schedule: schedule, at: now)
+        #expect(rows.map(\.state) == [.past, .live, .future])
+        #expect(rows.map(\.timeRange) == ["18:00 ~ 19:00", "19:00 ~ 19:30", "19:30 ~ 20:00"])
+        // 只有「已播」这一档给时移地址（拼在直播地址后面）。
+        #expect(rows[0].catchupURL?.hasPrefix("http://a/1.m3u8?playseek=") == true)
+        #expect(rows[1].catchupURL == nil)
+        #expect(rows[2].catchupURL == nil)
+
+        // 频道没配时移、地址里也没有 `/PLTV/` → 已播的档也点不动。
+        channel = makeChannel(name: "CCTV-2", urls: ["http://a/2.m3u8"])
+        let plain = LiveListLayout.programRows(channel: channel, schedule: schedule, at: now)
+        #expect(plain.map(\.state) == [.past, .live, .future])
+        #expect(plain.allSatisfy { $0.catchupURL == nil })
+
+        // 这个频道没有节目单 → 空数组（界面显示「暂无节目单」）。
+        #expect(LiveListLayout.programRows(channel: channel, schedule: nil, at: now).isEmpty)
+    }
 }

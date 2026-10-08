@@ -76,3 +76,66 @@ enum LiveListLayout {
         )
     }
 }
+
+/// 当天节目单里的一行（时移回看用）。
+struct LiveProgramRow: Identifiable, Equatable {
+    /// 节目标题。
+    var title: String
+    /// `19:00 ~ 19:30`（``EPGProgram/timeRange``）。
+    var timeRange: String
+    /// 这一档处在什么状态（界面用它高亮 / 置灰）。
+    var state: LiveProgramState
+    /// 时移地址；`nil` 表示这一档点不动（没配时移、或节目还没开始）。
+    var catchupURL: String?
+
+    var id: String { timeRange + "|" + title }
+}
+
+/// 节目状态：决定界面高亮与能不能点。
+enum LiveProgramState: String, Equatable {
+    /// 正在播。
+    case live
+    /// 已结束（有时移就能回看）。
+    case past
+    /// 还没开始（不给地址：上游 `LiveApi.getUrl(item, data)` 只对已播的档给时移）。
+    case future
+}
+
+extension LiveListLayout {
+    /// 一个频道的当天节目行（保持节目单顺序）。
+    ///
+    /// 三件事在这里定死，界面不再判断：
+    /// - **状态**：`isLive` / `isFuture` / 其余算已播（``EPGProgram`` 的既有语义）；
+    /// - **时移地址**：只有「已播 + 这个频道当前线路配了时移」才拼 ``LiveCatchup/playbackURL(_:start:end:)``
+    ///   （``LiveChannel/catchupForCurrentURL(index:)`` 已经处理了 `regex` 命中与 `/PLTV/` 自动套用）；
+    /// - **没有节目单**：返回空数组，界面显示「暂无节目单」。
+    static func programRows(
+        channel: LiveChannel,
+        schedule: EPGSchedule?,
+        at now: Date = Date()
+    ) -> [LiveProgramRow] {
+        guard let schedule else {
+            return []
+        }
+        let catchup = channel.catchupForCurrentURL()
+        let liveURL = channel.playbackURL()
+        return schedule.programs.map { program in
+            let state = state(of: program, at: now)
+            let catchupURL = state == .past ? catchup?.playbackURL(liveURL, start: program.startTime, end: program.endTime) : nil
+            return LiveProgramRow(
+                title: program.title,
+                timeRange: program.timeRange,
+                state: state,
+                catchupURL: catchupURL
+            )
+        }
+    }
+
+    /// 单档状态：`isLive` 优先（上游也是先看「正在播」）。
+    static func state(of program: EPGProgram, at now: Date) -> LiveProgramState {
+        if program.isLive(at: now) {
+            return .live
+        }
+        return program.isFuture(at: now) ? .future : .past
+    }
+}
