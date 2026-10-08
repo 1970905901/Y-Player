@@ -97,6 +97,27 @@ struct AppModelIntegrationTests {
         #expect(fixture.model.adSkipRecorder.stats == AdSkipRecorder.Stats())
     }
 
+    @Test("弹幕开关（M08d 遗留 2）：关掉就**立刻清屏**，不是等下次换集")
+    func disablingDanmakuClearsScreen() throws {
+        let fixture = try AppModelFixture()
+        defer { fixture.tearDown() }
+
+        let playing = try #require(DanmakuLine(params: "3.0,1,25,16711680", text: "还在播的弹幕"))
+        fixture.model.danmakuLines = [playing]
+        fixture.model.danmakuStatus = .loaded(source: "示例源", count: 1)
+
+        fixture.model.danmakuAPI = DanmakuAPIConfig(isEnabled: false, addresses: ["https://d.example.com"])
+
+        #expect(fixture.model.danmakuLines.isEmpty)
+        #expect(fixture.model.danmakuStatus == .idle)
+
+        // 只是改地址槽、开关还开着 → 不该顺手清掉正在播的弹幕
+        fixture.model.danmakuAPI = DanmakuAPIConfig(isEnabled: true, addresses: ["https://d.example.com"])
+        fixture.model.danmakuLines = [playing]
+        fixture.model.danmakuAPI = DanmakuAPIConfig(isEnabled: true, addresses: ["", "", "", ""])
+        #expect(fixture.model.danmakuLines.count == 1)
+    }
+
     @Test("落盘往返（M08f）：写进去的偏好在**新建的**模型里读得回来")
     func preferencesRoundTrip() async throws {
         let fixture = try AppModelFixture()

@@ -130,11 +130,17 @@ public final class AppModel: ObservableObject {
 
     /// 弹幕 API 配置：启用开关 + 四个地址槽位。
     ///
-    /// 参考图里它的副标题写明「开启后将禁用视频源的弹幕功能」——
-    /// 弹幕的请求链与渲染属于 M8，本里程碑只把地址**真实保存**下来（页内如实说明）。
+    /// 参考图里它的副标题写明「开启后将禁用视频源的弹幕功能」。
+    /// 取用链见 `AppModel+Danmaku.swift`（M08a–M08c），调度见 `DanmakuPlan`（M08d）；**把弹幕画到
+    /// 视频上的渲染仍未做**（需要设备/模拟器验证）。
     @Published public var danmakuAPI: DanmakuAPIConfig {
         didSet {
             defaults.set(danmakuAPI.persistenceValue, forKey: StorageKey.danmakuAPI)
+            // 关掉开关就**立刻清屏**（M08d 遗留 2）：否则屏幕上还挂着已经载入的弹幕，用户会以为
+            // 「这个开关没生效」。这里只管清 —— 重新打开不自动重载，下次进播放页或换集时自然就有。
+            if !danmakuAPI.isEnabled {
+                clearDanmaku()
+            }
         }
     }
 
