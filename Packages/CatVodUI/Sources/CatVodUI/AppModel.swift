@@ -52,14 +52,14 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var state: LoadState = .idle
     @Published public var configURL: String {
         didSet {
-            UserDefaults.standard.set(configURL, forKey: StorageKey.configURL)
+            defaults.set(configURL, forKey: StorageKey.configURL)
         }
     }
 
     /// 播放内核：由用户在设置里**手动选择**，不自动切换。
     @Published public var preferredEngine: PlayerEngineKind {
         didSet {
-            UserDefaults.standard.set(preferredEngine.rawValue, forKey: StorageKey.preferredEngine)
+            defaults.set(preferredEngine.rawValue, forKey: StorageKey.preferredEngine)
             refreshPlaybackNotice()
         }
     }
@@ -67,7 +67,7 @@ public final class AppModel: ObservableObject {
     /// 解码方式（硬解/软解）：由用户手动选择，不自动切换。
     @Published public var decoderMode: DecoderMode {
         didSet {
-            UserDefaults.standard.set(decoderMode.rawValue, forKey: StorageKey.decoderMode)
+            defaults.set(decoderMode.rawValue, forKey: StorageKey.decoderMode)
             refreshPlaybackNotice()
         }
     }
@@ -83,7 +83,7 @@ public final class AppModel: ObservableObject {
     /// 与内核/解码方式同一套做法：**用户手动选择 + 落 `UserDefaults`**，不随数据自动变化。
     @Published public var homeLayout: HomeLayout {
         didSet {
-            UserDefaults.standard.set(homeLayout.rawValue, forKey: StorageKey.homeLayout)
+            defaults.set(homeLayout.rawValue, forKey: StorageKey.homeLayout)
         }
     }
 
@@ -94,7 +94,7 @@ public final class AppModel: ObservableObject {
     /// 生效点在 ``load(forceRefresh:)``：过期或用户手动强制刷新时才走网络。
     @Published public var sourceCacheLifetime: CacheLifetime {
         didSet {
-            UserDefaults.standard.set(sourceCacheLifetime.rawValue, forKey: StorageKey.sourceCacheLifetime)
+            defaults.set(sourceCacheLifetime.rawValue, forKey: StorageKey.sourceCacheLifetime)
         }
     }
 
@@ -103,7 +103,7 @@ public final class AppModel: ObservableObject {
     /// 生效点在 `HomeView+Data.swift`（读缓存命中就不发请求）。
     @Published public var homeCacheLifetime: CacheLifetime {
         didSet {
-            UserDefaults.standard.set(homeCacheLifetime.rawValue, forKey: StorageKey.homeCacheLifetime)
+            defaults.set(homeCacheLifetime.rawValue, forKey: StorageKey.homeCacheLifetime)
         }
     }
 
@@ -112,7 +112,7 @@ public final class AppModel: ObservableObject {
     /// 播放页显示视图（精简视图 / Emby 视图）：详情页换排布，数据与交互都不变。
     @Published public var playbackPageLayout: PlaybackPageLayout {
         didSet {
-            UserDefaults.standard.set(playbackPageLayout.rawValue, forKey: StorageKey.playbackPageLayout)
+            defaults.set(playbackPageLayout.rawValue, forKey: StorageKey.playbackPageLayout)
         }
     }
 
@@ -122,7 +122,7 @@ public final class AppModel: ObservableObject {
     /// 有「上次看到」的进度时以续播为准，不会把用户从上次位置拽回第一集。
     @Published public var autoPlayFirstEpisode: Bool {
         didSet {
-            UserDefaults.standard.set(autoPlayFirstEpisode, forKey: StorageKey.autoPlayFirstEpisode)
+            defaults.set(autoPlayFirstEpisode, forKey: StorageKey.autoPlayFirstEpisode)
         }
     }
 
@@ -134,7 +134,7 @@ public final class AppModel: ObservableObject {
     /// 弹幕的请求链与渲染属于 M8，本里程碑只把地址**真实保存**下来（页内如实说明）。
     @Published public var danmakuAPI: DanmakuAPIConfig {
         didSet {
-            UserDefaults.standard.set(danmakuAPI.persistenceValue, forKey: StorageKey.danmakuAPI)
+            defaults.set(danmakuAPI.persistenceValue, forKey: StorageKey.danmakuAPI)
         }
     }
 
@@ -146,7 +146,7 @@ public final class AppModel: ObservableObject {
     /// 规则（去重置顶 / 封顶 / 坏存档当空）在 `SearchHistory` 里，单测覆盖。
     @Published public var searchHistory: [String] {
         didSet {
-            UserDefaults.standard.set(SearchHistory.encode(searchHistory), forKey: StorageKey.searchHistory)
+            defaults.set(SearchHistory.encode(searchHistory), forKey: StorageKey.searchHistory)
         }
     }
 
@@ -175,7 +175,7 @@ public final class AppModel: ObservableObject {
     /// 关闭时只保留内存里的最近若干行（诊断仍可用，不占磁盘）。
     @Published public var isEngineLogEnabled: Bool {
         didSet {
-            UserDefaults.standard.set(isEngineLogEnabled, forKey: StorageKey.engineLogEnabled)
+            defaults.set(isEngineLogEnabled, forKey: StorageKey.engineLogEnabled)
             applyLogPreferenceToHost()
         }
     }
@@ -188,7 +188,7 @@ public final class AppModel: ObservableObject {
     /// 而系统播放器只能给主请求设 header（细节见 `docs/任务记录/M06a-本地HTTP服务与本地代理.md`）。
     @Published public var isLocalProxyEnabled: Bool {
         didSet {
-            UserDefaults.standard.set(isLocalProxyEnabled, forKey: StorageKey.localProxyEnabled)
+            defaults.set(isLocalProxyEnabled, forKey: StorageKey.localProxyEnabled)
             refreshPlaybackNotice()
         }
     }
@@ -207,6 +207,13 @@ public final class AppModel: ObservableObject {
     ///
     /// setter 理由同 ``localProxyNotice``：启停逻辑在 `AppModel+LocalProxy.swift`。
     @Published public internal(set) var localProxyPort: UInt16?
+
+    /// 本地偏好的存储（初始化时注入）：**读写都走它**，不再写死 `UserDefaults.standard`。
+    ///
+    /// 为什么统一走它：注入的 `defaults` 若只对读取生效、写入仍写 `UserDefaults.standard`，
+    /// 那「隔离的测试存档」就是假的 —— 测试写出去的东西落到真存档里，而它自己又回读不到。
+    /// 测试夹具（`AppModelFixture`）靠这一条才能真正验「写进去 → 新建一个模型读出来」。
+    let defaults: UserDefaults
 
     /// 本地代理服务实例；由 ``ensureLocalServer()`` 创建并启动（见 `AppModel+LocalProxy.swift`）。
     var localServer: LocalHTTPServer?
@@ -245,14 +252,14 @@ public final class AppModel: ObservableObject {
     /// 所以选择要持久化，别每次进页面都跳回第一个。
     @Published public var selectedLiveKey: String {
         didSet {
-            UserDefaults.standard.set(selectedLiveKey, forKey: StorageKey.liveSource)
+            defaults.set(selectedLiveKey, forKey: StorageKey.liveSource)
         }
     }
 
     /// 当前选中的分组名（落 `UserDefaults`；空表示用清单里的第一个分组）。
     @Published public var selectedLiveGroup: String {
         didSet {
-            UserDefaults.standard.set(selectedLiveGroup, forKey: StorageKey.liveGroup)
+            defaults.set(selectedLiveGroup, forKey: StorageKey.liveGroup)
             // 换分组 = 换一批「可见频道」：预取封顶重新开始。
             // 已经拉过的频道靠「今天的节目单已经有了」跳过，不会重复请求。
             liveEPGPrefetchCount = 0
@@ -300,7 +307,7 @@ public final class AppModel: ObservableObject {
     /// setter 是 `internal(set)`：唯一写回点是 `AppModel+Live.swift` 的 `rememberLiveChannel`。
     @Published public internal(set) var liveKeeps: [String: String] {
         didSet {
-            UserDefaults.standard.set(LiveKeepBook.encode(liveKeeps), forKey: StorageKey.liveKeep)
+            defaults.set(LiveKeepBook.encode(liveKeeps), forKey: StorageKey.liveKeep)
         }
     }
 
@@ -310,7 +317,7 @@ public final class AppModel: ObservableObject {
     /// 上游也把两者分开存（`Keep` 表 vs. `Live.keep` 字段）。按源名分桶的理由同 ``liveKeeps``。
     @Published public internal(set) var liveFavorites: [String: [LiveFavorite]] {
         didSet {
-            UserDefaults.standard.set(LiveFavoriteBook.encode(liveFavorites), forKey: StorageKey.liveFavorites)
+            defaults.set(LiveFavoriteBook.encode(liveFavorites), forKey: StorageKey.liveFavorites)
         }
     }
 
@@ -320,7 +327,7 @@ public final class AppModel: ObservableObject {
     /// 让节目单缓存作废并重拉文件形态的是 `updateLiveEPGSetting(_:)`（在 `AppModel+Live.swift`）。
     @Published public internal(set) var liveEPGSetting: LiveEPGSetting {
         didSet {
-            UserDefaults.standard.set(liveEPGSetting.persistenceValue, forKey: StorageKey.liveEPGSetting)
+            defaults.set(liveEPGSetting.persistenceValue, forKey: StorageKey.liveEPGSetting)
             applyLiveEPGOverride()
         }
     }
@@ -336,7 +343,7 @@ public final class AppModel: ObservableObject {
     /// 改了要立刻重算规则（``AppModel/refreshAdRules()``）—— `/m3u8` 每个请求现读，所以不用重启本机服务。
     @Published public internal(set) var hlsAdRuleOverrides: [String: Bool] {
         didSet {
-            UserDefaults.standard.set(HLSAdRuleBook.encode(hlsAdRuleOverrides), forKey: StorageKey.hlsAdRuleOverrides)
+            defaults.set(HLSAdRuleBook.encode(hlsAdRuleOverrides), forKey: StorageKey.hlsAdRuleOverrides)
             refreshAdRules()
         }
     }
@@ -346,7 +353,7 @@ public final class AppModel: ObservableObject {
     /// 桶键同 ``siteNames``（接口地址摘要）：这是要落盘的东西，不存明文地址。
     @Published public internal(set) var siteGroupRuleSettings: [String: SiteGroupRuleSettings] {
         didSet {
-            UserDefaults.standard.set(
+            defaults.set(
                 SiteGroupRuleBook.encode(siteGroupRuleSettings),
                 forKey: StorageKey.siteGroupRules
             )
@@ -358,7 +365,7 @@ public final class AppModel: ObservableObject {
     /// 桶键是接口地址的摘要（`ConfigIdentity.key(for:)`）：地址可能带 token，落盘的东西不存明文。
     @Published public internal(set) var siteNames: [String: [String: String]] {
         didSet {
-            UserDefaults.standard.set(SiteNameBook.encode(siteNames), forKey: StorageKey.siteNames)
+            defaults.set(SiteNameBook.encode(siteNames), forKey: StorageKey.siteNames)
         }
     }
 
@@ -368,7 +375,7 @@ public final class AppModel: ObservableObject {
     /// 排序规则不在这一层（在 `CatVodCore.SiteGroupOrder`），这里只管「算出来、存下来」。
     @Published public internal(set) var siteGroupOrders: [String: [String]] {
         didSet {
-            UserDefaults.standard.set(SiteGroupOrderBook.encode(siteGroupOrders), forKey: StorageKey.siteGroupOrder)
+            defaults.set(SiteGroupOrderBook.encode(siteGroupOrders), forKey: StorageKey.siteGroupOrder)
         }
     }
 
@@ -385,7 +392,7 @@ public final class AppModel: ObservableObject {
     /// （见 `AppModel+Live` 的 `loadLivePlaylist`），改这个开关会重新拉一次清单。
     @Published public internal(set) var livePassOverrides: [String: Bool] {
         didSet {
-            UserDefaults.standard.set(LivePassBook.encode(livePassOverrides), forKey: StorageKey.livePassOverrides)
+            defaults.set(LivePassBook.encode(livePassOverrides), forKey: StorageKey.livePassOverrides)
         }
     }
 
@@ -425,6 +432,7 @@ public final class AppModel: ObservableObject {
     public init(cacheDirectory: URL? = nil, defaults: UserDefaults = .standard) {
         let base = cacheDirectory ?? Self.defaultCacheDirectory()
         self.cacheDirectory = base
+        self.defaults = defaults
         sessionTransport = URLSessionTransport()
         // 存储：优先 GRDB 落库（M08b）；打开失败退回内存实现并如实说明（不许静默）。
         // 这里只替换构造：两个 store 都是协议类型，详情页 / 追剧页 / 播放页一行都不用改。

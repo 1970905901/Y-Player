@@ -14,8 +14,10 @@ import Testing
 @MainActor
 final class AppModelFixture {
     let model: AppModel
-    private let suiteName: String
-    private let directory: URL
+    /// 隔离的存档名（`reopenedModel()` 用它读回同一份存档）。
+    let suiteName: String
+    /// 临时目录（缓存 / 数据库都在这里）。
+    let directory: URL
 
     init() throws {
         suiteName = "yplayer-tests-\(UUID().uuidString)"
@@ -24,6 +26,11 @@ final class AppModelFixture {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         model = AppModel(cacheDirectory: directory, defaults: defaults)
+    }
+
+    /// 用**同一份存档**再起一个模型 —— 用来验「写进去的偏好，重开还在」。
+    func reopenedModel() throws -> AppModel {
+        try AppModel(cacheDirectory: directory, defaults: #require(UserDefaults(suiteName: suiteName)))
     }
 
     /// 载入一份内联配置（不联网）。默认给一条能出分组的站点。

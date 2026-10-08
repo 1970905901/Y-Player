@@ -97,6 +97,30 @@ struct AppModelIntegrationTests {
         #expect(fixture.model.adSkipRecorder.stats == AdSkipRecorder.Stats())
     }
 
+    @Test("落盘往返（M08f）：写进去的偏好在**新建的**模型里读得回来")
+    func preferencesRoundTrip() async throws {
+        let fixture = try AppModelFixture()
+        defer { fixture.tearDown() }
+        await fixture.load()
+        let site = try #require(fixture.model.sites.first { $0.key == "a" })
+
+        fixture.model.renameSite(site, to: "我的甲站")
+        fixture.model.toggleSiteGroupRule(GroupRuleConfig.builtinPipe)
+        fixture.model.danmakuAPI = DanmakuAPIConfig(isEnabled: true, addresses: ["https://d.example.com"])
+        fixture.model.rememberSearch("关键字")
+
+        // 同一份存档、另一个模型：值都该还在。
+        // 这条能成立，靠的是「所有读写都走注入的 defaults」（M08f 之前写入写死在 UserDefaults.standard，
+        // 那样的「隔离存档」是假的：写出去落进真存档，自己又回读不到）。
+        let reopened = try fixture.reopenedModel()
+
+        #expect(reopened.configURL == fixture.model.configURL)
+        #expect(reopened.siteNamesForCurrentConfig["a"] == "我的甲站")
+        #expect(reopened.disabledSiteGroupRuleIDs == [GroupRuleConfig.builtinPipe])
+        #expect(reopened.danmakuAPI.filledAddresses == ["https://d.example.com"])
+        #expect(reopened.searchHistory == ["关键字"])
+    }
+
     @Test("广告清理规则（M06d/M06h）：配置载入后规则进了 store，关掉开关后 store 也空")
     func hlsAdRuleWiring() async throws {
         let fixture = try AppModelFixture()
