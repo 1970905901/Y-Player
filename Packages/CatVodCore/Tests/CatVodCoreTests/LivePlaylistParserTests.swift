@@ -6,6 +6,12 @@ import Testing
 struct LivePlaylistParserTests {
     private let parser = LivePlaylistParser()
 
+    /// 构造直播源：模型字段多，一律走 JSON（与生产路径同一条，顺带覆盖解码）；
+    /// 不要在模型上开十几参数的长 init —— SwiftLint `function_parameter_count` 会直接报错。
+    private func makeSource(_ json: String) throws -> LiveSource {
+        try JSONDecoder().decode(LiveSource.self, from: Data(json.utf8))
+    }
+
     private let m3u = """
     #EXTM3U url-tvg="https://epg.example.com/xml.gz" catchup-source="?playseek=${(b)timestamp}-${(e)timestamp}"
     #EXTINF:-1 tvg-id="cctv1" tvg-name="CCTV-1" tvg-logo="https://logo.example.com/1.png" group-title="央视",CCTV-1 综合
@@ -19,7 +25,7 @@ struct LivePlaylistParserTests {
 
     @Test("m3u：分组、属性、`|` 后的 header、设置行、元信息频道过滤与自动编号")
     func m3uPlaylist() throws {
-        let parsed = parser.parse(m3u, into: LiveSource(name: "演示直播"))
+        let parsed = parser.parse(m3u, into: try makeSource(#"{"name":"演示直播"}"#))
 
         #expect(parsed.groups.map(\.name) == ["央视", "卫视"])
         let cctv = try #require(parsed.groups.first?.channels.first)
@@ -54,7 +60,7 @@ struct LivePlaylistParserTests {
 
     @Test("txt：`#genre#` 切分组、`#` 多线路、元信息过滤、跨分组连续编号")
     func txtPlaylist() throws {
-        let parsed = parser.parse(txt, into: LiveSource(name: "演示直播"))
+        let parsed = parser.parse(txt, into: try makeSource(#"{"name":"演示直播"}"#))
 
         #expect(parsed.groups.map(\.name) == ["央视", "卫视"])
         let cctv = try #require(parsed.groups.first?.channels.first)
@@ -67,7 +73,7 @@ struct LivePlaylistParserTests {
 
     @Test("txt：没有 `#genre#` 时落到默认分组（上游 `Group.create()`）")
     func txtWithoutGroups() throws {
-        let parsed = parser.parse("CCTV-1,http://live.example.com/a.m3u8", into: LiveSource(name: "源"))
+        let parsed = parser.parse("CCTV-1,http://live.example.com/a.m3u8", into: try makeSource(#"{"name":"源"}"#))
         #expect(parsed.groups.count == 1)
         #expect(parsed.groups.first?.channels.first?.urls == ["http://live.example.com/a.m3u8"])
     }
@@ -75,12 +81,12 @@ struct LivePlaylistParserTests {
     @Test("分组名里的 `_密码`：默认拆开，`pass = true` 时不拆")
     func groupPassword() throws {
         let text = "加密组_1234,#genre#\nCCTV-1,http://live.example.com/a.m3u8"
-        let split = parser.parse(text, into: LiveSource(name: "源"))
+        let split = parser.parse(text, into: try makeSource(#"{"name":"源"}"#))
         #expect(split.groups.first?.name == "加密组")
         #expect(split.groups.first?.pass == "1234")
         #expect(split.groups.first?.isHidden == true)
 
-        let plain = parser.parse(text, into: LiveSource(name: "源", pass: true))
+        let plain = parser.parse(text, into: try makeSource(#"{"name":"源","pass":true}"#))
         #expect(plain.groups.first?.name == "加密组_1234")
         #expect(plain.groups.first?.pass.isEmpty == true)
     }
@@ -88,14 +94,15 @@ struct LivePlaylistParserTests {
     @Test("json：分组数组直接落成模型，并补编号")
     func jsonPlaylist() throws {
         let json = #"[{"name":"央视","channel":[{"name":"CCTV-1","urls":["http://live.example.com/a.m3u8"]}]}]"#
-        let parsed = parser.parse(json, into: LiveSource(name: "源"))
+        let parsed = parser.parse(json, into: try makeSource(#"{"name":"源"}"#))
         #expect(parsed.groups.map(\.name) == ["央视"])
         #expect(parsed.groups.first?.channels.first?.number == "001")
     }
 
     @Test("源级设置补进频道（上游 `Channel.live(Live)`：只补自己没有的）")
     func inheritsSourceSettings() throws {
-        let source = LiveSource(name: "源", ua: "UA-source", referer: "https://site.example.com/")
+        let json = #"{"name":"源","ua":"UA-source","referer":"https://site.example.com/"}"#
+        let source = try makeSource(json)
         let parsed = parser.parse("#EXTM3U\n#EXTINF:-1,CH\nhttp://live.example.com/a.m3u8", into: source)
         let channel = try #require(parsed.groups.first?.channels.first)
         #expect(channel.ua == "UA-source")

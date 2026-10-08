@@ -35,38 +35,24 @@ public struct LiveChannel: Codable, Sendable, Hashable, Identifiable {
 
     public var id: String { name }
 
-    public init(
-        name: String = "",
-        urls: [String] = [],
-        number: String = "",
-        logo: String = "",
-        epg: String = "",
-        tvgID: String = "",
-        tvgName: String = "",
-        ua: String = "",
-        click: String = "",
-        format: String = "",
-        origin: String = "",
-        referer: String = "",
-        header: [String: String] = [:],
-        parse: Int = 0,
-        catchup: LiveCatchup? = nil
-    ) {
+    /// 构造：解析器只需要「名字」（其余字段随后按需赋值），
+    /// 字段多的模型一律走 JSON 解码，避免十几参数的长 init（SwiftLint `function_parameter_count` 会报错）。
+    public init(name: String, urls: [String] = [], catchup: LiveCatchup? = nil) {
         self.name = name
         self.urls = urls
-        self.number = number
-        self.logo = logo
-        self.epg = epg
-        self.tvgID = tvgID
-        self.tvgName = tvgName
-        self.ua = ua
-        self.click = click
-        self.format = format
-        self.origin = origin
-        self.referer = referer
-        self.header = header
-        self.parse = parse
         self.catchup = catchup
+        number = ""
+        logo = ""
+        epg = ""
+        tvgID = ""
+        tvgName = ""
+        ua = ""
+        click = ""
+        format = ""
+        origin = ""
+        referer = ""
+        header = [:]
+        parse = 0
     }
 
     public init(from decoder: Decoder) throws {

@@ -2,9 +2,10 @@ import Foundation
 
 /// 直播源。
 ///
-/// 说明：本文件先落地点播配置必需的字段，完整字段表（Group / Channel / Catchup / EPG / DRM 等）
-/// 在 M7「直播 + JS Spider」里程碑按 webhtv `docs/integration/live.md` 补齐，
-/// 届时会同步更新 `docs/协议兼容矩阵.md`。
+/// 字段表对照上游 `bean/Live.java` 与 webhtv `docs/integration/live.md`。
+/// M01 先落地点播配置必需的字段；**M07a 已补齐直播侧字段与清单解析**
+/// （分组 / 频道 / 时移 / EPG 地址拆分，见 `docs/任务记录/M07a-直播模型与清单解析.md`）；
+/// EPG 的拉取与节目单、DRM/ClearKey、直播页与播放接线分别属 M07b / M07c。
 public struct LiveSource: Codable, Sendable, Hashable, Identifiable {
     /// 展示名，同时是直播配置的唯一标识。
     public var name: String
@@ -30,6 +31,22 @@ public struct LiveSource: Codable, Sendable, Hashable, Identifiable {
     public var timeout: Int
     /// 自定义 User-Agent。
     public var ua: String
+    /// 播放器类型（协议保留字段）。
+    public var playerType: Int
+    /// 请求 Origin。
+    public var origin: String
+    /// 请求 Referer。
+    public var referer: String
+    /// 节目单时区（EPG 阶段用）。
+    public var timeZone: String
+    /// 上次观看位置（`分组名│频道名│…`，由界面写入）。
+    public var keep: String
+    /// 源级时移配置；频道级优先（见 ``LiveCatchup/decide(major:minor:)``）。
+    public var catchup: LiveCatchup?
+    /// 解析出来的分组与频道（M07a：``LivePlaylistParser`` 填充）。
+    public var groups: [LiveGroup]
+    /// 分组名拆分开关（上游字段名就是 `pass`）：true 表示组名里的 `_` 不当密码。
+    public var pass: Bool
 
     public var id: String { name }
 
@@ -54,6 +71,14 @@ public struct LiveSource: Codable, Sendable, Hashable, Identifiable {
         } else {
             ua = directUA
         }
+        playerType = container.lenientInt(.playerType)
+        origin = container.lenientString(.origin)
+        referer = container.lenientString(.referer)
+        timeZone = container.lenientString(.timeZone)
+        keep = container.lenientString(.keep)
+        catchup = container.lenientValue(.catchup)
+        groups = container.lenientArray(.groups)
+        pass = container.lenientBool(.pass)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -69,6 +94,57 @@ public struct LiveSource: Codable, Sendable, Hashable, Identifiable {
         case click
         case timeout
         case ua
+        case playerType
+        case origin
+        case referer
+        case timeZone
+        case keep
+        case catchup
+        case groups
+        case pass
+    }
+
+    // MARK: - 取值语义（对齐上游 Live）
+
+    /// 上游 `getHeaders()`：`header` 表 + `ua`/`origin`/`referer`（后者覆盖同名）。
+    public func headers() -> [String: String] {
+        var merged = header
+        if !ua.isEmpty {
+            merged["User-Agent"] = ua
+        }
+        if !origin.isEmpty {
+            merged["Origin"] = origin
+        }
+        if !referer.isEmpty {
+            merged["Referer"] = referer
+        }
+        return merged
+    }
+
+    /// 上游 `getEpgApi()`：`epg` 逗号串里含 `{` 的那一项（EPG 接口地址）。
+    ///
+    /// 说明：`epg` 允许写成「接口 + XML/GZ 文件」的逗号串（上游 `getEpgApi` / `getEpgXml`），
+    /// 这里把拆分逻辑收在模型上，界面与 EPG 阶段直接取。
+    public var epgAPI: String {
+        for item in epgItems where item.contains("{") {
+            return item
+        }
+        return epg
+    }
+
+    /// 上游 `getEpgXml()`：含 `xml` 或 `gz` 的项（XML/GZ 节目单文件）。
+    public var epgXML: [String] {
+        epgItems.filter { !$0.contains("{") && ($0.contains("xml") || $0.contains("gz")) }
+    }
+
+    /// 频道总数（界面摘要用）。
+    public var channelCount: Int {
+        groups.reduce(0) { $0 + $1.channels.count }
+    }
+
+    /// `epg` 逗号串 → 去掉空项后的列表。
+    private var epgItems: [String] {
+        epg.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 
     /// `ua` 的别名键；只用于解码。
