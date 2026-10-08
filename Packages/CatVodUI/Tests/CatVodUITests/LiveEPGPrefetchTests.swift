@@ -51,7 +51,7 @@ struct LiveEPGPrefetchTests {
         #expect(!LiveEPGPrefetch.shouldQueue(channel, state: covered, now: now))
 
         // 文件形态：一份覆盖多频道，判定粒度仍是「**这个频道**在文件里有没有今天」
-        //（上一节已经验过「别的频道有今天不顶用」）。
+        // （上一节已经验过「别的频道有今天不顶用」）。
         let fileGuide = EPGGuide(timeZone: shanghai, schedules: [
             EPGSchedule(key: "CCTV-1", date: "2027-01-15"),
             EPGSchedule(key: "CCTV-2", date: "2027-01-15"),
