@@ -1,12 +1,14 @@
-import CatVodCore
-import CatVodPlayer
 import CatVodSource
 import SwiftUI
 
-/// 源管理页：粘贴/导入配置地址 → 加载 → 展示站点清单与告警。
+/// 源管理页：粘贴/导入配置地址 → 加载 → 展示加载结果与告警。
 ///
-/// 入口位置变了（对齐参考图的「设置 → 源地址」）：这个页面本身功能没变，
-/// 仍然是「接口地址 + 加载/强制刷新 + 状态 + 告警 + 站点清单 + 宿主状态 + 播放设置 + 接口缓存」。
+/// 入口位置变了（对齐参考图的「设置 → 源地址」）：这个页面只负责「源地址本身」——
+/// 接口地址 + 加载/强制刷新 + 状态 + 告警 + 站点清单 + 宿主状态。
+///
+/// 这里曾经还摆着「播放设置」与「接口缓存」两个区块，现已删除：同一个东西在两个地方
+/// 各摆一份，用户没法判断哪份才算数 —— 播放设置在「设置 → 播放 → 播放器」，
+/// 接口缓存在「设置 → 数据 → 缓存管理」。
 ///
 /// UI 约定（见 `docs/UI 规范.md`）：使用系统原生 `List` 与控件，
 /// 通过 ``adaptiveListStyle()`` / ``AdaptiveNavigationContainer`` 获取各系统版本的原生外观，视图内不写版本分支。
@@ -17,8 +19,6 @@ import SwiftUI
 public struct InterfaceManagementView: View {
     @ObservedObject private var model: AppModel
     @FocusState private var isURLFieldFocused: Bool
-    @State private var isConfirmingCacheClear = false
-    @State private var cacheActionMessage = ""
     /// 宿主最近输出（点「查看宿主输出」后填充）。
     @State private var hostOutput: [String] = []
 
@@ -45,21 +45,9 @@ public struct InterfaceManagementView: View {
             if model.loadedKind == .javaScript {
                 hostSection
             }
-            sitesSection
-            playbackSection
-            cacheSection
         }
         .adaptiveListStyle()
         .navigationTitle("源地址")
-        .confirmationDialog("确定清空接口缓存？", isPresented: $isConfirmingCacheClear, titleVisibility: .visible) {
-            Button("清空全部缓存", role: .destructive) {
-                let removed = model.clearSourceCache()
-                cacheActionMessage = "已清理 \(removed) 个缓存文件"
-            }
-            Button("取消", role: .cancel) { }
-        } message: {
-            Text("下次加载接口需要重新下载配置（JS 源约 6 MB）。站点与播放设置不受影响。")
-        }
     }
 
     // MARK: - 配置输入
@@ -163,89 +151,6 @@ public struct InterfaceManagementView: View {
             }
         }
     }
-
-    // MARK: - 站点清单
-
-    private var sitesSection: some View {
-        Section("站点") {
-            if model.allSites.isEmpty {
-                Text(model.loadedKind == .javaScript ? model.hostStatus.summary : "暂无站点")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(model.allSites) { site in
-                SiteRow(site: site)
-            }
-        }
-    }
-
-    // MARK: - 播放内核
-
-    /// 播放设置区块：与「设置 → 播放 → 播放器」共用同一份实现（``PlaybackSettingsSection``），
-    /// 避免两个页面各写一份内核 Picker 而出现不一致。
-    private var playbackSection: some View {
-        PlaybackSettingsSection(model: model)
-    }
-
-    // MARK: - 接口缓存管理
-
-    /// 缓存管理：**看得见**（条目 / 占用 / 最近更新）+ **清得掉**（全部 / 仅残留）。
-    ///
-    /// 策略（详见 `docs/任务记录/M02P7-接口缓存管理.md`）：
-    /// - 容量上限 64 MB，超过后只淘汰**非当前接口**的最旧缓存；
-    /// - 「清理其他接口」用于换源后回收残留（每个 JS 源 ≈ 6 MB）；
-    /// - 清理缓存不影响站点清单与播放设置，只是下次加载要重新下载。
-    private var cacheSection: some View {
-        let summary = model.sourceCacheSummary()
-        return Section("接口缓存") {
-            if let summary, summary.entryCount > 0 {
-                InfoRow(title: "条目", value: "\(summary.entryCount)")
-                InfoRow(title: "占用", value: summary.formattedTotalSize)
-                if let latest = summary.latestModifiedAt {
-                    InfoRow(title: "最近更新", value: Self.dateText(latest))
-                }
-                if summary.currentEntryCount > 0 {
-                    InfoRow(title: "当前接口", value: "\(summary.currentEntryCount) 个文件")
-                }
-                if summary.orphanByteCount > 0 {
-                    InfoRow(title: "其他接口残留", value: summary.formattedOrphanSize)
-                }
-            } else {
-                Text("暂无缓存：首次加载接口后会把配置存到本地（JS 源约 6 MB），用于离线回退与跳过重复下载。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
-            Button(role: .destructive) {
-                isConfirmingCacheClear = true
-            } label: {
-                Label("清空全部缓存", systemImage: "trash")
-            }
-            .disabled((summary?.entryCount ?? 0) == 0)
-
-            if (summary?.orphanByteCount ?? 0) > 0 {
-                Button {
-                    let removed = model.pruneOrphanSourceCaches()
-                    cacheActionMessage = removed > 0
-                        ? "已清理 \(removed) 个其他接口的缓存文件"
-                        : "没有需要清理的残留"
-                } label: {
-                    Label("清理其他接口的缓存", systemImage: "rectangle.stack.badge.minus")
-                }
-            }
-
-            if !cacheActionMessage.isEmpty {
-                Text(cacheActionMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    /// 时间显示：用系统本地化格式，不引入第三方格式化（iOS 15 起 `formatted(date:time:)` 可用）。
-    private static func dateText(_ date: Date) -> String {
-        date.formatted(date: .abbreviated, time: .shortened)
-    }
 }
 
 /// 键值信息行。
@@ -264,33 +169,5 @@ struct InfoRow: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.trailing)
         }
-    }
-}
-
-/// 站点行：展示名称、类型与可用性原因。
-struct SiteRow: View {
-    let site: Site
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(site.name.isEmpty ? site.key : site.name)
-                Spacer()
-                if !site.availability.isAvailable {
-                    Image(systemName: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
-                }
-            }
-            Text(subtitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            SiteAvailabilityBadge(availability: site.availability)
-        }
-    }
-
-    private var subtitle: String {
-        let kind = site.kind.map { String(describing: $0) } ?? "未知类型"
-        let runtime = site.spiderRuntimeKind == .unsupported ? "" : "· \(site.spiderRuntimeKind.rawValue)"
-        return "\(site.key) · \(kind)\(runtime)"
     }
 }
