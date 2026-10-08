@@ -191,8 +191,9 @@ struct LiveEPGInterfaceTests {
     /// 走一遍生产路径：频道的接口地址由**源级 `epg` 模板**展开而来（`{name}` → `tvgName`），
     /// 只留下 `{date}` 交给仓库按天替换 —— 上游 `Channel.live(Live)` 就是这个顺序。
     private func makeInterfaceChannel() throws -> LiveChannel {
+        let source = try makeSource()
         var channel = try makeChannel(#"{"name":"CCTV-1 综合","tvgId":"cctv1","tvgName":"CCTV1"}"#)
-        channel.inherit(from: try makeSource())
+        channel.inherit(from: source)
         return channel
     }
 
@@ -325,8 +326,9 @@ struct LiveEPGInterfaceTests {
     func chineseChannelName() async throws {
         let date = EPGTimeParser.dateString(dayOffset: 0, timeZone: zone)
         let recorder = ParseRequestRecorder(response: HTTPResponse(status: 200, body: Data(xmltv(date: date, title: "中文台").utf8)))
+        let source = try makeSource()
         var channel = try makeChannel(#"{"name":"CCTV-2 财经"}"#)
-        channel.inherit(from: try makeSource())
+        channel.inherit(from: source)
         let guide = try await LiveEPGRepository(transport: recorder).load(channel: channel, source: makeSource())
 
         #expect(guide.schedule(key: "CCTV-2 财经", date: date)?.programs.map(\.title) == ["中文台"])
