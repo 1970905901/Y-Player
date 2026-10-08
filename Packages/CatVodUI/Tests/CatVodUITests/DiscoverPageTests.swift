@@ -62,8 +62,8 @@ struct DiscoverPageTests {
 
     @Test("上游没给筛选名就不出左侧标签列（参考录屏里两种形态都出现过）")
     func filterRowNameVisibility() {
-        let named = DiscoverFilterRow.rows(filters: [makeFilter()], selected: [])
-        let unnamed = DiscoverFilterRow.rows(filters: [makeFilter(name: "")], selected: [])
+        let named = DiscoverFilterRow.rows(filters: [makeFilter()], selected: [:])
+        let unnamed = DiscoverFilterRow.rows(filters: [makeFilter(name: "")], selected: [:])
         #expect(named[0].showsName)
         #expect(!unnamed[0].showsName)
         #expect(named[0].values.count == unnamed[0].values.count)

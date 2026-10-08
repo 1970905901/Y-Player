@@ -12,9 +12,12 @@ struct LiveEPGOverrideTests {
         ]}
         """
         var source = try JSONDecoder().decode(LiveSource.self, from: Data(json.utf8))
+        // 与生产路径同一口径：频道继承源级设置（含 EPG 模板展开）。
+        // 先拷一份再传给 `inherit`：`source` 正在被写，**不能**既读它整值又改它元素。
+        let template = source
         for groupIndex in source.groups.indices {
             for channelIndex in source.groups[groupIndex].channels.indices {
-                source.groups[groupIndex].channels[channelIndex].inherit(from: source)
+                source.groups[groupIndex].channels[channelIndex].inherit(from: template)
             }
         }
         return source
