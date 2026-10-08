@@ -277,6 +277,16 @@ public struct HomeView: View {
             }
             .disabled(isLoading || selectedSite == nil)
 
+            // 直播入口：参考录屏里工具栏右侧就是「纸飞机 + 放大镜」两个按钮，
+            // 纸飞机进直播（上游手机版同样是 push 出去，不是第 4 个 Tab）。
+            NavigationLink {
+                LiveView(model: model)
+            } label: {
+                Image(systemName: "paperplane")
+            }
+            .disabled(model.liveSources.isEmpty)
+            .accessibilityLabel("直播")
+
             NavigationLink {
                 SearchView(model: model)
             } label: {

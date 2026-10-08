@@ -61,6 +61,8 @@ public final class AppModel: ObservableObject {
         static let danmakuAPI = "yplayer.danmakuAPI"
         static let engineLogEnabled = "yplayer.engineLogEnabled"
         static let searchHistory = "yplayer.searchHistory"
+        static let liveSource = "yplayer.liveSource"
+        static let liveGroup = "yplayer.liveGroup"
     }
 
     // MARK: - 输出状态
@@ -244,6 +246,70 @@ public final class AppModel: ObservableObject {
     /// （参考实现 `CatSpider.java` 是每个 spider 实例只 init 一次）。
     private let spiderInitializer = CatSpiderInitializer()
 
+    // MARK: - 直播（M07c-2）
+
+    /// 直播清单的加载状态（写法与 ``LoadState`` 一致：界面据此显示加载中 / 失败原因）。
+    public enum LiveState: Sendable {
+        case idle
+        case loading
+        case loaded(LiveSource)
+        case failed(String)
+
+        public var isLoading: Bool {
+            if case .loading = self {
+                return true
+            }
+            return false
+        }
+
+        public var loadedSource: LiveSource? {
+            if case let .loaded(source) = self {
+                return source
+            }
+            return nil
+        }
+
+        public var failureReason: String? {
+            if case let .failed(reason) = self {
+                return reason
+            }
+            return nil
+        }
+    }
+
+    /// 当前选中的直播源名（落 `UserDefaults`；空表示用配置里的第一个源）。
+    ///
+    /// 一个接口里通常有好几个直播源（`SourceConfig.lives`），上游也是「先选源再看分组」，
+    /// 所以选择要持久化，别每次进页面都跳回第一个。
+    @Published public var selectedLiveKey: String {
+        didSet {
+            UserDefaults.standard.set(selectedLiveKey, forKey: StorageKey.liveSource)
+        }
+    }
+
+    /// 当前选中的分组名（落 `UserDefaults`；空表示用清单里的第一个分组）。
+    @Published public var selectedLiveGroup: String {
+        didSet {
+            UserDefaults.standard.set(selectedLiveGroup, forKey: StorageKey.liveGroup)
+        }
+    }
+
+    /// 直播清单状态（`loaded` 里那份 `LiveSource` 带分组与频道）。
+    ///
+    /// setter 是 `internal(set)`：写入点在 `AppModel+Live.swift`（跨文件赋值，理由同 ``localProxyNotice``）。
+    @Published public internal(set) var liveState: LiveState = .idle
+
+    /// 节目单缓存：**频道 `epgID` → 已拿到的节目单**。
+    ///
+    /// 上游把 `Epg` 挂在频道对象上（`Channel.dataList`）；这里按 `epgID` 收在模型里 ——
+    /// `LiveEPGRepository.load(channel:source:existing:)` 用这份缓存跳过「已有那天」的请求
+    /// （M07c 的接口语义），界面换频道时也不必重复拉。
+    @Published public internal(set) var liveGuides: [String: EPGGuide] = [:]
+
+    /// 节目单拿不到时的原因（**不弹错**：界面上那一行显示「暂无节目」就行，
+    /// 但原因要留痕，免得「为什么没有节目单」永远查不出来）。
+    @Published public internal(set) var liveEPGNotice: String = ""
+
     /// 当前播放设置。
     public var playbackSettings: PlaybackSettings {
         PlaybackSettings(engine: preferredEngine, decoderMode: decoderMode)
@@ -286,6 +352,8 @@ public final class AppModel: ObservableObject {
         homeLayout = storedLayout.flatMap(HomeLayout.init(rawValue:)) ?? .vertical
         isLocalProxyEnabled = defaults.object(forKey: StorageKey.localProxyEnabled) as? Bool ?? true
         localSyncIdentifier = Self.storedSyncIdentifier(defaults: defaults)
+        selectedLiveKey = defaults.string(forKey: StorageKey.liveSource) ?? ""
+        selectedLiveGroup = defaults.string(forKey: StorageKey.liveGroup) ?? ""
 
         // 缓存有效期：默认值与参考图一致（源 12 小时、首页 7 天）。
         let storedSourceLifetime = defaults.string(forKey: StorageKey.sourceCacheLifetime)
