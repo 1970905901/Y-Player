@@ -155,20 +155,16 @@ public struct SniffRules: Sendable, Hashable {
     }
 
     /// 正则**找得到**（Java `Matcher.find()`，不是整串匹配）。
+    ///
+    /// 实现委托给 ``RegexScanner``：嗅探规则、时移模板、host 规则共用同一套「Java 风格」语义，
+    /// 避免三处各写一份、日后各自演化。
     static func regexFinds(_ pattern: String, in text: String) -> Bool {
-        firstMatch(pattern: pattern, in: text) != nil
+        RegexScanner.finds(pattern, in: text)
     }
 
     /// 正则查找并返回第一处匹配（Java `m.group(0)`）；正则非法或文本为空时返回 `nil`。
     static func firstMatch(pattern: String, in text: String) -> String? {
-        guard !pattern.isEmpty, !text.isEmpty, let regex = try? NSRegularExpression(pattern: pattern) else {
-            return nil
-        }
-        let range = NSRange(text.startIndex ..< text.endIndex, in: text)
-        guard let match = regex.firstMatch(in: text, range: range), let matched = Range(match.range, in: text) else {
-            return nil
-        }
-        return String(text[matched])
+        RegexScanner.firstMatch(pattern, in: text)
     }
 }
 
