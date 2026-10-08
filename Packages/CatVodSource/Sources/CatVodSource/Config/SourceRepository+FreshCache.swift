@@ -31,7 +31,7 @@ public extension SourceRepository {
             guard isFresh(cacheURL, maxAge: maxAge) else {
                 return nil
             }
-            let config = try decodeConfig(try Data(contentsOf: cacheURL))
+            let config = try decodeConfig(Data(contentsOf: cacheURL))
             return LoadedSource(
                 kind: .json,
                 config: config,
