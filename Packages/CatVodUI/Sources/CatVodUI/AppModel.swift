@@ -407,6 +407,15 @@ public final class AppModel: ObservableObject {
     /// 站点传输的缓存（接口换过才重建，见 ``AppModel/transportForConfiguration()``）。
     var cachedTransport: HTTPTransport?
 
+    /// 跳过广告的统计（M06k）：本机服务的 `/m3u8` 在后台线程记账，这里持有同一个盒子。
+    let adSkipRecorder = AdSkipRecorder()
+
+    /// 播放页的「已跳过广告 N 段」提示（空 = 不显示）。
+    ///
+    /// 与 ``playbackNotice``（内核/解码这类**状态**说明）分开：那个是「为什么这样播」，
+    /// 这个是「刚刚发生了什么」，前者常驻、后者跟着清理结果变。
+    @Published public internal(set) var adSkipNotice: String = ""
+
     public init(cacheDirectory: URL? = nil, defaults: UserDefaults = .standard) {
         let base = cacheDirectory ?? Self.defaultCacheDirectory()
         self.cacheDirectory = base
@@ -480,6 +489,14 @@ public final class AppModel: ObservableObject {
         // 引擎日志：默认关（与参考图的开关初始状态一致）。
         isEngineLogEnabled = defaults.object(forKey: StorageKey.engineLogEnabled) as? Bool ?? false
         refreshPlaybackNotice()
+
+        // 跳过广告的提示（M06k）：统计产生在本机服务的线程池里，这里把它带回主线程。
+        // 放在 init 末尾是因为闭包捕获 self，必须等所有存储属性就位。
+        adSkipRecorder.setListener { [weak self] stats in
+            Task { @MainActor [weak self] in
+                self?.applyAdSkip(stats)
+            }
+        }
     }
 
     // MARK: - 配置
@@ -545,6 +562,8 @@ public final class AppModel: ObservableObject {
             refreshAdRules()
             // 缓存里的传输也作废：header / 广告拦截 / 代理都来自旧配置（M06j）。
             cachedTransport = nil
+            // 跳过广告的累计统计也归零：换了接口就是新的一轮（M06k）。
+            resetAdSkip()
             // 配置已变更：缓存里的详情可能对应旧站点/旧线路，直接清空。
             await detailCache.invalidateAll()
             // 接口缓存自愈：按容量上限淘汰最旧的（当前接口的缓存不动）。

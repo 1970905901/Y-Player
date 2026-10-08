@@ -54,6 +54,11 @@ struct PlaybackSettingsSection: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            if !model.adSkipNotice.isEmpty {
+                Label(model.adSkipNotice, systemImage: "scissors")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

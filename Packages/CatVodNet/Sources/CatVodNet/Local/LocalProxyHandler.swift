@@ -34,15 +34,19 @@ public struct LocalProxyHandler: HTTPHandler {
     /// **每个清单请求读一次**：配置换了不需要重启本机服务。
     /// 默认给空数组 —— 没配规则的部署行为与 M06c 完全一致（清理器拿到空规则会直接原样返回）。
     private let adRules: @Sendable () -> [HLSManifestCleaner.Rule]
+    /// 跳过广告的统计（M06k）：每次清理后记一笔，播放页据此提示。
+    private let adSkip: AdSkipRecorder
 
     public init(
         upstream: LocalProxyUpstreamClient,
         timeout: TimeInterval = 30,
-        adRules: @escaping @Sendable () -> [HLSManifestCleaner.Rule] = { [] }
+        adRules: @escaping @Sendable () -> [HLSManifestCleaner.Rule] = { [] },
+        adSkip: AdSkipRecorder = AdSkipRecorder()
     ) {
         self.upstream = upstream
         self.timeout = timeout
         self.adRules = adRules
+        self.adSkip = adSkip
     }
 
     /// 路径 → 路由；nil 表示本服务不处理。
@@ -132,6 +136,8 @@ public struct LocalProxyHandler: HTTPHandler {
             // 广告清理（M06d）：**先**按接口配置的规则清一遍，**再**把相对地址改写成回本机。
             // 顺序不能反 —— 规则里的 host / 域名说的是**上游**地址，改写之后就只剩 127.0.0.1 了。
             let cleaned = HLSManifestCleaner.clean(baseURL: target, manifest: text, rules: adRules())
+            // 记一笔统计（M06k）：播放页的「已跳过 N 段」就是从这里来的。
+            adSkip.record(cleaned)
             let source = cleaned.changed ? cleaned.manifest : text
             let rewritten = HLSPlaylistRewriter.rewrite(source, baseURL: target) { nested in
                 Self.childURL(nested, authority: Self.authority(from: request), injectedHeaders: request.query["h"] ?? "")

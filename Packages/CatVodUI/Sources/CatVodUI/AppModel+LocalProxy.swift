@@ -143,14 +143,26 @@ public extension AppModel {
     /// 构造本机服务：转发侧复用与站点同一套传输层配置（默认 UA、`headers[]` 注入、`ads[]` 拦截）。
     private func makeLocalProxyServer() -> LocalHTTPServer {
         let config = state.loadedSource?.config
-        let transport = config.map { URLSessionTransport(configuration: URLSessionTransport.Configuration(config: $0)) }
+        let transport = config.map { URLSessionTransport(configuration: Self.transportConfiguration(for: $0)) }
             ?? URLSessionTransport()
         // 规则提供者闭包**只捕获那个 Sendable 小盒子**，不捕获 AppModel：
         // 它会在线程池里被调用，碰到主线程状态就是数据竞争。
         let store = adRuleStore
         return LocalHTTPServer(handler: LocalProxyHandler(
             upstream: LocalProxyUpstreamClient(transport: transport),
-            adRules: { store.current }
+            adRules: { store.current },
+            adSkip: adSkipRecorder
         ))
+    }
+
+    /// 把后台上报的清理统计落到界面提示上（主线程）。
+    func applyAdSkip(_ stats: AdSkipRecorder.Stats) {
+        adSkipNotice = AdSkipNotice.text(for: stats)
+    }
+
+    /// 换片 / 重新开始播放时清掉提示与累计统计（否则「上一集跳了 3 段」会跟着下一集走）。
+    func resetAdSkip() {
+        adSkipRecorder.reset()
+        adSkipNotice = ""
     }
 }

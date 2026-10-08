@@ -54,6 +54,7 @@ struct LocalM3U8RouteTests {
             + "#EXTINF:5.0,\nseg-2.ts\n"
             + "#EXTINF:5.0,\nseg-3.ts\n"
             + "#EXT-X-ENDLIST\n"
+        let recorder = AdSkipRecorder()
         let upstream = StubUpstreamTransport(
             status: 200,
             headers: ["Content-Type": "application/vnd.apple.mpegurl"],
@@ -64,7 +65,8 @@ struct LocalM3U8RouteTests {
         )
         let handler = LocalProxyHandler(
             upstream: LocalProxyUpstreamClient(transport: upstream),
-            adRules: { [rule] }
+            adRules: { [rule] },
+            adSkip: recorder
         )
 
         let response = try await handler.handleRequest(makeRequest(query: urlQuery(playlistURL)))
@@ -75,6 +77,11 @@ struct LocalM3U8RouteTests {
         #expect(body.contains("seg-1.ts"))
         // 剩下的分片仍要改写成走本机：清理与改写是两件事，不能互相抵消
         #expect(body.contains("127.0.0.1:9978/m3u8"))
+        // 跳过广告的统计（M06k）：删了 1 个广告分片（`#EXTINF:7.0`）—— 播放页的提示就是从这里来的
+        #expect(recorder.stats.playlists == 1)
+        #expect(recorder.stats.cleanedPlaylists == 1)
+        #expect(recorder.stats.removedSegments == 1)
+        #expect(recorder.stats.removedDurationSec == 7)
     }
 
     @Test("路由：`/m3u8` 归到 m3u8（前缀命中）")
