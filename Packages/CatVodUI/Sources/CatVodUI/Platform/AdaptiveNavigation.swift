@@ -111,6 +111,64 @@ public extension View {
     }
 }
 
+/// 版本自适应的「内嵌搜索栏」：搜索框放在导航栏**中间**，右侧可放一个按钮。
+///
+/// 参考录屏的搜索页就是这个形态：返回箭头 + 搜索框 + 圆形按钮在**同一行**。
+/// 系统搜索栏（`.searchable`）只能出现在标题下方的抽屉里，没法与返回按钮同行，
+/// 所以搜索框按录屏自绘（圆角浅灰底 + 占位文字），放置位则用系统的原生工具栏槽位：
+///
+/// | 平台/版本 | 放置位 |
+/// | --- | --- |
+/// | iOS 15+ | `.principal`（导航栏中间）+ `.topBarTrailing` |
+/// | macOS 13+ | 工具栏没有 `.principal`，用默认放置 + `.primaryAction`（等价观感） |
+public struct AdaptiveSearchBarModifier<Trailing: View>: ViewModifier {
+    @Binding private var text: String
+    private let prompt: String
+    private let trailing: Trailing
+
+    public init(text: Binding<String>, prompt: String, @ViewBuilder trailing: () -> Trailing) {
+        _text = text
+        self.prompt = prompt
+        self.trailing = trailing()
+    }
+
+    public func body(content: Content) -> some View {
+        #if os(iOS)
+        content.toolbar {
+            ToolbarItem(placement: .principal) { field }
+            ToolbarItem(placement: .topBarTrailing) { trailing }
+        }
+        #else
+        content.toolbar {
+            ToolbarItem(placement: .automatic) { field }
+            ToolbarItem(placement: .primaryAction) { trailing }
+        }
+        #endif
+    }
+
+    /// 搜索框本体：圆角浅灰底 + 占位文字（录屏里框内没有放大镜图标，这里也不加）。
+    private var field: some View {
+        TextField(prompt, text: $text)
+            .textFieldStyle(.plain)
+            .submitLabel(.search)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .frame(maxWidth: .infinity)
+            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+public extension View {
+    /// 把「内嵌搜索框 + 右侧按钮」放进导航栏（iOS 与返回按钮同一行；macOS 用等价放置）。
+    func adaptiveSearchBar<Trailing: View>(
+        text: Binding<String>,
+        prompt: String,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        modifier(AdaptiveSearchBarModifier(text: text, prompt: prompt, trailing: trailing))
+    }
+}
+
 /// 版本自适应的可搜索修饰：iOS 15+ 原生 `.searchable`，只在放置位置上做版本区分。
 public extension View {
     /// 顶部搜索框（iOS/iPadOS 的原生搜索栏；macOS 走原生工具栏搜索）。

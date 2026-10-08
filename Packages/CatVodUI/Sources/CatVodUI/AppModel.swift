@@ -60,6 +60,7 @@ public final class AppModel: ObservableObject {
         static let autoPlayFirstEpisode = "yplayer.autoPlayFirstEpisode"
         static let danmakuAPI = "yplayer.danmakuAPI"
         static let engineLogEnabled = "yplayer.engineLogEnabled"
+        static let searchHistory = "yplayer.searchHistory"
     }
 
     // MARK: - 输出状态
@@ -150,8 +151,36 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    // MARK: - 引擎日志（设置 → 数据 → 日志管理）
+    // MARK: - 搜索历史（搜索页）
 
+    /// 搜索历史：最近的在前，最多 `SearchHistory.limit` 条。
+    ///
+    /// 与其它设置一样「用户动作即落盘」（UserDefaults），重启后仍在。
+    /// 规则（去重置顶 / 封顶 / 坏存档当空）在 `SearchHistory` 里，单测覆盖。
+    @Published public var searchHistory: [String] {
+        didSet {
+            UserDefaults.standard.set(SearchHistory.encode(searchHistory), forKey: StorageKey.searchHistory)
+        }
+    }
+
+    /// 记一次搜索（回车提交、或点历史里的某一条）。
+    ///
+    /// 内容没变化就不写盘，避免每次搜索都触发一次 UserDefaults 写入。
+    public func rememberSearch(_ keyword: String) {
+        let updated = SearchHistory.adding(keyword, to: searchHistory)
+        if updated != searchHistory {
+            searchHistory = updated
+        }
+    }
+
+    /// 清空搜索历史（搜索页历史区右侧的 🗑）。
+    public func clearSearchHistory() {
+        if !searchHistory.isEmpty {
+            searchHistory = []
+        }
+    }
+
+    // MARK: - 引擎日志（设置 → 数据 → 日志管理）
     /// 引擎日志开关：控制宿主（js2p / libnode）输出是否**落盘**（参考图默认关）。
     ///
     /// 开启后宿主输出会写入日志文件，可配合「导出」带走现场；
@@ -270,6 +299,9 @@ public final class AppModel: ObservableObject {
 
         // 弹幕 API：默认未启用、四个槽位为空。
         danmakuAPI = DanmakuAPIConfig.decode(defaults.string(forKey: StorageKey.danmakuAPI))
+
+        // 搜索历史：默认空（搜索页据此决定显示历史胶囊还是「还没有搜索记录」）。
+        searchHistory = SearchHistory.decode(defaults.string(forKey: StorageKey.searchHistory) ?? "")
 
         // 引擎日志：默认关（与参考图的开关初始状态一致）。
         isEngineLogEnabled = defaults.object(forKey: StorageKey.engineLogEnabled) as? Bool ?? false

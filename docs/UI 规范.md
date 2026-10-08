@@ -18,6 +18,7 @@
 | 列表样式 | `.insetGrouped`（iOS 原生分组） | 同左 | `.inset`（macOS 原生） | `adaptiveListStyle()` |
 | 工具栏 | `navigationBarItems` | `toolbar { ToolbarItem(.topBar…) }` | `toolbar { .navigation / .primaryAction }` | `adaptiveToolbar(leading:trailing:)` |
 | 搜索栏 | `.searchable` + `.navigationBarDrawer(displayMode:.always)` | `.searchable`（新放置语义） | `.searchable` | `adaptiveSearchable(text:prompt:)` |
+| 搜索栏（导航栏内嵌形态，参考录屏的搜索页） | `.toolbar` + `.principal` + `.topBarTrailing` | 同左 | 默认放置 + `.primaryAction`（macOS 无 `.principal`） | `adaptiveSearchBar(text:prompt:trailing:)` |
 | 导航标题样式 | `.inline` 小标题（发现页版式） | 同左 | 原样（macOS 无该形态） | `adaptiveInlineNavigationTitle()` |
 
 后续会按需补充（仍遵循同一原则）：`NavigationSplitView`（iPad/Mac 双栏，iOS 16+/macOS 13+）、
