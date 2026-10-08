@@ -81,12 +81,7 @@ public struct LiveView: View {
     /// 一点就到、并且仍然用上次那条线路（线路名来自清单里的 `地址$线路名`）。
     private func resumeRow(_ target: LiveKeepTarget) -> some View {
         NavigationLink {
-            LiveChannelPlaybackView(
-                model: model,
-                channel: target.channel,
-                groupName: target.group.name,
-                lineIndex: target.lineIndex
-            )
+            LiveChannelPlaybackView(model: model, channel: target.channel, lineIndex: target.lineIndex)
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "play.circle.fill")
@@ -110,16 +105,20 @@ public struct LiveView: View {
         .buttonStyle(.plain)
     }
 
-    /// 分组条：当前分组加粗（与发现页分类条同一形态；加密分组带一个锁）。
+    /// 分组条：当前分组加粗（与发现页分类条同一形态；加密分组带一个锁、「收藏」带一个星）。
     private func groupStrip(_ source: LiveSource) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 20) {
-                ForEach(LiveListLayout.groupRows(source)) { row in
+                ForEach(LiveListLayout.groupRows(source, favoriteCount: favoriteCount)) { row in
                     let isSelected = row.name == model.selectedLiveGroupObject?.name
                     Button {
                         model.selectedLiveGroup = row.name
                     } label: {
                         HStack(spacing: 4) {
+                            if row.isKeep {
+                                Image(systemName: "star.fill")
+                                    .font(.caption2)
+                            }
                             if row.isHidden {
                                 Image(systemName: "lock.fill")
                                     .font(.caption2)
@@ -139,19 +138,19 @@ public struct LiveView: View {
         }
     }
 
+    /// 收藏的频道数（分组条据此决定要不要给「收藏」这一组）。
+    private var favoriteCount: Int {
+        model.liveFavoriteGroup?.channels.count ?? 0
+    }
+
     private var channelList: some View {
         List {
             ForEach(rows) { row in
                 HStack(spacing: 8) {
                     NavigationLink {
-                        LiveChannelPlaybackView(
-                            model: model,
-                            channel: row.channel,
-                            groupName: currentGroupName,
-                            lineIndex: row.initialLineIndex
-                        )
+                        LiveChannelPlaybackView(model: model, channel: row.channel, lineIndex: row.initialLineIndex)
                     } label: {
-                        LiveChannelRowView(row: row)
+                        LiveChannelRowView(row: row, isFavorite: model.isLiveFavorite(row.channel))
                     }
                     // 节目单入口：一个频道的各档节目（时移回看从这里进）。
                     Button {
@@ -167,6 +166,15 @@ public struct LiveView: View {
                 // 「可见即预取」：这一行真的被渲染出来了，才为它排队拉节目单
                 // （串行 + 去重 + 失败不重试 + 本次进入封顶，见 `LiveEPGPrefetch`）。
                 .task { model.requestLiveGuide(for: row.channel) }
+                // 收藏：长按（iOS）/ 右键（macOS）—— 上游 `LiveActivity.onLongClick` 就是这个触发方式。
+                // 加密分组里的频道不给收藏（上游 `if (mGroup.isHidden()) return false;`，在模型里拦）。
+                .contextMenu {
+                    Button {
+                        model.toggleLiveFavorite(row.channel)
+                    } label: {
+                        Text(model.isLiveFavorite(row.channel) ? "取消收藏" : "收藏")
+                    }
+                }
             }
         }
         .adaptiveListStyle()
@@ -175,11 +183,6 @@ public struct LiveView: View {
                 LiveScheduleView(model: model, channel: row.channel, lineIndex: row.initialLineIndex)
             }
         }
-    }
-
-    /// 当前分组的名字（写「上次观看」要用 `分组名@@@频道名@@@线路下标` 里的第一段）。
-    private var currentGroupName: String {
-        model.selectedLiveGroupObject?.name ?? ""
     }
 
     /// 当前分组的频道行：节目单按**频道各自**取（缓存就在 ``AppModel/liveGuides`` 里），
@@ -210,9 +213,11 @@ public struct LiveView: View {
     }
 }
 
-/// 频道列表的一行：图标 + 名字 + 「正在播」，右侧给「上次」标记、回看标记与频道号。
+/// 频道列表的一行：图标 + 名字 + 「正在播」，右侧给「上次」/ 收藏星标 / 回看标记与频道号。
 private struct LiveChannelRowView: View {
     let row: LiveChannelRow
+    /// 已收藏时给一个小星标（收藏本身是长按 / 右键切换，星标只是状态回显）。
+    let isFavorite: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -246,6 +251,12 @@ private struct LiveChannelRowView: View {
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("可回看")
             }
+            if isFavorite {
+                Image(systemName: "star.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("已收藏")
+            }
             Text(row.number)
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(.secondary)
@@ -268,14 +279,11 @@ private struct LiveChannelRowView: View {
 private struct LiveChannelPlaybackView: View {
     @ObservedObject var model: AppModel
     let channel: LiveChannel
-    /// 这个频道所属的分组名（写「上次观看」要用它，上游写的是 `Group.getName()`）。
-    let groupName: String
     @State private var lineIndex: Int
 
-    init(model: AppModel, channel: LiveChannel, groupName: String, lineIndex: Int) {
+    init(model: AppModel, channel: LiveChannel, lineIndex: Int) {
         self.model = model
         self.channel = channel
-        self.groupName = groupName
         _lineIndex = State(initialValue: lineIndex)
     }
 
@@ -293,7 +301,7 @@ private struct LiveChannelPlaybackView: View {
             }
             .task {
                 await model.loadLiveGuide(for: channel)
-                model.rememberLiveChannel(channel, group: groupName, lineIndex: lineIndex)
+                model.rememberLiveChannel(channel, lineIndex: lineIndex)
             }
     }
 
@@ -325,7 +333,7 @@ private struct LiveChannelPlaybackView: View {
             return
         }
         lineIndex = index
-        model.rememberLiveChannel(channel, group: groupName, lineIndex: index)
+        model.rememberLiveChannel(channel, lineIndex: index)
     }
 
     // MARK: - 播放

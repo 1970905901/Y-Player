@@ -15,6 +15,8 @@ struct LiveGroupRow: Identifiable, Equatable {
     var count: Int
     /// 是否是加密分组（上游 `Group.isHidden`：组名带 `_密码`）。
     var isHidden: Bool
+    /// 是否是「收藏」分组（运行时分组，不在清单里）。
+    var isKeep: Bool
 
     var id: String { name }
 }
@@ -49,11 +51,22 @@ struct LiveChannelRow: Identifiable, Equatable {
 
 /// 直播页的行模型构造。
 enum LiveListLayout {
-    /// 分组列表：**保持清单里的分组顺序**（上游也是这个顺序），并带上频道数。
-    static func groupRows(_ source: LiveSource) -> [LiveGroupRow] {
-        source.groups.map { group in
-            LiveGroupRow(name: group.name, count: group.channels.count, isHidden: group.isHidden)
+    /// 分组列表：**「收藏」在最前**（上游 `LiveApi.parse` 把 `Group.create(R.string.keep)` 插到第 0 组），
+    /// 后面按清单顺序。
+    ///
+    /// 上游只在「清单的第 0 组不是收藏组」时才插（`groups.get(0).isKeep()`），这里防的是同一种情况；
+    /// 源自己就有一个叫「收藏」的组、又不在首位时会出现两个同名行 —— 上游有同样的毛病，不额外发明规则。
+    static func groupRows(_ source: LiveSource, favoriteCount: Int = 0) -> [LiveGroupRow] {
+        var rows = source.groups.map { group in
+            LiveGroupRow(name: group.name, count: group.channels.count, isHidden: group.isHidden, isKeep: group.isKeep)
         }
+        if favoriteCount > 0, rows.first?.isKeep != true {
+            rows.insert(
+                LiveGroupRow(name: LiveGroup.keepName, count: favoriteCount, isHidden: false, isKeep: true),
+                at: 0
+            )
+        }
+        return rows
     }
 
     /// 某个分组的频道行（顺序即清单顺序）。

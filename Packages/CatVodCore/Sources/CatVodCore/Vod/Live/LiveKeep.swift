@@ -54,6 +54,7 @@ public struct LiveKeep: Sendable, Hashable {
     /// 落到某个已解析的清单上：**分组名 + 频道名 → 频道名 → 线路下标** 三级回落。
     ///
     /// - 分组名命不中时在全部频道里按名字找（源改过分组名也能回到那个频道）；
+    ///   分组名传空串就是这个用法（``LiveKeep/locate(channelNamed:in:line:)``：只知道频道名时）；
     /// - 线路下标越界回落第 0 条（源换了线路数量）；
     /// - 频道找不到返回 `nil`（清单换过，旧记录作废）。
     public func resolve(in source: LiveSource) -> LiveKeepTarget? {

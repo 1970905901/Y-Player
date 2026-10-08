@@ -64,6 +64,7 @@ public final class AppModel: ObservableObject {
         static let liveSource = "yplayer.liveSource"
         static let liveGroup = "yplayer.liveGroup"
         static let liveKeep = "yplayer.liveKeep"
+        static let liveFavorites = "yplayer.liveFavorites"
     }
 
     // MARK: - 输出状态
@@ -343,6 +344,16 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    /// 直播**收藏频道**：**源名 → 收藏列表**（上游 `Keep` 表里 `type` 为直播的那些）。
+    ///
+    /// 与 ``liveKeeps``（上次观看位置）是两件事：这个是「收藏夹」，那个是「上次看到哪儿」；
+    /// 上游也把两者分开存（`Keep` 表 vs. `Live.keep` 字段）。按源名分桶的理由同 ``liveKeeps``。
+    @Published public internal(set) var liveFavorites: [String: [LiveFavorite]] {
+        didSet {
+            UserDefaults.standard.set(LiveFavoriteBook.encode(liveFavorites), forKey: StorageKey.liveFavorites)
+        }
+    }
+
     /// 当前播放设置。
     public var playbackSettings: PlaybackSettings {
         PlaybackSettings(engine: preferredEngine, decoderMode: decoderMode)
@@ -407,6 +418,9 @@ public final class AppModel: ObservableObject {
 
         // 直播「上次观看」：默认空（直播页据此决定要不要给「继续观看」入口）。
         liveKeeps = LiveKeepBook.decode(defaults.string(forKey: StorageKey.liveKeep) ?? "")
+
+        // 直播收藏频道：默认空（分组条上据此决定要不要给「收藏」这一组）。
+        liveFavorites = LiveFavoriteBook.decode(defaults.string(forKey: StorageKey.liveFavorites))
 
         // 引擎日志：默认关（与参考图的开关初始状态一致）。
         isEngineLogEnabled = defaults.object(forKey: StorageKey.engineLogEnabled) as? Bool ?? false

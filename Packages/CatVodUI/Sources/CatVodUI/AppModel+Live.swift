@@ -31,11 +31,55 @@ public extension AppModel {
     }
 
     /// 当前选中的分组：按名字取，找不到就用清单里的第一个。
+    ///
+    /// 「收藏」是个**运行时分组**（不在清单里，由 ``liveFavoriteGroup`` 现算），所以单独接一下：
+    /// `selectedLiveGroup` 存的是它的名字。收藏清空后（或收藏的频道都不在清单里）自动回落第一个真分组。
     var selectedLiveGroupObject: LiveGroup? {
         guard let source = liveSource, !source.groups.isEmpty else {
             return nil
         }
+        if selectedLiveGroup == LiveGroup.keepName, let favorites = liveFavoriteGroup {
+            return favorites
+        }
         return source.groups.first { $0.name == selectedLiveGroup } ?? source.groups.first
+    }
+
+    /// 当前源的收藏列表（没有就是空数组）。
+    var liveFavoriteList: [LiveFavorite] {
+        guard let sourceName = selectedLiveSource?.name else {
+            return []
+        }
+        return liveFavorites[sourceName] ?? []
+    }
+
+    /// 「收藏」分组（上游 `LiveConfig.applyKeepsToGroups` 的第 0 组）；没有命中任何频道时为 `nil`。
+    var liveFavoriteGroup: LiveGroup? {
+        guard let source = liveSource else {
+            return nil
+        }
+        return LiveFavorites.group(in: source, favorites: liveFavoriteList)
+    }
+
+    /// 这个频道收藏了没有（界面据此显示星标、切换菜单标题）。
+    func isLiveFavorite(_ channel: LiveChannel) -> Bool {
+        LiveFavorites.contains(channel.name, in: liveFavoriteList)
+    }
+
+    /// 收藏 / 取消收藏（上游 `LiveActivity.onLongClick`）。
+    ///
+    /// 两条与上游一致的闸门：
+    /// - **加密（隐藏）分组里的频道不给收藏**（上游 `if (mGroup.isHidden()) return false;`）；
+    /// - 分组按**频道名回查**：从「收藏」分组里操作时，也要落回它真正所在的组。
+    func toggleLiveFavorite(_ channel: LiveChannel) {
+        guard let source = liveSource, let sourceName = selectedLiveSource?.name, !sourceName.isEmpty else {
+            return
+        }
+        guard let target = LiveKeep.locate(channelNamed: channel.name, in: source), !target.group.isHidden else {
+            return
+        }
+        let favorite = LiveFavorite(name: channel.name, logo: channel.logo, group: target.group.name)
+        let updated = LiveFavorites.toggling(favorite, in: liveFavoriteList)
+        liveFavorites = LiveFavoriteBook.recording(updated, for: sourceName, in: liveFavorites)
     }
 
     /// 某频道现在的节目单：接口形态按 `epgID` 存（``liveGuides``），文件形态一份覆盖多频道（``liveFileGuide``）。
@@ -72,13 +116,21 @@ public extension AppModel {
 
     /// 记一次「上次观看」（界面在打开频道 / 换线路时调用）。
     ///
-    /// 写的是**上游那一行**：`分组名@@@频道名@@@线路下标`（`LiveKeep` 负责编码），
-    /// 键是当前源名。清单里的分组名已经脱过 `_密码`，与上游 `Group.getName()` 同一口径。
-    func rememberLiveChannel(_ channel: LiveChannel, group: String, lineIndex: Int) {
-        guard let sourceName = selectedLiveSource?.name, !sourceName.isEmpty else {
+    /// 写的是**上游那一行**：`分组名@@@频道名@@@线路下标`（`LiveKeep` 负责编码），键是当前源名。
+    /// 两条闸门：
+    /// - 分组**按频道名回查**（``LiveKeep/locate(channelNamed:in:line:)``）—— 从「收藏」分组点进去的
+    ///   频道也要写它真正所在的组，源更新过搬了组也不会写错；
+    /// - **加密（隐藏）分组里的频道不记**（上游 `LiveConfig.setKeep`：`!channel.getGroup().isHidden()`）。
+    func rememberLiveChannel(_ channel: LiveChannel, lineIndex: Int) {
+        guard let source = liveSource, let sourceName = selectedLiveSource?.name, !sourceName.isEmpty else {
             return
         }
-        let keep = LiveKeep(group: group, channel: channel.name, line: lineIndex)
+        guard let target = LiveKeep.locate(channelNamed: channel.name, in: source, line: lineIndex),
+              !target.group.isHidden
+        else {
+            return
+        }
+        let keep = LiveKeep(group: target.group.name, channel: target.channel.name, line: target.lineIndex)
         liveKeeps = LiveKeepBook.recording(keep, for: sourceName, in: liveKeeps)
     }
 
