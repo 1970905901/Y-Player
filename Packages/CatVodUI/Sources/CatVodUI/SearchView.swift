@@ -236,8 +236,14 @@ public struct SearchView: View {
                     selectedKey: selectedSiteKey,
                     rules: model.siteGroupRules,
                     savedGroupOrder: model.siteGroupOrder,
+                    names: model.siteNamesForCurrentConfig,
                     onMoveGroup: { group, direction in
                         model.moveSiteGroup(group, direction: direction)
+                    },
+                    onRename: { key, name in
+                        if let site = browsableSites.first(where: { $0.key == key }) {
+                            model.renameSite(site, to: name)
+                        }
                     }
                 ) { key in
                     dismissSitePanel()

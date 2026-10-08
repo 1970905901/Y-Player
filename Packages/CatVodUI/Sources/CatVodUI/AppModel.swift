@@ -68,6 +68,7 @@ public final class AppModel: ObservableObject {
         static let liveEPGSetting = "yplayer.liveEPGSetting"
         static let livePassOverrides = "yplayer.livePassOverrides"
         static let siteGroupOrder = "yplayer.siteGroupOrder"
+        static let siteNames = "yplayer.siteNames"
     }
 
     // MARK: - 输出状态
@@ -380,6 +381,15 @@ public final class AppModel: ObservableObject {
     /// 否则清掉覆盖时没法把频道地址还回去，也不必为此再拉一次清单。
     var rawLiveSource: LiveSource?
 
+    /// 站点**自定义名**：**接口摘要 → {站点 key: 自定义名}**（上游 `SiteNameStore`，键 `site_names`）。
+    ///
+    /// 桶键是接口地址的摘要（`ConfigIdentity.key(for:)`）：地址可能带 token，落盘的东西不存明文。
+    @Published public internal(set) var siteNames: [String: [String: String]] {
+        didSet {
+            UserDefaults.standard.set(SiteNameBook.encode(siteNames), forKey: StorageKey.siteNames)
+        }
+    }
+
     /// 站点面板**分组条**的顺序：**接口地址 → 分组名数组**（上游 `SiteGroupOrderStore`，键 `site_group_order_<cid>`）。
     ///
     /// 按接口分桶的理由同直播那些书：换接口时分组名整套换掉，混在一起会互相污染。
@@ -483,6 +493,9 @@ public final class AppModel: ObservableObject {
 
         // 站点面板分组条的顺序：默认空（= 每个接口都用「按站点顺序首次出现」的默认顺序）。
         siteGroupOrders = SiteGroupOrderBook.decode(defaults.string(forKey: StorageKey.siteGroupOrder))
+
+        // 站点自定义名：默认空（= 全都用配置里的原始名）。
+        siteNames = SiteNameBook.decode(defaults.string(forKey: StorageKey.siteNames))
 
         // 引擎日志：默认关（与参考图的开关初始状态一致）。
         isEngineLogEnabled = defaults.object(forKey: StorageKey.engineLogEnabled) as? Bool ?? false

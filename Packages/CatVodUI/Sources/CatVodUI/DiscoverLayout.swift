@@ -94,23 +94,34 @@ struct DiscoverSiteRow: Identifiable, Equatable {
 enum DiscoverSiteList {
     /// 面板要列出的行：**保持上游站点顺序**（面板行序 = 配置里的站点序）。
     ///
-    /// `selectedGroup` 非空时只留该分组的站点（点分组条某一项之后）。
+    /// `selectedGroup` 非空时只留该分组的站点（点分组条某一项之后）；
+    /// `keyword` 非空时按 ``SiteNameRules/matchesSearch(rawName:customName:key:keyword:)`` 过滤（搜索框）。
     static func rows(
         sites: [Site],
         selectedKey: String,
+        names: [String: String] = [:],
         tags: [String: [String]] = [:],
-        selectedGroup: String = ""
+        selectedGroup: String = "",
+        keyword: String = ""
     ) -> [DiscoverSiteRow] {
         sites
+            .filter { matchesSearch(site: $0, names: names, keyword: keyword) }
             .filter { matches(site: $0, tags: tags, selectedGroup: selectedGroup) }
             .map { site in
-                DiscoverSiteRow(key: site.key, title: title(for: site), isSelected: site.key == selectedKey)
+                DiscoverSiteRow(
+                    key: site.key,
+                    title: title(for: site, names: names),
+                    isSelected: site.key == selectedKey
+                )
             }
     }
 
     /// 站点显示名：上游没给名字时回落 `key`（工具栏按钮与面板用同一口径）。
-    static func title(for site: Site) -> String {
-        site.name.isEmpty ? site.key : site.name
+    ///
+    /// 有自定义名时用自定义名 —— 口径落在 `SiteNameRules.displayName`，这里只是转发，
+    /// 避免「面板显示一套、抽标签用另一套」。
+    static func title(for site: Site, names: [String: String] = [:]) -> String {
+        SiteNameRules.displayName(rawName: site.name, customName: names[site.key] ?? "", key: site.key)
     }
 
     /// 这个站点在不在选中的分组里（`selectedGroup` 为空 = 不筛）。
@@ -119,14 +130,32 @@ enum DiscoverSiteList {
         return tags[site.key]?.contains(selectedGroup) ?? false
     }
 
-    /// 每个站点从**显示名**里抽出来的标签（键是站点 `key`）；抽不出标签的站点不出现在结果里。
-    ///
-    /// 用显示名而不是原始 `name`：上游 `SiteNameRules.groups` 吃的是「生效名」（自定义名优先）——
-    /// 我们还没有自定义站点名，所以两者一样，但口径先钉在这里。
-    static func tags(sites: [Site], rules: [GroupRule], disabledIDs: Set<String> = []) -> [String: [String]] {
+    /// 搜索命中（新名 / 原名 / key 任一包含关键词即算 —— 规则在 `SiteNameRules`）。
+    static func matchesSearch(site: Site, names: [String: String], keyword: String) -> Bool {
+        SiteNameRules.matchesSearch(
+            rawName: site.name,
+            customName: names[site.key] ?? "",
+            key: site.key,
+            keyword: keyword
+        )
+    }
+
+    /// 每个站点从**生效名**（自定义名优先，否则原始名，再否则 `key`）里抽出来的标签；
+    /// 抽不出标签的站点不出现在结果里。
+    static func tags(
+        sites: [Site],
+        rules: [GroupRule],
+        disabledIDs: Set<String> = [],
+        names: [String: String] = [:]
+    ) -> [String: [String]] {
         var result: [String: [String]] = [:]
         for site in sites {
-            let values = GroupRuleConfig.extract(title(for: site), interfaceRules: rules, disabledIDs: disabledIDs)
+            let values = SiteNameRules.groups(
+                rawName: site.name,
+                customName: names[site.key] ?? "",
+                interfaceRules: rules,
+                disabledIDs: disabledIDs
+            )
             if !values.isEmpty {
                 result[site.key] = values
             }

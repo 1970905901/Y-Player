@@ -88,4 +88,78 @@ struct DiscoverSiteGroupTests {
         #expect(SiteGroupOrder.mergedVisibleOrder(fullOrder: full, visibleOrder: visibleAfterMove)
             == ["首页", "4K", "影视"])
     }
+
+    @Test("改名之后：显示名与分组标签都按新名字来（旧标签跟着消失）")
+    func customNameDrivesTitleAndTags() {
+        let sites = [makeSite(key: "a", name: "[荐][采集]影视天堂")]
+        let names = ["a": "[主力][短剧]我的一号站"]
+
+        #expect(DiscoverSiteList.title(for: sites[0], names: names) == "[主力][短剧]我的一号站")
+
+        let renamed = DiscoverSiteList.tags(sites: sites, rules: rules, names: names)
+        #expect(renamed["a"] == ["主力", "短剧"])
+        #expect(DiscoverSiteList.groups(sites: sites, tags: renamed) == ["主力", "短剧"])
+
+        // 没改名时用的是原始名
+        #expect(DiscoverSiteList.tags(sites: sites, rules: rules)["a"] == ["荐", "采集"])
+    }
+
+    @Test("改名成没有标签的名字：分组条上这个站点就没了")
+    func customNameWithoutTagsDropsGroup() {
+        let sites = [makeSite(key: "a", name: "[荐]影视天堂")]
+        let names = ["a": "我的站"]
+
+        let tags = DiscoverSiteList.tags(sites: sites, rules: rules, names: names)
+
+        #expect(tags["a"] == nil)
+        #expect(DiscoverSiteList.groups(sites: sites, tags: tags).isEmpty)
+    }
+
+    @Test("搜索：新名 / 原名 / key 都能命中，筛选后的顺序仍按站点顺序")
+    func searchMatchesNamesAndKey() {
+        let sites = [
+            makeSite(key: "csp_xxx", name: "XYQ线路一"),
+            makeSite(key: "csp_yyy", name: "XYQ线路二"),
+        ]
+        let names = ["csp_xxx": "[主力]爸妈用"]
+
+        #expect(rows(sites, names: names, keyword: "爸妈").map(\.key) == ["csp_xxx"])
+        #expect(rows(sites, names: names, keyword: "xyq").map(\.key) == ["csp_xxx", "csp_yyy"])
+        #expect(rows(sites, names: names, keyword: "csp_yyy").map(\.key) == ["csp_yyy"])
+        #expect(rows(sites, names: names, keyword: "音乐").isEmpty)
+        #expect(rows(sites, names: names, keyword: "").map(\.key) == ["csp_xxx", "csp_yyy"])
+        // 命中后显示的是**生效名**
+        #expect(rows(sites, names: names, keyword: "爸妈").first?.title == "[主力]爸妈用")
+    }
+
+    @Test("搜索与分组筛选叠加：先按搜索过滤，再按分组过滤")
+    func searchCombinesWithGroupFilter() {
+        let sites = [
+            makeSite(key: "a", name: "甲|4K"),
+            makeSite(key: "b", name: "乙|4K"),
+            makeSite(key: "c", name: "甲|首页"),
+        ]
+        let tags = DiscoverSiteList.tags(sites: sites, rules: rules)
+
+        let result = rows(sites, tags: tags, selectedGroup: "4K", keyword: "甲")
+
+        #expect(result.map(\.key) == ["a"])
+    }
+
+    private func rows(
+        _ sites: [Site],
+        names: [String: String] = [:],
+        tags: [String: [String]] = [:],
+        selectedGroup: String = "",
+        keyword: String = ""
+    ) -> [DiscoverSiteRow] {
+        DiscoverSiteList.rows(
+            sites: sites,
+            selectedKey: "",
+            names: names,
+            tags: tags,
+            selectedGroup: selectedGroup,
+            keyword: keyword
+        )
+    }
 }

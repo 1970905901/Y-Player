@@ -179,15 +179,26 @@ struct DiscoverSitePanel: View {
     var rules: [GroupRule] = []
     /// 存下来的分组顺序（空 = 用「按站点顺序首次出现」的默认顺序）。
     var savedGroupOrder: [String] = []
+    /// 站点自定义名（站点 key → 自定义名）；显示名、分组标签、搜索都用它。
+    var names: [String: String] = [:]
     /// 分组顺序变了（长按菜单里的上移/下移）：回传分组名与方向，由上层算新顺序并落盘。
     var onMoveGroup: ((String, Int) -> Void)?
+    /// 站点改名（回传站点 key 与新名字；新名字为空 = 恢复原名）。
+    var onRename: ((String, String) -> Void)?
     let onSelect: (String) -> Void
 
     /// 当前选中的分组（空 = 不筛）。面板每次打开重置 —— 与上游「关掉就忘」一致。
     @State private var selectedGroup = ""
+    /// 搜索关键词（同样只在这次展示内有效）。
+    @State private var keyword = ""
     /// 每个站点抽出来的标签。在这里缓存一次：抽标签要跑正则，不该每次渲染都重算。
-    /// 分组顺序与筛选都是基于它的**廉价**计算，所以「上移/下移之后立刻看到新顺序」不用重新抽标签。
+    /// 分组顺序与筛选都是基于它的**廉价**计算，所以「上移/下移之后立刻看到新顺序」不用重新抽标签；
+    /// 改名之后要重抽，所以 `.task(id: names)` 盯着自定义名。
     @State private var tags: [String: [String]] = [:]
+    /// 重命名弹窗的状态（站点 key 与输入框内容）。
+    @State private var renameKey = ""
+    @State private var renameText = ""
+    @State private var isRenamePresented = false
 
     /// 面板宽度占屏宽的比例：录屏里约占 2/3。
     static let widthFraction: CGFloat = 0.66
@@ -203,11 +214,20 @@ struct DiscoverSitePanel: View {
     }
 
     private var rows: [DiscoverSiteRow] {
-        DiscoverSiteList.rows(sites: sites, selectedKey: selectedKey, tags: tags, selectedGroup: selectedGroup)
+        DiscoverSiteList.rows(
+            sites: sites,
+            selectedKey: selectedKey,
+            names: names,
+            tags: tags,
+            selectedGroup: selectedGroup,
+            keyword: keyword
+        )
     }
 
     var body: some View {
         VStack(spacing: 0) {
+            searchBar
+            Divider()
             groupBar
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -221,6 +241,12 @@ struct DiscoverSitePanel: View {
                             label(row)
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("重命名") { beginRename(row) }
+                            if hasCustomName(row.key) {
+                                Button("恢复原名", role: .destructive) { onRename?(row.key, "") }
+                            }
+                        }
                     }
                 }
             }
@@ -228,9 +254,54 @@ struct DiscoverSitePanel: View {
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .shadow(radius: 14, y: 6)
-        .task {
-            tags = DiscoverSiteList.tags(sites: sites, rules: rules)
+        .task(id: names) {
+            tags = DiscoverSiteList.tags(sites: sites, rules: rules, names: names)
         }
+        .alert("重命名站点", isPresented: $isRenamePresented) {
+            TextField("显示名", text: $renameText)
+            Button("保存") { onRename?(renameKey, renameText) }
+            Button("取消", role: .cancel) { }
+        } message: {
+            Text("填成原名（或清空）即为恢复；分组标签按新名字重抽。")
+        }
+    }
+
+    /// 搜索框：**按生效名 / 原名 / 站点 key** 命中（规则在 `SiteNameRules`）。
+    ///
+    /// 上游把搜索放在同一个面板里，这里保持一致：面板本来就是「找站点」的地方，
+    /// 再开一层弹窗只会多一次跳转。
+    private var searchBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("搜索站点", text: $keyword)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.subheadline)
+            if !keyword.isEmpty {
+                Button {
+                    keyword = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("清空搜索")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    private func hasCustomName(_ key: String) -> Bool {
+        !(names[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// 打开重命名弹窗：输入框预填**当前生效名**（上游 `getEditableName` 同款）。
+    private func beginRename(_ row: DiscoverSiteRow) {
+        renameKey = row.key
+        renameText = hasCustomName(row.key) ? (names[row.key] ?? row.title) : row.title
+        isRenamePresented = true
     }
 
     /// 分组条：**有分组才显示**（对齐上游：`groups.isEmpty()` 时整条隐藏）。

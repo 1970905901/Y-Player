@@ -72,7 +72,7 @@ public struct HomeView: View {
         guard let site = selectedSite else {
             return "选择站点"
         }
-        return DiscoverSiteList.title(for: site)
+        return model.siteDisplayName(for: site)
     }
 
     public var body: some View {
@@ -307,8 +307,14 @@ public struct HomeView: View {
                     selectedKey: selectedSiteKey,
                     rules: model.siteGroupRules,
                     savedGroupOrder: model.siteGroupOrder,
+                    names: model.siteNamesForCurrentConfig,
                     onMoveGroup: { group, direction in
                         model.moveSiteGroup(group, direction: direction)
+                    },
+                    onRename: { key, name in
+                        if let site = browsableSites.first(where: { $0.key == key }) {
+                            model.renameSite(site, to: name)
+                        }
                     }
                 ) { key in
                     dismissSitePanel()
