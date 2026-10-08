@@ -109,15 +109,14 @@ public struct SiteClient: Sendable {
     /// 播放地址。
     ///
     /// - CatSpider 站点：`POST /play`（`flag` + `id`）；
-    /// - CMS 站点：播放地址来自详情里的线路/选集，没有独立 play 接口 → 明确抛不支持，
+    /// - CMS `type=4` 站点：站点自己的 `play` 接口（`play` + `flag`，见 ``CMSClient/play(site:flag:playID:)``）；
+    /// - 其余 CMS 类型（0/1/2）：播放地址来自详情的线路/选集，没有独立 play 接口 →
+    ///   由 ``CMSClient`` 抛 ``CatVodError/unsupported(feature:reason:)``，
     ///   避免界面误以为「调用失败」。
     public func play(site: Site, flag: String, id: String) async throws -> SpiderResult {
         switch try resolve(site) {
-        case .cms:
-            throw CatVodError.unsupported(
-                feature: "play",
-                reason: "CMS 站点的播放地址来自详情的线路/选集，不需要单独的 play 接口"
-            )
+        case let .cms(client):
+            return try await client.play(site: site, flag: flag, playID: id)
         case let .catSpider(client):
             await initializer.ensureInitialized(client)
             return try await client.play(flag: flag, id: id)

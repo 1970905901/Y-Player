@@ -49,6 +49,32 @@ public struct CMSClient: Sendable {
         )
     }
 
+    /// 播放内容：`type=4` 站点的 `play` 接口（`play` + `flag`）。
+    ///
+    /// 对齐参考实现 `SiteApi.playerContent` 的 `site.getType() == 4` 分支（已取源码核对）：
+    /// 请求 `play` + `flag`（`call()` 顺带补 `extend=ext`），响应是 ``SpiderResult`` 形状的 JSON
+    /// （`url` / `parse` / `jx` / `header` / `msg` / `flag` / `format` / `position` …）；
+    /// **响应里给了 `flag` 就用响应的**，没给才回填请求的 `flag`。
+    ///
+    /// 只有 `type=4` 走这里：`type 0/1/2` 的播放地址就在详情的线路/选集里
+    /// （``PlayRequestBuilder`` 造 `.direct`），`type=3` 走 Spider（``SiteClient/play(site:flag:id:)``）。
+    /// 类型不对时在第一行就抛 ``CatVodError/unsupported(feature:reason:)`` —— 别指望 `perform`
+    /// 兜底：它的白名单包含全部 CMS 类型，会真的把请求发出去。
+    public func play(site: Site, flag: String, playID: String) async throws -> SpiderResult {
+        guard site.kind == .httpApiBase64Ext else {
+            throw CatVodError.unsupported(
+                feature: "play",
+                reason: "类型 \(site.type) 的播放地址来自详情的线路/选集，不需要单独的 play 接口"
+            )
+        }
+        let request = try PlayRequestBuilder.httpPlayRequest(site: site, flag: flag, playID: playID)
+        var result = try await perform(request, site: site, path: "/play")
+        if result.flag.isEmpty {
+            result.flag = flag
+        }
+        return result
+    }
+
     /// 补图：列表缺图时按 `ids` 批量拉取（仅类型 0/1/2，失败时返回原结果）。
     public func fillingPictures(site: Site, result: SpiderResult) async throws -> SpiderResult {
         guard let request = try ApiURLBuilder.pictureRequest(site: site, ids: result.list.map(\.vodID)) else {
