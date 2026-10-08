@@ -1,6 +1,6 @@
 # M07b EPG 拉取与 XMLTV 解析
 
-- 状态：代码已落盘，**待 CI 验证**（本机无 Swift 工具链，见第六节）
+- 状态：**Lint 与 SwiftPM tests 已绿**（见第七节；双端未签名构建在同一 run 里随后跑）
 - 时间：2026-10-08
 - 范围：M7 第二步 —— 把 `epg` 字段里的 **XML/GZ 节目单文件**拉下来、解析成 `EPGGuide`
   （纯逻辑 + 一个仓库）；直播页 UI 与 x-tvg 接口（含 `{…}` 时间窗）分别是 M07c / 后续
@@ -63,3 +63,18 @@
 - 本机（Windows）没有 Swift 工具链，编译与 lint 只能在 Mac/CI 上跑；
   本轮用 `Tools/out/check_batch.py` 做语法/格式卫生预检，结果落 `Tools/out/check-batch.txt`。
 - gzip 夹具由 `Tools/out/make_epg_fixture.py` 生成（同一份 XML 的两种 gzip 头形态：`FLG=0` 与带 `FNAME`）。
+
+## 七、验证记录（本轮 CI）
+
+| 提交 | 结果 | 说明 |
+| --- | --- | --- |
+| `81e35b9` | ❌ Lint | SwiftFormat 三条：`redundantLetError`（`catch let error`）、`numberFormatting` ×2（十六进制字母要大写）；外加一条**解析失败** —— 我用脚本把 gzip 夹具改成数组拼接时丢了 `private let gzipPlain = [` 声明行，文件语法是坏的 |
+| `a877afb` | — | 只动文档与 `Scripts/pick_simulator.sh` 注释（校准陷阱 21/22） |
+| `ee91ac7` | ❌ Lint（其余作业被后一次推送取消） | 修掉上一轮三条（夹具改回多行字符串 + `options: .ignoreUnknownCharacters`）；新暴露 `redundantThrows`（`failures()` 里已无 `try`） |
+| `1d21677` | ✅ Lint + ✅ SwiftPM tests（CatVodCore / CatVodSource 的 6 个包全绿，含本轮新增的两组 EPG 单测） | 去掉多余 `throws`；同口径让 `RoutingRecorder.send` 的 `throws` 名副其实（未配置地址直接抛）。双端未签名构建在同一 run 里随后跑，本文件按「Lint/单测已绿」记录 |
+
+本轮踩到的三类坑（裸 `catch`、十六进制大小写、`throws` 冗余）与那次「脚本改坏文件」都已固化进本地检查器：
+`Tools/out/syntax_scan.py` 现在查方括号/圆括号配对 + 六类格式器口径（hex 大写、裸 `catch`、条件里的 `&&`、
+区间空格、`MARK` 空行、`redundantThrows`），`Tools/out/format_check.py` 认得 Swift 多行字符串。
+`redundantThrows` 那条在改前就把 CI 报的两处（`:119`、`:183`）都找了出来，行号一致。
+
