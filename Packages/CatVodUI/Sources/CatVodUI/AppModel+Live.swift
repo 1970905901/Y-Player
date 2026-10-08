@@ -112,7 +112,10 @@ public extension AppModel {
 
     /// 设置页里的直播源列表：顺序即配置顺序；勾的是**当前生效**的那个
     /// （`selectedLiveKey` 为空时是配置里的第一个，不是「没勾」）。
-    var liveSourceRows: [LiveSourceRow] {
+    ///
+    /// 可见性是「模块内」而不是 public：`LiveSourceRow` 是模块内的行模型（与 `LiveGroupRow` 一致，
+    /// 只给本模块的视图用）。
+    internal var liveSourceRows: [LiveSourceRow] {
         LiveSourceList.rows(liveSources, selected: selectedLiveSource?.name ?? "", loaded: liveState.loadedSource)
     }
 
@@ -244,8 +247,8 @@ public extension AppModel {
             let repository = LiveRepository(transport: transportForConfiguration())
             // 「组名里的 `_` 不当密码」的本地覆盖要在**解析前**套上（`pass` 是解析期字段，
             // 它决定组名怎么拆、进而决定哪些组算加密分组）。
-            let effective = source.applyingGroupPass(livePassOverrides[source.name])
-            let loaded = try await repository.load(effective)
+            let parseInput = source.applyingGroupPass(livePassOverrides[source.name])
+            let loaded = try await repository.load(parseInput)
             // 解析结果按原样留底；``liveState`` 里放的是套用本地 EPG 覆盖**之后**的那份
             // （上游也是拿到清单就 `LiveEpgSetting.apply(live)`）。
             rawLiveSource = loaded
