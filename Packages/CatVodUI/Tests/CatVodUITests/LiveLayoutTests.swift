@@ -90,7 +90,8 @@ struct LiveLayoutTests {
         #expect(rows[1].count == 1)
 
         // 解锁之后：加密组进列表，解锁行消失。
-        let unlocked = [LiveGroupAccess.key(source.groups[1])]
+        // `Set` 虽然是字面量可表达的，但 `let x = [a]` 只会推成 `Array` —— 这里必须显式标类型。
+        let unlocked: Set<String> = [LiveGroupAccess.key(source.groups[1])]
         let visibleAfter = LiveGroupAccess.visible(source.groups, unlocked: unlocked)
         let after = LiveListLayout.groupRows(visibleAfter, lockedCount: LiveGroupAccess.locked(source.groups, unlocked: unlocked).count)
         #expect(after.map(\.name) == ["央视", "加密组"])
