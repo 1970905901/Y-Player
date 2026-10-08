@@ -5,8 +5,10 @@ import SwiftUI
 
 /// 应用根视图。
 ///
-/// 三个原生 Tab（对齐 `docs/任务记录/M02P11-设置页与追剧页.md` 的参考图信息架构）：
+/// 四个原生 Tab：
 /// - 「发现」= ``HomeView``：浏览与播放（原来的首页）；
+/// - 「直播」= ``LiveView``：直播源 / 分组 / 频道 / 节目单 / 收藏（M07c；入口从发现页工具栏的
+///   纸飞机按钮改成底部 Tab，见 `docs/任务记录/M07c6-直播入口改底部Tab.md`）；
 /// - 「追剧」= ``LibraryView``：播放历史 / 收藏记录；
 /// - 「设置」= ``SettingsView``：源地址、首页展示方式、播放（内核/解码/弹幕解析）、
 ///   数据（下载/缓存/日志）、iCloud 同步。
@@ -32,6 +34,13 @@ public struct RootView: View {
             }
             .tabItem {
                 Label("发现", systemImage: "play.rectangle")
+            }
+
+            AdaptiveNavigationContainer {
+                LiveView(model: model)
+            }
+            .tabItem {
+                Label("直播", systemImage: "dot.radiowaves.left.and.right")
             }
 
             AdaptiveNavigationContainer {

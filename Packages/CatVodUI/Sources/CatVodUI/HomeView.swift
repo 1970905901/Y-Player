@@ -265,6 +265,9 @@ public struct HomeView: View {
     }
 
     /// 右上角：刷新（回到第一页并绕过缓存）与搜索。
+    ///
+    /// 直播入口**不在这里**：它已经是底部 Tab 的「直播」（M07c-6 从纸飞机按钮改过去，
+    /// 理由与取舍见 `docs/任务记录/M07c6-直播入口改底部Tab.md`）。
     private var trailingButtons: some View {
         HStack(spacing: 16) {
             Button {
@@ -276,16 +279,6 @@ public struct HomeView: View {
                 Image(systemName: "arrow.clockwise")
             }
             .disabled(isLoading || selectedSite == nil)
-
-            // 直播入口：参考录屏里工具栏右侧就是「纸飞机 + 放大镜」两个按钮，
-            // 纸飞机进直播（上游手机版同样是 push 出去，不是第 4 个 Tab）。
-            NavigationLink {
-                LiveView(model: model)
-            } label: {
-                Image(systemName: "paperplane")
-            }
-            .disabled(model.liveSources.isEmpty)
-            .accessibilityLabel("直播")
 
             NavigationLink {
                 SearchView(model: model)

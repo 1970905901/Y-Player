@@ -4,12 +4,13 @@ import SwiftUI
 
 // 直播页（M07c-2）：选源 → 选分组 → 频道 → 播放。
 //
-// 入口是发现页工具栏的**纸飞机**按钮：参考录屏的三个 Tab（发现 / 追剧 / 设置）里没有直播 Tab，
-// 上游手机版也是 `LiveActivity.start(this)` 这种 push 形态，所以这里不开第 4 个 Tab。
+// 入口是**底部 Tab 的「直播」**（M07c-6 改）：此前挂在发现页工具栏的纸飞机按钮上 —— 那会儿按
+// 参考录屏定的是「不加第 4 个 Tab」；用户后来指定改成 Tab，反转的理由与取舍见
+// `docs/任务记录/M07c6-直播入口改底部Tab.md`。
 //
 // 版式沿用本 App 自己的习惯：分组条在顶部（与发现页的分类条同一形态），下面是频道列表；
-// 每行给频道号、图标、名字和 EPG 的「正在播」。节目单按上游语义**逐频道拉**
-// （拉的是这个频道「昨天 / 今天 / 明天」三天），不走「一次拉全源」——那是文件形态才有的做法。
+// 每行给频道号、图标、名字和 EPG 的「正在播」。节目单分两条路：**文件形态**进页面拉一次全源，
+// **接口形态**（x-tvg）按可见频道逐频道排队预取（见 `LiveEPGPrefetch`）。
 
 /// 直播页。
 @MainActor
@@ -34,6 +35,15 @@ public struct LiveView: View {
                 // （上游 `LiveActivity.onLiveParsed` → `LiveApi.parseXml`）。
                 // 接口形态（x-tvg）是逐频道的，由每行的 `.task` 排队预取（见 `LiveEPGPrefetch`）。
                 await model.loadLiveFileGuide()
+            }
+            .onChange(of: model.siteCatalogRevision) { _ in
+                // 接口换了：直播页现在是底部 Tab 的**常驻**视图，`.task` 在回到该 Tab 时不一定重跑
+                // （与首页 M02P9 同一类问题）—— 不自己重载就会一直显示上一个接口的频道。
+                // 用非结构化 `Task`：离开这个 Tab 时这次重载不该被取消。
+                Task {
+                    await model.loadLivePlaylist(force: true)
+                    await model.loadLiveFileGuide(force: true)
+                }
             }
     }
 
