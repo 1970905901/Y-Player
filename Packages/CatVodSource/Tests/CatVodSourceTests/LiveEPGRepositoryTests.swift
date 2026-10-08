@@ -305,7 +305,7 @@ struct LiveEPGInterfaceTests {
         } catch let error as CatVodError {
             #expect(error.errorDescription?.contains("节目单地址") == true)
         }
-        #expect(await recorder.requests.count == 0)
+        #expect(await recorder.requests.isEmpty)
     }
 
     @Test("地址不是 http（上游直接跳过）→ unsupported，且不发请求")
@@ -318,7 +318,7 @@ struct LiveEPGInterfaceTests {
         } catch let error as CatVodError {
             #expect(error.errorDescription?.contains("不是 http") == true)
         }
-        #expect(await recorder.requests.count == 0)
+        #expect(await recorder.requests.isEmpty)
     }
 
     @Test("中文频道名：请求地址照样能构造（非 ASCII 交给 URL 编码）")

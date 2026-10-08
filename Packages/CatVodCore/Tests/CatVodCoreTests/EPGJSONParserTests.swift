@@ -31,7 +31,8 @@ struct EPGJSONParserTests {
         let program = try #require(schedule.programs.first)
         #expect(program.start == "23:30")
         #expect(program.end == "01:00")
-        #expect(program.crossesMidnight)
+        // `normalized` 已经把结束时间补到第二天：所以这里**不再**是「结束早于开始」。
+        #expect(!program.crossesMidnight)
         #expect(program.endTime == EPGTimeParser.parse(date: "2026-10-08", time: "01:00", timeZone: shanghai))
     }
 
@@ -41,7 +42,9 @@ struct EPGJSONParserTests {
         let schedule = try #require(parse(json))
         #expect(schedule.date == EPGTimeParser.dateString(dayOffset: 0, timeZone: shanghai))
         #expect(schedule.programs.map(\.title) == ["早间新闻"])
-        #expect(schedule.programs.first?.start == "08:00")
+        // 展示串保持接口原样（上游 `Epg.setTime` 也只改绝对时间），界面要的是 `startTime`。
+        #expect(schedule.programs.first?.start == "08:00:30")
+        #expect(schedule.programs.first?.startTime == EPGTimeParser.parse(date: schedule.date, time: "08:00:30", timeZone: shanghai))
     }
 
     @Test("空 `epg_data`：返回空切片（算「这一天拉过」，上游同样挂一个空 `Epg`）")
