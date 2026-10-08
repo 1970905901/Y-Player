@@ -30,18 +30,57 @@ public extension AppModel {
         liveState.loadedSource
     }
 
-    /// 当前选中的分组：按名字取，找不到就用清单里的第一个。
+    /// 界面上要显示的分组：**未解锁的加密分组不出现**（上游把它们收在 `mHides` 里）。
+    var liveVisibleGroups: [LiveGroup] {
+        guard let source = liveSource else {
+            return []
+        }
+        return LiveGroupAccess.visible(source.groups, unlocked: unlockedLiveGroups)
+    }
+
+    /// 还锁着的加密分组（分组条据此决定要不要给「解锁」入口、以及入口上写几个）。
+    var liveLockedGroups: [LiveGroup] {
+        guard let source = liveSource else {
+            return []
+        }
+        return LiveGroupAccess.locked(source.groups, unlocked: unlockedLiveGroups)
+    }
+
+    /// 用密码解锁加密分组；解锁成功就把**第一组**选中（上游 `unlock` 里 `if (first) onItemClick(item)`）。
+    ///
+    /// 返回解锁了几组：`0` 表示密码不对（界面据此给反馈，而不是默默什么也不做）。
+    @discardableResult
+    func unlockLiveGroups(with pass: String) -> Int {
+        guard let source = liveSource else {
+            return 0
+        }
+        let unlocked = LiveGroupAccess.unlocking(source.groups, with: pass)
+        guard !unlocked.isEmpty else {
+            return 0
+        }
+        for group in unlocked {
+            unlockedLiveGroups.insert(LiveGroupAccess.key(group))
+        }
+        if let first = unlocked.first {
+            selectedLiveGroup = first.name
+        }
+        return unlocked.count
+    }
+
+    /// 当前选中的分组：按名字取，找不到就用清单里第一个**可见**的分组。
     ///
     /// 「收藏」是个**运行时分组**（不在清单里，由 ``liveFavoriteGroup`` 现算），所以单独接一下：
     /// `selectedLiveGroup` 存的是它的名字。收藏清空后（或收藏的频道都不在清单里）自动回落第一个真分组。
+    /// **锁着的加密分组不会被选中**：它们根本不在 ``liveVisibleGroups`` 里（上游同此）。
     var selectedLiveGroupObject: LiveGroup? {
-        guard let source = liveSource, !source.groups.isEmpty else {
+        let visible = liveVisibleGroups
+        guard !visible.isEmpty else {
             return nil
         }
         if selectedLiveGroup == LiveGroup.keepName, let favorites = liveFavoriteGroup {
             return favorites
         }
-        return source.groups.first { $0.name == selectedLiveGroup } ?? source.groups.first
+        return visible.first { $0.name == selectedLiveGroup } ?? visible.first
     }
 
     /// 设置页里的直播源列表：顺序即配置顺序；勾的是**当前生效**的那个
@@ -171,6 +210,8 @@ public extension AppModel {
         rawLiveSource = nil
         if force || previousName != source.name {
             resetLiveEPGState()
+            // 换了源（或强制重载）：解锁状态一起作废 —— 密码是上一个源的，不该带到下一个源。
+            unlockedLiveGroups.removeAll()
         }
         do {
             let repository = LiveRepository(transport: transportForConfiguration())

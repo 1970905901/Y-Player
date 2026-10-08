@@ -75,16 +75,16 @@ public struct LiveView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let reason = model.liveState.failureReason {
             placeholder(reason)
-        } else if let source = model.liveSource {
-            playlist(source)
+        } else if model.liveSource != nil {
+            playlist
         } else {
             placeholder("正在准备…")
         }
     }
 
-    private func playlist(_ source: LiveSource) -> some View {
+    private var playlist: some View {
         VStack(spacing: 0) {
-            groupStrip(source)
+            groupStrip
             Divider()
             if let target = model.liveResumeTarget {
                 resumeRow(target)
@@ -139,36 +139,65 @@ public struct LiveView: View {
         .buttonStyle(.plain)
     }
 
-    /// 分组条：当前分组加粗（与发现页分类条同一形态；加密分组带一个锁、「收藏」带一个星）。
-    private func groupStrip(_ source: LiveSource) -> some View {
+    /// 分组条：当前分组加粗、加密分组带锁、「收藏」带星、最后一行是「解锁加密分组」（有锁着的组时才给）。
+    ///
+    /// **锁着的加密分组不出现在这里**（`model.liveVisibleGroups` 已经滤掉，上游也把它们收在 `mHides`）——
+    /// 这正是本轮修的那个洞：以前只画锁标却照常列频道。
+    private var groupStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 20) {
-                ForEach(LiveListLayout.groupRows(source, favoriteCount: favoriteCount)) { row in
-                    let isSelected = row.name == model.selectedLiveGroupObject?.name
-                    Button {
-                        model.selectedLiveGroup = row.name
-                    } label: {
-                        HStack(spacing: 4) {
-                            if row.isKeep {
-                                Image(systemName: "star.fill")
-                                    .font(.caption2)
-                            }
-                            if row.isHidden {
-                                Image(systemName: "lock.fill")
-                                    .font(.caption2)
-                            }
-                            // 字重加在 `Text` 上（iOS 13+）：`.fontWeight` 这个 **View 修饰符**要 iOS 16+，
-                            // 是「iOS 15 下限」踩过的一个坑（与发现页分类条同一写法）。
-                            Text(row.name)
-                                .font(isSelected ? .body.weight(.semibold) : .body)
-                                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
-                        }
-                    }
-                    .buttonStyle(.plain)
+                ForEach(groupRows) { row in
+                    groupRow(row)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
+        }
+    }
+
+    /// 分组条的行：「收藏」在最前、「解锁加密分组」在最后（有锁着的组时）。
+    private var groupRows: [LiveGroupRow] {
+        LiveListLayout.groupRows(
+            model.liveVisibleGroups,
+            favoriteCount: favoriteCount,
+            lockedCount: model.liveLockedGroups.count
+        )
+    }
+
+    @ViewBuilder private func groupRow(_ row: LiveGroupRow) -> some View {
+        if row.isLockEntry {
+            NavigationLink {
+                LiveUnlockView(model: model)
+            } label: {
+                stripLabel(row, isSelected: false)
+            }
+            .buttonStyle(.plain)
+        } else {
+            Button {
+                model.selectedLiveGroup = row.name
+            } label: {
+                stripLabel(row, isSelected: row.name == model.selectedLiveGroupObject?.name)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// 分组名的样子：星（收藏）/ 锁（加密）+ 名字，选中加粗。
+    private func stripLabel(_ row: LiveGroupRow, isSelected: Bool) -> some View {
+        HStack(spacing: 4) {
+            if row.isKeep {
+                Image(systemName: "star.fill")
+                    .font(.caption2)
+            }
+            if row.isHidden {
+                Image(systemName: "lock.fill")
+                    .font(.caption2)
+            }
+            // 字重加在 `Text` 上（iOS 13+）：`.fontWeight` 这个 **View 修饰符**要 iOS 16+，
+            // 是「iOS 15 下限」踩过的一个坑（与发现页分类条同一写法）。
+            Text(row.isLockEntry ? "\(row.name)（\(row.count)）" : row.name)
+                .font(isSelected ? .body.weight(.semibold) : .body)
+                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
         }
     }
 

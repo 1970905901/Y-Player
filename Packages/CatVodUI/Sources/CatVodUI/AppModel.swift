@@ -372,6 +372,13 @@ public final class AppModel: ObservableObject {
     /// 否则清掉覆盖时没法把频道地址还回去，也不必为此再拉一次清单。
     var rawLiveSource: LiveSource?
 
+    /// 已解锁的**加密分组**（键是 ``LiveGroupAccess/key(_:)``）。
+    ///
+    /// **不落盘**：密码只在这次运行里有效（上游 `mHides` 也是进程内的），换源即清空
+    /// （`loadLivePlaylist` 里换源那条路会清）。写进 `UserDefaults` 意味着把源的密码留在磁盘上，
+    /// 不划算。
+    @Published var unlockedLiveGroups: Set<String> = []
+
     /// 当前播放设置。
     public var playbackSettings: PlaybackSettings {
         PlaybackSettings(engine: preferredEngine, decoderMode: decoderMode)

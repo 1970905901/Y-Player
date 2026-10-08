@@ -49,11 +49,11 @@ struct LiveFavoriteBookTests {
     func favoriteGroupRow() throws {
         let source = try makeSource()
 
-        let plain = LiveListLayout.groupRows(source)
+        let plain = LiveListLayout.groupRows(source.groups)
         #expect(plain.map(\.name) == ["央视", "卫视"])
         #expect(plain.allSatisfy { !$0.isKeep })
 
-        let rows = LiveListLayout.groupRows(source, favoriteCount: 2)
+        let rows = LiveListLayout.groupRows(source.groups, favoriteCount: 2)
         #expect(rows.map(\.name) == ["收藏", "央视", "卫视"])
         #expect(rows[0].isKeep)
         #expect(rows[0].count == 2)

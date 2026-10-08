@@ -65,12 +65,37 @@ struct LiveLayoutTests {
         ]}
         """
         let source = try makeSource(json)
-        let rows = LiveListLayout.groupRows(source)
+        let rows = LiveListLayout.groupRows(source.groups)
         // 行名是 `LiveGroup.name`（`组_密码` 里 `_` 前面那段）；「这是加密分组」由 `isHidden` 表达，
         // 界面据此加锁标 —— 不是把密码一起显示出来。
         #expect(rows.map(\.name) == ["央视", "加密组"])
         #expect(rows.map(\.count) == [1, 2])
         #expect(rows.map(\.isHidden) == [false, true])
+    }
+
+    @Test("分组条：锁着的加密分组不出现在行里，最后给一行「解锁加密分组」（M07d-4）")
+    func groupRowsLockEntry() throws {
+        let json = """
+        {"name":"演示直播","groups":[
+          {"name":"央视","channel":[{"name":"CCTV-1","urls":["http://a/1.m3u8"]}]},
+          {"name":"加密组_1234","channel":[{"name":"A","urls":[]}]}
+        ]}
+        """
+        let source = try makeSource(json)
+        // 传进来的必须是 `LiveGroupAccess.visible(_:unlocked:)` 过滤后的那份：没解锁就没有加密组。
+        let visible = LiveGroupAccess.visible(source.groups, unlocked: [])
+        let rows = LiveListLayout.groupRows(visible, lockedCount: LiveGroupAccess.locked(source.groups, unlocked: []).count)
+        #expect(rows.map(\.name) == ["央视", "解锁加密分组"])
+        #expect(rows.map(\.isLockEntry) == [false, true])
+        #expect(rows[1].count == 1)
+
+        // 解锁之后：加密组进列表，解锁行消失。
+        let unlocked = [LiveGroupAccess.key(source.groups[1])]
+        let visibleAfter = LiveGroupAccess.visible(source.groups, unlocked: unlocked)
+        let after = LiveListLayout.groupRows(visibleAfter, lockedCount: LiveGroupAccess.locked(source.groups, unlocked: unlocked).count)
+        #expect(after.map(\.name) == ["央视", "加密组"])
+        #expect(after.map(\.isLockEntry) == [false, false])
+        #expect(after[1].isHidden)
     }
 
     @Test("频道行：EPG 覆盖显示名与图标，带「正在播 / 下一档」文案")
