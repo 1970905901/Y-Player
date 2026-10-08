@@ -29,12 +29,17 @@ enum LiveSourceList {
     }
 
     /// 单个源的一行。
+    ///
+    /// 频道数只在**已解析的那份**里才有（配置里的源 `groups` 是空的）—— 所以计数要取 `loaded`，
+    /// 不能取 `source`（踩过：写成了 `source.channelCount`，界面上永远看不到频道数，单测抓住了）。
     static func row(_ source: LiveSource, selected: String, loaded: LiveSource?) -> LiveSourceRow {
-        let isLoaded = loaded?.name == source.name
         let type = typeName(source.type)
-        let detail = isLoaded && source.channelCount > 0
-            ? "\(type) · \(source.channelCount) 个频道"
-            : type
+        let detail: String
+        if let loaded, loaded.name == source.name, loaded.channelCount > 0 {
+            detail = "\(type) · \(loaded.channelCount) 个频道"
+        } else {
+            detail = type
+        }
         return LiveSourceRow(name: source.name, detail: detail, isSelected: source.name == selected)
     }
 
