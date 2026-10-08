@@ -85,6 +85,8 @@
 
 1. **时移回看**：频道行里点历史节目 → 用 `LiveCatchup.playbackURL(_:start:end:)` 拼那一段的地址（`EPGProgram.clockQuery` 是给 rtsp 的 `rtsp_range` 用的）→ 直接进 `PlaybackView`；需要一个「当天节目单」的展开入口（上游是 `EpgDialog`）。
 2. **`keep` 上次观看位置**：`LiveSource.keep` 字段早就在模型里；要落的是「写回 `keep`」与「进页面自动回到上次频道 / 线路」。
+   上游编解码已核实（`Live.keep(Channel)` + `AppDatabase.SYMBOL`）：**`分组名@@@频道名@@@线路下标`**，
+   分隔符是字面量 `@@@`。注意上游另有独立的 `Keep` 表做「收藏频道」，与这个字符串字段（上次观看位置）不是一回事，别混。
 3. **线路切换**：一个频道有多条 `urls` 时给线路选择（`playbackURL(index:)` / `lineName(index:)` 已就绪）。
 4. **EPG 拉取时机**：现在按上游语义**逐频道拉**（点开才拉），列表首屏因此显示「暂无节目」；若要首屏就有节目名，需要加一层「可见频道批量拉 + 节流」，属体验优化，需单独评估请求量。
 
