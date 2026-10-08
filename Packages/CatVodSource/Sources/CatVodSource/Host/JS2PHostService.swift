@@ -152,7 +152,7 @@ public actor JS2PHostService {
     ///
     /// 内嵌 node 崩溃会把进程一起带走，内存输出随之消失，落盘日志是唯一还能读到的现场
     /// （见 ``NodePreloadScript``）。两者都附上，避免「宿主未就绪」变成无线索的提示。
-    private func hostDiagnostics(limit: Int = 6) async -> [String] {
+    public func hostDiagnostics(limit: Int = 6) async -> [String] {
         var lines = await runtime.recentOutput(limit: limit)
         if let logURL = await runtime.persistentLogPath(),
            let tail = Self.readTail(of: logURL, lines: 12)

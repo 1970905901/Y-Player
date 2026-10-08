@@ -472,6 +472,17 @@ public final class AppModel: ObservableObject {
         await js2pHost?.hostLogPath()
     }
 
+    /// 宿主最近输出：内存里的尾部 + 落盘日志的尾部（见 ``JS2PHostService``）。
+    ///
+    /// 「源地址 → Node 宿主 → 查看宿主输出」与「设置 → 数据 → 日志管理」共用它；
+    /// 没有宿主（未加载 JS 源 / 平台不支持）时返回空数组，界面据此显示「暂无输出」。
+    public func hostDiagnostics(limit: Int = 20) async -> [String] {
+        guard let host = js2pHost else {
+            return []
+        }
+        return await host.hostDiagnostics(limit: limit)
+    }
+
     /// 把日志开关应用到正在运行的宿主。
     ///
     /// 宿主不能重建（内嵌 node 每进程只能起一个实例），所以开关必须能**运行中改**；
