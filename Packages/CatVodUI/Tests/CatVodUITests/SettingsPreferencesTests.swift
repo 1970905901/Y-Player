@@ -11,8 +11,10 @@ struct SettingsPreferencesTests {
     func cacheLifetimeValues() {
         #expect(CacheLifetime.hours12.displayName == "12小时")
         #expect(CacheLifetime.days7.displayName == "7天")
-        #expect(CacheLifetime.hours12.timeInterval == 12 * 60 * 60)
-        #expect(CacheLifetime.days7.timeInterval == 7 * 24 * 60 * 60)
+        // 显式写成 `TimeInterval`：Swift Testing 的 `#expect` 在两侧类型不同（`Double?` vs `Int`）
+        // 时是按**字符串**比较的，`43200.0` 与 `43200` 会被判成不相等 —— 这里踩过一次。
+        #expect(CacheLifetime.hours12.timeInterval == TimeInterval(12 * 60 * 60))
+        #expect(CacheLifetime.days7.timeInterval == TimeInterval(7 * 24 * 60 * 60))
         #expect(CacheLifetime.never.timeInterval == nil)
         #expect(CacheLifetime.allCases.count == 5)
     }

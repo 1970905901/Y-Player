@@ -66,7 +66,9 @@ struct LiveLayoutTests {
         """
         let source = try makeSource(json)
         let rows = LiveListLayout.groupRows(source)
-        #expect(rows.map(\.name) == ["央视", "加密组_1234"])
+        // 行名是 `LiveGroup.name`（`组_密码` 里 `_` 前面那段）；「这是加密分组」由 `isHidden` 表达，
+        // 界面据此加锁标 —— 不是把密码一起显示出来。
+        #expect(rows.map(\.name) == ["央视", "加密组"])
         #expect(rows.map(\.count) == [1, 2])
         #expect(rows.map(\.isHidden) == [false, true])
     }
