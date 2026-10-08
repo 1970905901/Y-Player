@@ -109,10 +109,11 @@ public struct LiveView: View {
     /// 一点就到、并且仍然用上次那条线路（线路名来自清单里的 `地址$线路名`）。
     private func resumeRow(_ target: LiveKeepTarget) -> some View {
         NavigationLink {
-            // 「继续观看」进来时，换台的范围就是这个频道所在的组。
+            // 「继续观看」进来时，换台的范围就是分组条上看得见的那几组。
             LiveChannelPlaybackView(
                 model: model,
-                channels: target.group.channels,
+                groups: model.liveVisibleGroups,
+                groupName: target.group.name,
                 channel: target.channel,
                 lineIndex: target.lineIndex
             )
@@ -213,7 +214,8 @@ public struct LiveView: View {
                     NavigationLink {
                         LiveChannelPlaybackView(
                             model: model,
-                            channels: rows.map(\.channel),
+                            groups: model.liveVisibleGroups,
+                            groupName: model.selectedLiveGroupObject?.name ?? "",
                             channel: row.channel,
                             lineIndex: row.initialLineIndex
                         )
@@ -334,32 +336,50 @@ private struct LiveChannelRowView: View {
 
 /// 频道的播放页。
 ///
-/// 四件事：
+/// 六件事：
 /// - 进入时顺手拉这个频道的节目单（回到列表就有「正在播」）；
 /// - 把这次观看记成「上次观看」（`分组名@@@频道名@@@线路下标`，上游 `Live.keep` 的形态）；
-/// - 一个频道有多条线路时，右上角给线路菜单（清单写了 `地址$线路名` 就用线路名）；
-/// - 左上角给**上一台 / 下一台**（上游 `control.prev` / `control.next` → `mLive.nextChannel()`）。
-///   换台在**当前分组内环形**、跳过没有地址的频道，换过去线路回到第 0 条（见 ``zap(_:)``）。
+/// - 左上角给**上一台 / 下一台**（上游 `control.prev` / `control.next` → `mLive.nextChannel()`）：
+///   在**当前分组内环形**、跳过没有地址的频道；
+/// - 右上角给**频道菜单**：上一个 / 下一个分组（上游的 `across`，走到邻组的边界频道）与**按号码跳台**
+///   （上游 `LiveConfig.findByChannelNumber`，见 ``LiveChannelJumpView``）；
+/// - 一个频道有多条线路时，右上角还给线路菜单（清单写了 `地址$线路名` 就用线路名）；
+/// - 换台 / 跨组 / 跳号都走 ``move(to:)``：线路回到第 0 条、写回 keep、拉新频道节目单。
 ///
-/// `channels` 是「当前看着的那份列表」（普通分组就是该组的频道，收藏分组就是收藏的频道），
-/// 换台只在这份列表里循环 —— 与用户眼前的列表一致，不会切到列表里看不到的频道。
+/// 换台的范围就是**用户眼前那份清单**：``groups`` 是分组条上看得见的那几组（锁着的加密分组不在里面），
+/// 组内换台只在该组的频道里循环 —— 与列表一致，不会切到看不见的频道。
 ///
 /// 资源交给 ``AppModel/proxiedMediaResource(_:)``：需要 header 时改走本机 `/proxy`，
 /// 让 header 覆盖到子清单 / 分片 / 密钥请求上（M6 的约定）。
 @MainActor
 private struct LiveChannelPlaybackView: View {
     @ObservedObject var model: AppModel
-    /// 换台的范围（当前列表的频道，顺序即列表顺序）。
-    let channels: [LiveChannel]
+    /// 换台可用的分组（顺序即分组条顺序；锁着的加密分组不在里面）。
+    let groups: [LiveGroup]
+    /// 当前所在分组名（跨组换台会改它）。
+    @State private var groupName: String
     /// 当前正在播的频道（换台会改它）。
     @State private var current: LiveChannel
     @State private var lineIndex: Int
+    /// 「按号码跳台」的弹层。
+    @State private var isJumpPresented = false
 
-    init(model: AppModel, channels: [LiveChannel], channel: LiveChannel, lineIndex: Int) {
+    init(model: AppModel, groups: [LiveGroup], groupName: String, channel: LiveChannel, lineIndex: Int) {
         self.model = model
-        self.channels = channels
+        self.groups = groups
+        _groupName = State(initialValue: groupName)
         _current = State(initialValue: channel)
         _lineIndex = State(initialValue: lineIndex)
+    }
+
+    /// 当前分组（找不到时换台就无从谈起，按钮会全部置灰）。
+    private var group: LiveGroup? {
+        groups.first { $0.name == groupName }
+    }
+
+    /// 当前分组里可换的频道（顺序即列表顺序）。
+    private var channels: [LiveChannel] {
+        group?.channels ?? []
     }
 
     var body: some View {
@@ -373,8 +393,16 @@ private struct LiveChannelPlaybackView: View {
                     zapButton(step: 1, icon: "chevron.down", label: "下一台")
                 }
             } trailing: {
-                if current.urls.count > 1 {
-                    lineMenu
+                HStack(spacing: 16) {
+                    channelMenu
+                    if current.urls.count > 1 {
+                        lineMenu
+                    }
+                }
+            }
+            .sheet(isPresented: $isJumpPresented) {
+                AdaptiveNavigationContainer {
+                    LiveChannelJumpView(groups: groups, onPick: move(to:))
                 }
             }
             .task {
@@ -396,29 +424,70 @@ private struct LiveChannelPlaybackView: View {
         .accessibilityLabel(label)
     }
 
+    /// 上一个 / 下一个分组（上游 `across`）+ 按号码跳台（上游 `findByChannelNumber`）。
+    private var channelMenu: some View {
+        Menu {
+            Button("下一个分组") {
+                across(step: 1)
+            }
+            .disabled(acrossTarget(step: 1) == nil)
+            Button("上一个分组") {
+                across(step: -1)
+            }
+            .disabled(acrossTarget(step: -1) == nil)
+            Divider()
+            Button("按号码跳台…") {
+                isJumpPresented = true
+            }
+        } label: {
+            Image(systemName: "list.number")
+        }
+        .accessibilityLabel("频道")
+    }
+
     private func neighbor(step: Int) -> LiveChannel? {
         LiveChannelNavigation.neighbor(of: current, step: step, in: channels)
     }
 
-    /// 换台：记下新的「上次观看」、把线路重置到第 0 条，并顺手拉它的节目单。
+    private func acrossTarget(step: Int) -> LiveChannelTarget? {
+        guard let group else {
+            return nil
+        }
+        return LiveChannelNavigation.across(in: group, groups: groups, step: step)
+    }
+
+    private func across(step: Int) {
+        guard let target = acrossTarget(step: step) else {
+            return
+        }
+        move(to: target)
+    }
+
+    /// 换台（组内）：记下新的「上次观看」、线路回到第 0 条。
+    private func zap(_ step: Int) {
+        guard let group, let next = neighbor(step: step) else {
+            return
+        }
+        move(to: LiveChannelTarget(group: group, channel: next))
+    }
+
+    /// 换到某个目标（组内换台 / 跨组 / 跳号都走它）。
     ///
     /// 线路为什么重置：每个频道有**几条**线路是各自的事，沿用上一条下标可能撞上「这个频道没有第 N 条」
     /// （`playbackURL(index:)` 会给空地址）。重置是可预期的，也让「换台 = 从头切到另一个频道」更好理解。
     ///
-    /// `id` 重建不一定会重放外层的 `.task`（换台只改子视图身份），所以节目单与 keep 都显式写。
-    private func zap(_ step: Int) {
-        guard let next = neighbor(step: step) else {
-            return
-        }
-        current = next
+    /// `id` 重建不一定会重放外层的 `.task`（换台只改子视图身份），所以 keep 与节目单都显式写。
+    private func move(to target: LiveChannelTarget) {
+        groupName = target.group.name
+        current = target.channel
         lineIndex = 0
-        model.rememberLiveChannel(next, lineIndex: 0)
-        Task { await model.loadLiveGuide(for: next) }
+        model.rememberLiveChannel(target.channel, lineIndex: 0)
+        Task { await model.loadLiveGuide(for: target.channel) }
     }
 
-    /// 播放页的重建键：频道 + 线路。
+    /// 播放页的重建键：分组 + 频道 + 线路。
     private var playbackKey: String {
-        current.name + "#" + String(lineIndex)
+        groupName + "#" + current.name + "#" + String(lineIndex)
     }
 
     // MARK: - 线路

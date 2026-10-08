@@ -65,4 +65,86 @@ struct LiveChannelNavigationTests {
         let nonePlayable = [LiveChannel(name: "A"), LiveChannel(name: "B")]
         #expect(LiveChannelNavigation.neighbor(of: nonePlayable[0], step: 1, in: nonePlayable) == nil)
     }
+
+    // MARK: - 跨分组换台 / 按号码跳台（M07d-6）
+
+    /// 三个分组：A（含一条没地址的）、空组、C。
+    private func makeGroups() -> [LiveGroup] {
+        [
+            LiveGroup(name: "A", channels: [
+                LiveChannel(name: "A1", urls: ["http://a/1.m3u8"]),
+                LiveChannel(name: "A2", urls: ["http://a/2.m3u8"]),
+            ]),
+            LiveGroup(name: "空组", channels: [LiveChannel(name: "X")]),
+            LiveGroup(name: "C", channels: [
+                LiveChannel(name: "C1", urls: ["http://c/1.m3u8"]),
+                LiveChannel(name: "C2", urls: ["http://c/2.m3u8"]),
+            ]),
+        ]
+    }
+
+    @Test("跨分组：往后去下一组的第一个可播、往前去上一组的最后一个（跳过整组不可播的分组）")
+    func acrossGroups() {
+        let groups = makeGroups()
+
+        // A 往后 → 空组没有可播频道 → 跳过它 → C 的第一个。
+        let forward = LiveChannelNavigation.across(in: groups[0], groups: groups, step: 1)
+        #expect(forward?.group.name == "C")
+        #expect(forward?.channel.name == "C1")
+
+        // C 往前 → 空组同样跳过 → A 的**最后一个**（跨组是「跳到那组门口」）。
+        let backward = LiveChannelNavigation.across(in: groups[2], groups: groups, step: -1)
+        #expect(backward?.group.name == "A")
+        #expect(backward?.channel.name == "A2")
+
+        // 最后一组往后：循环回到第一组的第一个（不在边界失效）。
+        let wrapped = LiveChannelNavigation.across(in: groups[2], groups: groups, step: 1)
+        #expect(wrapped?.group.name == "A")
+        #expect(wrapped?.channel.name == "A1")
+    }
+
+    @Test("跨分组：只有一个分组 / step 为 0 / 分组不在清单里 → nil")
+    func acrossNeedsOtherGroups() {
+        let groups = makeGroups()
+        #expect(LiveChannelNavigation.across(in: groups[0], groups: [groups[0]], step: 1) == nil)
+        #expect(LiveChannelNavigation.across(in: groups[0], groups: groups, step: 0) == nil)
+
+        let stranger = LiveGroup(name: "已经不在清单里的组")
+        #expect(LiveChannelNavigation.across(in: stranger, groups: groups, step: 1) == nil)
+
+        // 一圈都没有可播频道：nil（界面据此置灰）。
+        let dead = [
+            LiveGroup(name: "A", channels: [LiveChannel(name: "A1")]),
+            LiveGroup(name: "B", channels: [LiveChannel(name: "B1")]),
+        ]
+        #expect(LiveChannelNavigation.across(in: dead[0], groups: dead, step: 1) == nil)
+    }
+
+    @Test("按号码跳台：`001` 与 `1` 都认（整数比较），跨分组按顺序取第一个命中")
+    func jumpByNumber() {
+        var groups = makeGroups()
+        groups[0].channels[0].number = "001"
+        groups[2].channels[0].number = "001"
+
+        let first = LiveChannelNavigation.channel(number: "1", in: groups)
+        #expect(first?.group.name == "A")
+        #expect(first?.channel.name == "A1")
+
+        // 前导零 / 空白都能对上同一个频道。
+        #expect(LiveChannelNavigation.channel(number: "  001  ", in: groups)?.channel.name == "A1")
+
+        // 没有号的频道永远不命中（清单里补号之前是空串）。
+        #expect(LiveChannelNavigation.channel(number: "2", in: groups) == nil)
+        #expect(LiveChannelNavigation.channel(number: "002", in: groups) == nil)
+    }
+
+    @Test("按号码跳台：空串 / 非数字 / 找不到 → nil（上游 `Integer.parseInt` 会抛异常，这里不）")
+    func jumpRejectsBadInput() {
+        let groups = makeGroups()
+        #expect(LiveChannelNavigation.channel(number: "", in: groups) == nil)
+        #expect(LiveChannelNavigation.channel(number: "   ", in: groups) == nil)
+        #expect(LiveChannelNavigation.channel(number: "CCTV-1", in: groups) == nil)
+        #expect(LiveChannelNavigation.channel(number: "999", in: groups) == nil)
+        #expect(LiveChannelNavigation.channel(number: "1", in: []) == nil)
+    }
 }
