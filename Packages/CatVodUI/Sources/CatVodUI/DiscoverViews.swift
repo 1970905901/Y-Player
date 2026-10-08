@@ -133,39 +133,99 @@ struct DiscoverPosterCard: View {
     }
 }
 
-/// 站点切换面板：参考视频里点左上角站点名弹出，列出站点、当前项打勾。
+/// 左上角「站点切换」图标：参考录屏里是两个开关（上一个空、下一个满）。
+///
+/// 为什么自己画而不用 SF Symbol：录屏里这个字形在 SF Symbols 里没有对应项，
+/// 而它是「点这里切换站点」的唯一提示，画错或画丢都会让人找不到切换入口。
+/// （⚠️ 站点名里那个「☁️」不是按钮图标，它是上游给的**站点名自带**的表情。）
+struct DiscoverSiteSwitchGlyph: View {
+    /// 图标宽度；高度按两个开关的比例自动算。
+    var size: CGFloat = 17
+
+    var body: some View {
+        VStack(spacing: size * 0.16) {
+            Capsule()
+                .strokeBorder(Color.accentColor, lineWidth: max(size * 0.11, 1))
+                .frame(width: size, height: size * 0.42)
+                .overlay(alignment: .leading) {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: size * 0.26, height: size * 0.26)
+                        .padding(.leading, size * 0.09)
+                }
+            Capsule()
+                .fill(Color.accentColor)
+                .frame(width: size, height: size * 0.42)
+                .overlay(alignment: .trailing) {
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: size * 0.26, height: size * 0.26)
+                        .padding(.trailing, size * 0.09)
+                }
+        }
+        .accessibilityLabel("站点切换")
+    }
+}
+
+/// 站点切换面板：参考录屏里点左上角「切换」图标弹出。
+///
+/// 版式按录屏对齐：**贴着左边的悬浮卡片**（不是居中弹窗，面板外也没有变暗层），
+/// 每行一个站点名、当前站点右侧打勾，行与行之间一条细线；站点多时面板内部滚动。
+/// 站点名原样显示 —— 上游给的就是 `名称|标记` 这种整串名字，不做二次改写。
 struct DiscoverSitePanel: View {
     let sites: [Site]
     let selectedKey: String
     let onSelect: (String) -> Void
 
-    /// 面板高度：参考图里约半屏，站点更多时在面板内部滚动。
-    private static let height: CGFloat = 420
+    /// 面板宽度占屏宽的比例：录屏里约占 2/3。
+    static let widthFraction: CGFloat = 0.66
+    /// 面板高度占可用高度的比例：录屏里从工具栏下方一直伸到接近屏幕底部。
+    static let heightFraction: CGFloat = 0.78
+    /// 单行高度。
+    static let rowHeight: CGFloat = 44
+    /// 面板圆角。
+    static let cornerRadius: CGFloat = 12
+
+    private var rows: [DiscoverSiteRow] {
+        DiscoverSiteList.rows(sites: sites, selectedKey: selectedKey)
+    }
 
     var body: some View {
-        List {
-            Section("站点") {
-                ForEach(sites) { site in
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                    if index > 0 {
+                        Divider()
+                    }
                     Button {
-                        onSelect(site.key)
+                        onSelect(row.key)
                     } label: {
-                        HStack {
-                            Text(site.name.isEmpty ? site.key : site.name)
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            if site.key == selectedKey {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(Color.accentColor)
-                            }
-                        }
+                        label(row)
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
-        .adaptiveListStyle()
-        .frame(height: Self.height)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(radius: 12)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+        .shadow(radius: 14, y: 6)
+    }
+
+    private func label(_ row: DiscoverSiteRow) -> some View {
+        HStack(spacing: 8) {
+            Text(row.title)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            if row.isSelected {
+                Image(systemName: "checkmark")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+        .font(.body)
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: Self.rowHeight)
+        .contentShape(Rectangle())
     }
 }

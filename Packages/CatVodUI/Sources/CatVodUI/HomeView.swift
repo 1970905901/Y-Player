@@ -5,7 +5,8 @@ import SwiftUI
 /// 发现页：选站点 → 分类 / 筛选 → 内容 → 进入详情。
 ///
 /// 版式对齐用户提供的参考录屏（`RPReplay_Final1791437934`）：
-/// 左上角站点名点开是站点切换面板，右上角是刷新与搜索；下面依次是横向滚动的分类条、
+/// 左上角是**站点切换**（「切换」字形 + 当前站点名，点开贴左的站点面板；⚠️ 站点名里的
+/// 「☁️」是上游名字自带的表情，不是按钮图标），右上角是刷新与搜索；下面依次是横向滚动的分类条、
 /// 逐行筛选胶囊，内容是 3 列海报网格（封面右上角带更新角标、片名居中一行），
 /// 滚动到底部**自动接着加载**下一页（参考版式里没有分页按钮）。
 ///
@@ -26,7 +27,7 @@ public struct HomeView: View {
     @State var errorText = ""
     /// 上一次翻页拿到了空列表：上游没给 `pagecount` 时靠它停住「上拉加载」。
     @State var reachedEnd = false
-    /// 站点切换面板是否展开（参考视频：点左上角站点名弹出）。
+    /// 站点切换面板是否展开（参考视频：点左上角的「切换」按钮弹出）。
     @State var isSitePanelPresented = false
     /// 已加载内容对应的「站点清单版本」（`AppModel.siteCatalogRevision`）。
     ///
@@ -71,7 +72,7 @@ public struct HomeView: View {
         guard let site = selectedSite else {
             return "选择站点"
         }
-        return site.name.isEmpty ? site.key : site.name
+        return DiscoverSiteList.title(for: site)
     }
 
     public var body: some View {
@@ -79,6 +80,7 @@ public struct HomeView: View {
             content
             if isSitePanelPresented {
                 sitePanelOverlay
+                    .transition(.opacity)
             }
         }
         .navigationTitle("发现")
@@ -243,19 +245,19 @@ public struct HomeView: View {
 
     // MARK: - 工具栏
 
-    /// 左上角：站点名 + 下拉箭头，点开站点切换面板（参考视频的入口）。
+    /// 左上角：站点切换入口 —— 「切换」字形 + 当前站点名（参考录屏的形态）。
+    ///
+    /// 录屏里这个位置**没有下拉箭头**：图标本身（两个开关）就表示「点这里换站点」。
     private var siteSwitcherButton: some View {
         Button {
             withAnimation(.easeInOut(duration: 0.15)) {
                 isSitePanelPresented.toggle()
             }
         } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "cloud")
+            HStack(spacing: 6) {
+                DiscoverSiteSwitchGlyph()
                 Text(siteTitle)
                     .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.caption2)
             }
             .font(.body.weight(.semibold))
         }
@@ -286,25 +288,35 @@ public struct HomeView: View {
 
     // MARK: - 站点切换面板
 
+    /// 站点面板：贴左的悬浮卡片 + 一层**透明**点击层。
+    ///
+    /// 录屏里面板外的内容没有变暗，所以这里用透明点击层而不是黑色遮罩：
+    /// 点面板外收起，点面板本体不会穿透（面板在 `ZStack` 里排在点击层之后）。
     private var sitePanelOverlay: some View {
-        ZStack(alignment: .top) {
-            // 半透明遮罩：点一下收起面板（参考视频的弹出层行为）。
-            Color.black.opacity(0.2)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isSitePanelPresented = false
-                    }
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture { dismissSitePanel() }
+                DiscoverSitePanel(sites: browsableSites, selectedKey: selectedSiteKey) { key in
+                    dismissSitePanel()
+                    // 加载交给 `.onChange(of: selectedSiteKey)` 统一发起，避免同一次切换发两次请求。
+                    selectedSiteKey = key
                 }
-            DiscoverSitePanel(sites: browsableSites, selectedKey: selectedSiteKey) { key in
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    isSitePanelPresented = false
-                }
-                // 加载交给 `.onChange(of: selectedSiteKey)` 统一发起，避免同一次切换发两次请求。
-                selectedSiteKey = key
+                .frame(
+                    width: proxy.size.width * DiscoverSitePanel.widthFraction,
+                    height: proxy.size.height * DiscoverSitePanel.heightFraction
+                )
+                .padding(.leading, 12)
+                .padding(.top, 6)
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
+        }
+    }
+
+    private func dismissSitePanel() {
+        withAnimation(.easeInOut(duration: 0.15)) {
+            isSitePanelPresented = false
         }
     }
 

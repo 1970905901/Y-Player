@@ -108,4 +108,47 @@ struct DiscoverPageTests {
         #expect(HomeView.posterColumnCount == 3)
         #expect(DiscoverPosterCard.aspectRatio < 1)
     }
+
+    // MARK: - DiscoverSiteList（站点切换面板）
+
+    private func makeSite(key: String, name: String) -> Site {
+        Site(key: key, name: name, type: 3, api: "/spider/\(key)")
+    }
+
+    @Test("站点行：空名回落 key、当前站点打勾、顺序与上游一致")
+    func siteRows() {
+        let sites = [
+            makeSite(key: "wogg", name: "玩偶|4K"),
+            makeSite(key: "noName", name: ""),
+            makeSite(key: "douban", name: "豆瓣|首页"),
+        ]
+        let rows = DiscoverSiteList.rows(sites: sites, selectedKey: "noName")
+        #expect(rows.map(\.key) == ["wogg", "noName", "douban"])
+        #expect(rows.map(\.title) == ["玩偶|4K", "noName", "豆瓣|首页"])
+        #expect(rows.map(\.isSelected) == [false, true, false])
+        #expect(rows[1].id == "noName")
+    }
+
+    @Test("站点行：还没选中站点时一行都不打勾（面板照样列出全部站点）")
+    func siteRowsWithoutSelection() {
+        let rows = DiscoverSiteList.rows(sites: [makeSite(key: "wogg", name: "玩偶|4K")], selectedKey: "")
+        #expect(rows.count == 1)
+        #expect(!rows[0].isSelected)
+        // 工具栏按钮与面板用的是同一个回落口径。
+        #expect(DiscoverSiteList.title(for: makeSite(key: "wogg", name: "")) == "wogg")
+    }
+
+    @Test("站点面板与「切换」图标都能构造（面板宽高比取自录屏）")
+    @MainActor
+    func sitePanelConstructs() {
+        _ = DiscoverSiteSwitchGlyph()
+        _ = DiscoverSitePanel(
+            sites: [makeSite(key: "wogg", name: "玩偶|4K")],
+            selectedKey: "wogg",
+            onSelect: { _ in }
+        )
+        #expect(DiscoverSitePanel.widthFraction > 0.5)
+        #expect(DiscoverSitePanel.widthFraction < 1)
+        #expect(DiscoverSitePanel.heightFraction > DiscoverSitePanel.widthFraction)
+    }
 }
