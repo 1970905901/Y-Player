@@ -24,10 +24,10 @@ struct HLSAdRuleTests {
             + "#EXTINF:8.0,\nmain-1.ts\n"
             + "#EXTINF:8.0,\nmain-2.ts\n"
             + "#EXT-X-ENDLIST\n"
-        let result = HLSManifestCleaner.clean(
+        let result = try HLSManifestCleaner.clean(
             baseURL: "https://video.example.com/index.m3u8",
             manifest: manifest,
-            rules: [try rule.compile()]
+            rules: [rule.compile()]
         )
 
         #expect(result.changed)

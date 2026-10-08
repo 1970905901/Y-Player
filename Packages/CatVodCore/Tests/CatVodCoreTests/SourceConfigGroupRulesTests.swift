@@ -15,7 +15,11 @@ struct SourceConfigGroupRulesTests {
 
     @Test("真形状能解析出来，并且能直接喂给分组条")
     func decodesRealShape() throws {
-        let json = #"{"sites":[],"groupRules":[{"id":"g1","name":"井号分组","regex":"#(.+)$","enabled":true}]}"#
+        let json = """
+        {"sites":[],"groupRules":[
+          {"id":"g1","name":"井号分组","regex":"#(.+)$","enabled":true}
+        ]}
+        """
         let value = try config(json)
 
         #expect(value.groupRules.count == 1)
@@ -32,7 +36,12 @@ struct SourceConfigGroupRulesTests {
 
     @Test("没有 regex 的规则被整条丢掉（对齐上游 normalize）")
     func dropsRulesWithoutRegex() throws {
-        let json = #"{"sites":[],"groupRules":[{"name":"空的"},{"name":"有","regex":"#(.+)$"}]}"#
+        let json = """
+        {"sites":[],"groupRules":[
+          {"name":"空的"},
+          {"name":"有","regex":"#(.+)$"}
+        ]}
+        """
         let value = try config(json)
 
         #expect(value.groupRules.count == 1)
@@ -41,7 +50,11 @@ struct SourceConfigGroupRulesTests {
 
     @Test("旧形状（`hosts` + `regex` 数组）会被整条丢掉，而不是静默半生效")
     func legacyShapeIsDropped() throws {
-        let json = #"{"sites":[],"groupRules":[{"name":"旧的","hosts":["a.example.com"],"regex":["#(.+)$"]}]}"#
+        let json = """
+        {"sites":[],"groupRules":[
+          {"name":"旧的","hosts":["a.example.com"],"regex":["#(.+)$"]}
+        ]}
+        """
         let value = try config(json)
 
         #expect(value.groupRules.isEmpty)
@@ -49,7 +62,9 @@ struct SourceConfigGroupRulesTests {
 
     @Test("缺 `source` / `enabled` 按上游补默认值（interface / 启用）")
     func fillsDefaults() throws {
-        let json = #"{"sites":[],"groupRules":[{"name":"接口规则","regex":"#(.+)$"}]}"#
+        let json = """
+        {"sites":[],"groupRules":[{"name":"接口规则","regex":"#(.+)$"}]}
+        """
         let rule = try #require(try config(json).groupRules.first)
 
         #expect(rule.source == GroupRule.sourceInterface)

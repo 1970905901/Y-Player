@@ -13,7 +13,7 @@ struct HLSAdRulePackageTests {
         #""playlistHostSuffixes":["video.example.com"],"hostSuffixes":["ads.example.com"],"minimumSignals":1}]}"#
 
     @Test("解析带版本号的规则包")
-    func parsesVersionedPackage() throws {
+    func parsesVersionedPackage() {
         let value = HLSAdRulePackage.parse(packageJSON)
 
         #expect(value.schemaVersion == 2)

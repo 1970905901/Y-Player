@@ -24,8 +24,13 @@ struct GroupRuleConfigTests {
 
     @Test("接口规则自己写了 `enabled=false`、或正则编不出来：都不生效")
     func inactiveInterfaceRulesAreSkipped() {
-        let off = GroupRule(id: "off", name: "关掉", regex: "#(.+)$",
-                            enabled: false, source: GroupRule.sourceInterface)
+        let off = GroupRule(
+            id: "off",
+            name: "关掉",
+            regex: "#(.+)$",
+            enabled: false,
+            source: GroupRule.sourceInterface
+        )
         let broken = GroupRule(id: "broken", name: "坏", regex: "(", source: GroupRule.sourceInterface)
 
         let active = GroupRuleConfig.activeRules(interfaceRules: [off, broken])

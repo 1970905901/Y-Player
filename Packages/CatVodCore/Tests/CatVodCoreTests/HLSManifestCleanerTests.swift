@@ -114,9 +114,11 @@ struct HLSManifestCleanerTests {
             + "#EXTINF:8.0,\nmain-1.ts\n"
             + "#EXTINF:8.0,\nmain-2.ts\n"
             + "#EXT-X-ENDLIST\n"
-        let rule = try HLSManifestCleaner.Rule(requireDiscontinuity: true,
-                                               requireCrossDomain: true,
-                                               minimumSignals: 2)
+        let rule = try HLSManifestCleaner.Rule(
+            requireDiscontinuity: true,
+            requireCrossDomain: true,
+            minimumSignals: 2
+        )
 
         let result = HLSManifestCleaner.clean(baseURL: baseURL, manifest: manifest, rules: [rule])
 
@@ -244,12 +246,16 @@ struct HLSManifestCleanerTests {
             + "#EXTINF:8.0,\nmain-2.ts\n"
             + "#EXTINF:8.0,\nmain-3.ts\n"
             + "#EXT-X-ENDLIST\n"
-        let first = try HLSManifestCleaner.Rule(id: "rule-first",
-                                                hostSuffixes: ["ads.example.com"],
-                                                minimumSignals: 1)
-        let second = try HLSManifestCleaner.Rule(id: "rule-second",
-                                                 segmentUrlPatterns: ["/ad\\.ts$"],
-                                                 minimumSignals: 1)
+        let first = try HLSManifestCleaner.Rule(
+            id: "rule-first",
+            hostSuffixes: ["ads.example.com"],
+            minimumSignals: 1
+        )
+        let second = try HLSManifestCleaner.Rule(
+            id: "rule-second",
+            segmentUrlPatterns: ["/ad\\.ts$"],
+            minimumSignals: 1
+        )
 
         let result = HLSManifestCleaner.clean(baseURL: baseURL, manifest: manifest, rules: [first, second])
 

@@ -35,9 +35,11 @@ struct SourceConfigHLSRulesTests {
             + "#EXTINF:8.0,\nmain-1.ts\n"
             + "#EXTINF:8.0,\nmain-2.ts\n"
             + "#EXT-X-ENDLIST\n"
-        let result = HLSManifestCleaner.clean(baseURL: "https://video.example.com/index.m3u8",
-                                              manifest: manifest,
-                                              rules: [try rule.compile()])
+        let result = try HLSManifestCleaner.clean(
+            baseURL: "https://video.example.com/index.m3u8",
+            manifest: manifest,
+            rules: [rule.compile()]
+        )
         #expect(result.changed)
         #expect(!result.manifest.contains("ad.ts"))
     }

@@ -90,20 +90,24 @@ public struct GroupRule: Codable, Sendable, Hashable {
 
     /// 构一条用户规则（对齐上游 `createUser`：来源用户、默认启用、id 自动算）。
     public static func user(name: String, regex: String, wrapBracket: Bool = false) -> GroupRule {
-        GroupRule(id: automaticID(regex: regex, name: name),
-                  name: name,
-                  regex: regex,
-                  source: sourceUser,
-                  wrapBracket: wrapBracket)
+        GroupRule(
+            id: automaticID(regex: regex, name: name),
+            name: name,
+            regex: regex,
+            source: sourceUser,
+            wrapBracket: wrapBracket
+        )
     }
 
     /// 构一条 AI 规则（对齐上游 `createAi`：来源 AI，因此要过安全子集校验）。
     public static func ai(name: String, regex: String, wrapBracket: Bool = false) -> GroupRule {
-        GroupRule(id: automaticID(regex: regex, name: name),
-                  name: name,
-                  regex: regex,
-                  source: sourceAI,
-                  wrapBracket: wrapBracket)
+        GroupRule(
+            id: automaticID(regex: regex, name: name),
+            name: name,
+            regex: regex,
+            source: sourceAI,
+            wrapBracket: wrapBracket
+        )
     }
 
     /// 这条规则能不能用（正则编得出来；AI 来源还要过安全子集）。

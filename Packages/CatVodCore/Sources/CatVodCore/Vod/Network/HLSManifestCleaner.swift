@@ -24,7 +24,7 @@ public enum HLSManifestCleaner {
     /// 清单体积上限（字符）。
     public static let maxManifestChars = 2 * 1024 * 1024
     /// 清单行数上限。
-    public static let maxManifestLines = 20_000
+    public static let maxManifestLines = 20000
     /// 单条规则的编译正则条数上限。
     public static let maxRegexCount = 32
     /// 单条正则的长度上限。
@@ -50,13 +50,27 @@ public enum HLSManifestCleaner {
         public let removedSegmentDetails: [RemovedSegment]
 
         static func unchanged(_ manifest: String) -> Result {
-            Result(manifest: manifest, changed: false, fallback: false, removedSegments: 0,
-                   removedDurationSec: 0, ruleCounts: [:], removedSegmentDetails: [])
+            Result(
+                manifest: manifest,
+                changed: false,
+                fallback: false,
+                removedSegments: 0,
+                removedDurationSec: 0,
+                ruleCounts: [:],
+                removedSegmentDetails: []
+            )
         }
 
         static func fallback(_ manifest: String) -> Result {
-            Result(manifest: manifest, changed: false, fallback: true, removedSegments: 0,
-                   removedDurationSec: 0, ruleCounts: [:], removedSegmentDetails: [])
+            Result(
+                manifest: manifest,
+                changed: false,
+                fallback: true,
+                removedSegments: 0,
+                removedDurationSec: 0,
+                ruleCounts: [:],
+                removedSegmentDetails: []
+            )
         }
     }
 
@@ -224,7 +238,8 @@ public enum HLSManifestCleaner {
             return Result.fallback(manifest)
         }
         if manifest.contains("#EXT-X-SKIP:") || manifest.contains("#EXT-X-PART:")
-            || manifest.contains("#EXT-X-PRELOAD-HINT:") {
+            || manifest.contains("#EXT-X-PRELOAD-HINT:")
+        {
             return Result.fallback(manifest)
         }
         do {
@@ -260,7 +275,8 @@ public enum HLSManifestCleaner {
             // 杀太狠就别杀了：全删、超过 35%、或总时长超过 90 秒都当成「规则不可信」。
             if segmentCount == 0 || removedCount == segmentCount
                 || Double(removedCount) / Double(segmentCount) > maxRemovalRatio
-                || removedDuration > maxRemovedDurationSec {
+                || removedDuration > maxRemovedDurationSec
+            {
                 return Result.fallback(manifest)
             }
 
@@ -290,11 +306,13 @@ public enum HLSManifestCleaner {
                 }
             }
 
-            return Result(
-                manifest: try render(nodes,
-                                     trailingNewline: manifest.hasSuffix("\n"),
-                                     mediaSequenceIncrement: mediaSequenceIncrement,
-                                     discontinuitySequenceIncrement: discontinuitySequenceIncrement),
+            return try Result(
+                manifest: render(
+                    nodes,
+                    trailingNewline: manifest.hasSuffix("\n"),
+                    mediaSequenceIncrement: mediaSequenceIncrement,
+                    discontinuitySequenceIncrement: discontinuitySequenceIncrement
+                ),
                 changed: true,
                 fallback: false,
                 removedSegments: removedCount,
@@ -345,7 +363,7 @@ public enum HLSManifestCleaner {
         var discontinuityBefore = false
 
         for line in normalized.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
-            if line.isEmpty && pending.isEmpty {
+            if line.isEmpty, pending.isEmpty {
                 continue
             }
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -357,13 +375,15 @@ public enum HLSManifestCleaner {
                 pending.append(line)
                 continue
             }
-            if !trimmed.isEmpty && !trimmed.hasPrefix("#") {
+            if !trimmed.isEmpty, !trimmed.hasPrefix("#") {
                 if hasExtInf(pending) {
-                    nodes.append(Node(leading: pending,
-                                      uri: line,
-                                      durationSec: try duration(pending),
-                                      discontinuityBefore: discontinuityBefore,
-                                      removed: false))
+                    try nodes.append(Node(
+                        leading: pending,
+                        uri: line,
+                        durationSec: duration(pending),
+                        discontinuityBefore: discontinuityBefore,
+                        removed: false
+                    ))
                     pending.removeAll()
                     discontinuityBefore = false
                 } else {
@@ -426,7 +446,7 @@ public enum HLSManifestCleaner {
                     && matchesHost(baseHost, suffixes: rule.playlistHostSuffixes)
                 let scopedByPattern = !rule.playlistHostPatterns.isEmpty
                     && matchesPattern(baseHost, patterns: rule.playlistHostPatterns)
-                if !scopedBySuffix && !scopedByPattern {
+                if !scopedBySuffix, !scopedByPattern {
                     continue
                 }
             }
@@ -470,21 +490,26 @@ public enum HLSManifestCleaner {
     // MARK: - 拼回清单
 
     /// 拼回清单：跳过被删片段与它前面的「边界标签」，并推进序列号。
-    private static func render(_ nodes: [Node], trailingNewline: Bool,
-                               mediaSequenceIncrement: Int,
-                               discontinuitySequenceIncrement: Int) throws -> String {
+    private static func render(
+        _ nodes: [Node],
+        trailingNewline: Bool,
+        mediaSequenceIncrement: Int,
+        discontinuitySequenceIncrement: Int
+    ) throws -> String {
         var output = ""
         for (index, node) in nodes.enumerated() {
-            if node.uri != nil && node.removed {
+            if node.uri != nil, node.removed {
                 continue
             }
             if node.uri == nil, isSegmentPrefix(node.leading.first ?? ""), prefixesRemovedSegment(nodes, from: index) {
                 continue
             }
             for line in node.outputLines {
-                output += try rewriteSequence(line,
-                                             mediaIncrement: mediaSequenceIncrement,
-                                             discontinuityIncrement: discontinuitySequenceIncrement) + "\n"
+                output += try rewriteSequence(
+                    line,
+                    mediaIncrement: mediaSequenceIncrement,
+                    discontinuityIncrement: discontinuitySequenceIncrement
+                ) + "\n"
             }
         }
         // 输入末尾没有换行就还它没有换行（其余情况保持原样）。

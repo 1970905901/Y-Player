@@ -26,9 +26,11 @@ struct SniffRuleCleanerMappingTests {
             + "#EXTINF:8.0,\nmain-3.ts\n"
             + "#EXT-X-ENDLIST\n"
 
-        let other = HLSManifestCleaner.clean(baseURL: "https://other.example.com/index.m3u8",
-                                             manifest: manifest,
-                                             rules: [rule])
+        let other = HLSManifestCleaner.clean(
+            baseURL: "https://other.example.com/index.m3u8",
+            manifest: manifest,
+            rules: [rule]
+        )
         #expect(!other.changed)
 
         let matched = HLSManifestCleaner.clean(baseURL: baseURL, manifest: manifest, rules: [rule])

@@ -9,18 +9,22 @@ import Testing
 struct GroupRuleTests {
     @Test("方括号标签：一段名字里出现的都要抽出来")
     func bracketBuiltinExtractsTags() {
-        let rule = GroupRule.builtin(id: GroupRuleConfig.builtinBracket,
-                                     name: "方括号标签",
-                                     regex: "\\[([^\\]]+)\\]")
+        let rule = GroupRule.builtin(
+            id: GroupRuleConfig.builtinBracket,
+            name: "方括号标签",
+            regex: "\\[([^\\]]+)\\]"
+        )
 
         #expect(rule.extract("[主力][短剧]我的站") == ["主力", "短剧"])
     }
 
     @Test("竖线后缀：只取最后一段（半角与全角竖线都算）")
     func pipeBuiltinExtractsSuffixAfterPipe() {
-        let rule = GroupRule.builtin(id: GroupRuleConfig.builtinPipe,
-                                     name: "竖线后缀",
-                                     regex: "(?i)(?:[|｜])\\s*([^|｜]+?)\\s*$")
+        let rule = GroupRule.builtin(
+            id: GroupRuleConfig.builtinPipe,
+            name: "竖线后缀",
+            regex: "(?i)(?:[|｜])\\s*([^|｜]+?)\\s*$"
+        )
 
         #expect(rule.extract("⭐夏天|秒播") == ["秒播"])
         #expect(rule.extract("💥木偶|4K") == ["4K"])
@@ -31,9 +35,11 @@ struct GroupRuleTests {
 
     @Test("框线分隔：取 `┆` 后的最后一段")
     func boxBuiltinExtractsLastSegment() {
-        let rule = GroupRule.builtin(id: GroupRuleConfig.builtinBox,
-                                     name: "框线分隔",
-                                     regex: "(?i)┆\\s*([^┆]+)\\s*$")
+        let rule = GroupRule.builtin(
+            id: GroupRuleConfig.builtinBox,
+            name: "框线分隔",
+            regex: "(?i)┆\\s*([^┆]+)\\s*$"
+        )
 
         #expect(rule.extract("👽️┆玩偶┆4K") == ["4K"])
         #expect(rule.extract("🪵┆木偶┆4K") == ["4K"])
@@ -42,9 +48,11 @@ struct GroupRuleTests {
 
     @Test("圆点后缀：`•` 与 `·` 都算")
     func bulletBuiltinExtractsSuffixAfterBullet() {
-        let rule = GroupRule.builtin(id: GroupRuleConfig.builtinBullet,
-                                     name: "圆点后缀",
-                                     regex: "(?i)(?:[•·])\\s*([^•·]+?)\\s*$")
+        let rule = GroupRule.builtin(
+            id: GroupRuleConfig.builtinBullet,
+            name: "圆点后缀",
+            regex: "(?i)(?:[•·])\\s*([^•·]+?)\\s*$"
+        )
 
         #expect(rule.extract("热播 • APP") == ["APP"])
         #expect(rule.extract("蜡笔 • 4K") == ["4K"])
@@ -79,7 +87,9 @@ struct GroupRuleTests {
 
     @Test("接口配置给的规则：缺的字段按上游补默认值，且 id 稳定")
     func interfaceArrayFillsDefaults() throws {
-        let json = #"[{"name":"接口规则","regex":"#(.+)$"}]"#
+        let json = """
+        [{"name":"接口规则","regex":"#(.+)$"}]
+        """
         let rules = try JSONDecoder().decode([GroupRule].self, from: Data(json.utf8))
 
         #expect(rules.count == 1)
