@@ -47,6 +47,23 @@ public enum HLSAdRuleState {
         public var id: String { key }
     }
 
+    /// 规则包（内置包，以及将来的外部包）的条目：生效值走 ``resolveEnabled(_:key:overrides:)``。
+    ///
+    /// 与 ``interfaceEntries(_:origin:sourceID:overrides:)`` 的区别就在这一行：**包的规则默认是关的**
+    /// （要显式打开），接口规则默认看接口怎么写。搞混了表面上都是「规则没跑」，很难查。
+    public static func packageEntries(
+        _ rules: [HLSAdRule],
+        origin: String,
+        sourceID: String,
+        overrides: [String: Bool]
+    ) -> [Entry] {
+        rules.map { rule in
+            let ruleKey = key(origin: origin, sourceID: sourceID, ruleID: rule.id)
+            let enabled = resolveEnabled(rule, key: ruleKey, overrides: overrides)
+            return Entry(rule: rule, key: ruleKey, isEnabled: enabled)
+        }
+    }
+
     /// 一批接口规则里**真正要生效**的那些；同时给出每条规则的状态键（界面列表要用同一份键，
     /// 免得「列表显示的开关」与「真正过滤用的键」两处对不上）。
     public static func interfaceEntries(

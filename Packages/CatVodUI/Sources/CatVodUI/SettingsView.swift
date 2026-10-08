@@ -166,13 +166,15 @@ public struct SettingsView: View {
         }
     }
 
-    /// 广告清理那一行的摘要：接口给了几条、当前几条生效。
+    /// 广告清理那一行的摘要：内置 + 接口各几条、当前几条生效。
     private var adRuleSummary: String {
         let entries = model.hlsAdRuleEntries
-        guard !entries.isEmpty else {
-            return "这个接口没有规则"
+        let builtin = model.hlsBuiltinRuleEntries
+        guard !entries.isEmpty || !builtin.isEmpty else {
+            return "没有规则"
         }
-        return "\(entries.filter(\.isEnabled).count) / \(entries.count) 条生效"
+        let enabled = (entries + builtin).filter(\.isEnabled).count
+        return "\(enabled) / \(entries.count + builtin.count) 条生效"
     }
 
     /// 解析器（弹幕 API）数量摘要。

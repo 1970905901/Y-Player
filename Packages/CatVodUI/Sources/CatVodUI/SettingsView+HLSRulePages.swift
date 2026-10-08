@@ -16,6 +16,7 @@ struct HLSAdRulesView: View {
     var body: some View {
         List {
             summarySection
+            builtinSection
             rulesSection
             noteSection
         }
@@ -23,13 +24,42 @@ struct HLSAdRulesView: View {
         .navigationTitle("广告清理规则")
     }
 
+    private var builtinEntries: [HLSAdRuleState.Entry] {
+        model.hlsBuiltinRuleEntries
+    }
+
     private var summarySection: some View {
         Section("概览") {
-            InfoRow(title: "接口规则", value: "\(enabledCount) / \(entries.count) 条生效")
+            InfoRow(
+                title: "规则",
+                value: "内置 \(builtinEntries.count) 条 / 接口 \(entries.count) 条；"
+                    + "当前 \(enabledCount) 条生效"
+            )
             Text("清理在本机代理里做：`/m3u8` 每个请求**先按规则删广告分片、再改写地址**。"
                 + "改开关立刻生效（规则是每次请求现读的），不用重启。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private var builtinSection: some View {
+        Section {
+            if builtinEntries.isEmpty {
+                Text("内置规则集当前是空的 —— **这是有意的**：按上游的维护规则，内置规则必须默认关闭，"
+                    + "并且要有「该删」与「不该删」两侧的样本证据才收录。"
+                    + "资产与加载路径已经就位（`Resources/hls_rules.json`），往里加规则不用改代码。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(builtinEntries) { entry in
+                    row(entry)
+                }
+            }
+        } header: {
+            Text("内置规则包")
+        } footer: {
+            Text("包里的规则**默认全关**；要用的在这里打开。开关按规则 id 记 —— "
+                + "包升级（同一条规则改进匹配条件）不会把你的选择弄丢。")
         }
     }
 
@@ -80,9 +110,9 @@ struct HLSAdRulesView: View {
 
     private var noteSection: some View {
         Section("说明") {
-            Text("**内置规则包未做**：上游有一份带 `schemaVersion` 的内置规则包资产（默认关闭、显式打开），"
-                + "本项目还没打包内置规则，规则目前全部来自接口的 `hlsRules`。"
-                + "**「跳过广告」提示也没做**（播放页不会告诉你「已跳过 N 段」）。"
+            Text("**内置规则包已落地、规则集当前为空**：上游对内置规则的要求是「默认关闭 + 有该删/不该删两侧证据」，"
+                + "没证据的规则不进内置集（维护规则记在 `docs/任务记录/M06i`）。"
+                + "**「跳过广告」提示仍未做**（播放页不会告诉你「已跳过 N 段」）。"
                 + "解析规则里的 `exclude` 兜底不参与开关 —— 那是接口自己的解析规则，不属于广告规则包。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -90,7 +120,7 @@ struct HLSAdRulesView: View {
     }
 
     private var enabledCount: Int {
-        entries.filter(\.isEnabled).count
+        (entries + builtinEntries).filter(\.isEnabled).count
     }
 
     /// 开关的绑定：翻的是**本地覆盖**（写进 `hlsAdRuleOverrides` 会顺带重算规则并落盘）。

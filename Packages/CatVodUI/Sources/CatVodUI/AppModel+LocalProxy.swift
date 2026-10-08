@@ -67,20 +67,21 @@ public extension AppModel {
         return copy
     }
 
-    /// 记录当前接口的广告清理规则（M06d；本地开关 M06h）。
+    /// 记录当前要用的广告清理规则（M06d；本地开关 M06h；内置规则包 M06i）。
     ///
-    /// 两个来源，都对齐参考实现的 `HlsRuleConfig.reload()`：
-    /// 1. **`hlsRules`（规则包形态）**：基准是规则自己写的 `"enabled": true`（`compileExternal` 的判法），
-    ///    但**本地开关可以覆盖它**（``HLSAdRuleState/resolveInterfaceEnabled(_:key:overrides:)``）——
-    ///    接口说开的可以关掉，接口没开的也能自己开；
-    /// 2. **解析规则的 `exclude`（legacy 兜底）**：那才是「广告地址特征」，见 `compileLegacyRules`。
+    /// 三个来源，对齐参考实现的 `HlsRuleConfig.reload()`：
+    /// 1. **内置规则包**（``HLSBuiltinRules``）：默认**关**，要用得在设置里显式打开；
+    /// 2. **接口配置的 `hlsRules`**：基准是规则自己写的 `"enabled": true`，本地开关可以双向覆盖；
+    /// 3. **解析规则的 `exclude`（legacy 兜底）**：那才是「广告地址特征」，见 `compileLegacyRules`。
     ///    它来自接口自己的解析规则（不是广告规则包），所以**不参与开关**。
     ///
     /// 配置每次加载后调一次；**本机服务不重启** —— `/m3u8` 每个请求从 ``HLSAdRuleStore`` 现读规则。
-    /// 改开关时也调它（``AppModel/toggleHLSAdRule(_:)``），所以开关是**立刻生效**的。
+    /// 改开关时也调它（``AppModel/setHLSAdRule(_:enabled:)``），所以开关是**立刻生效**的。
     internal func refreshAdRules() {
+        let builtin = hlsBuiltinRuleEntries.filter(\.isEnabled).compactMap { try? $0.rule.compile() }
         guard let config = state.loadedSource?.config else {
-            adRuleStore.update([])
+            // 没加载接口时内置规则照样有效（内联/无配置也可能播本机内容）
+            adRuleStore.update(builtin)
             return
         }
         let entries = HLSAdRuleState.interfaceEntries(
@@ -91,7 +92,17 @@ public extension AppModel {
         )
         let fromPackage = entries.filter(\.isEnabled).compactMap { try? $0.rule.compile() }
         let legacy = config.rules.compactMap { $0.compiledAdRule() }
-        adRuleStore.update(fromPackage + legacy)
+        adRuleStore.update(builtin + fromPackage + legacy)
+    }
+
+    /// 内置规则包的条目：生效值走**包语义**（默认关，要显式打开），源标识是 `包 id@版本`。
+    var hlsBuiltinRuleEntries: [HLSAdRuleState.Entry] {
+        HLSAdRuleState.packageEntries(
+            HLSBuiltinRules.rules,
+            origin: Self.hlsBuiltinRuleOrigin,
+            sourceID: HLSBuiltinRules.sourceID,
+            overrides: hlsAdRuleOverrides
+        )
     }
 
     /// 设置页要列的接口广告规则：规则 + 状态键 + 当前是否生效。
@@ -118,6 +129,9 @@ public extension AppModel {
 
     /// 接口规则的「来源」标记（进状态键，见 ``HLSAdRuleState/key(origin:sourceID:ruleID:)``）。
     static let hlsAdRuleOrigin = "hlsRules"
+
+    /// 内置规则包的「来源」标记：与接口规则分开，免得同 id 的两条规则共用一把开关。
+    static let hlsBuiltinRuleOrigin = "builtin"
 
     /// 源标识：用接口地址（`key(...)` 内部会先摘要再进键，不落明文）；
     /// 内联配置没有地址，统一用 `inline` —— 也就是说**内联配置之间共用一套开关**（内联是贴一段 JSON 试用的路，可接受）。

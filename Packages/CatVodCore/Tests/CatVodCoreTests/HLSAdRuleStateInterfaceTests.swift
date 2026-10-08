@@ -69,3 +69,56 @@ struct HLSAdRuleStateInterfaceTests {
         #expect(entries[0].id == entries[0].key)
     }
 }
+
+/// 规则包那套生效判定（与接口规则**分开**测：包规则默认关）。
+///
+/// 两套判定搞混的后果很隐蔽：包规则明明是「默认关、要显式打开」，用错基准之后会变成
+/// 「只要包作者写了 `enabledByDefault: true` 就自动生效」，用户会突然被删片段。
+@Suite("规则包条目的开关语义")
+struct HLSAdRuleStatePackageTests {
+    private func rule(id: String, defaultOn: Bool) throws -> HLSAdRule {
+        let json = """
+        {"id":"\(id)","enabledByDefault":\(defaultOn),
+         "playlistHostSuffixes":["video.example.com"],
+         "hostSuffixes":["ads.example.com"],
+         "minimumSignals":1}
+        """
+        return try #require(HLSAdRule.parse(json))
+    }
+
+    @Test("基准是包的 `enabledByDefault`（不是规则写没写 `enabled`）")
+    func baseIsPackageDefault() throws {
+        let off = try rule(id: "p1", defaultOn: false)
+        let on = try rule(id: "p2", defaultOn: true)
+
+        let entries = HLSAdRuleState.packageEntries([off, on], origin: "builtin", sourceID: "pkg@1", overrides: [:])
+
+        #expect(entries.map(\.isEnabled) == [false, true])
+    }
+
+    @Test("本地开关两个方向都压过包的默认值")
+    func overridesWin() throws {
+        let off = try rule(id: "p1", defaultOn: false)
+        let on = try rule(id: "p2", defaultOn: true)
+        let probe = HLSAdRuleState.packageEntries([off, on], origin: "builtin", sourceID: "pkg@1", overrides: [:])
+
+        let entries = HLSAdRuleState.packageEntries(
+            [off, on],
+            origin: "builtin",
+            sourceID: "pkg@1",
+            overrides: [probe[0].key: true, probe[1].key: false]
+        )
+
+        #expect(entries.map(\.isEnabled) == [true, false])
+    }
+
+    @Test("同 id 的包规则与接口规则不会串味（来源进键）")
+    func originsDoNotCollide() throws {
+        let rule = try rule(id: "same", defaultOn: false)
+
+        let builtinKey = HLSAdRuleState.key(origin: "builtin", sourceID: "s", ruleID: rule.id)
+        let interfaceKey = HLSAdRuleState.key(origin: "hlsRules", sourceID: "s", ruleID: rule.id)
+
+        #expect(builtinKey != interfaceKey)
+    }
+}
