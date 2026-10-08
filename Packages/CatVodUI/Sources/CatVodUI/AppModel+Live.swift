@@ -10,14 +10,14 @@ import Foundation
 // 这里只做三件事：选源与选分组的持久化、清单与节目单的按需加载、把错误翻成一句人话。
 
 @MainActor
-extension AppModel {
+public extension AppModel {
     /// 配置里的直播源（`SourceConfig.lives`）。
-    public var liveSources: [LiveSource] {
+    var liveSources: [LiveSource] {
         state.loadedSource?.config.lives ?? []
     }
 
     /// 当前选中的直播源：`selectedLiveKey` 命中就用它，否则回落配置里的第一个。
-    public var selectedLiveSource: LiveSource? {
+    var selectedLiveSource: LiveSource? {
         let sources = liveSources
         guard !sources.isEmpty else {
             return nil
@@ -26,12 +26,12 @@ extension AppModel {
     }
 
     /// 已解析的清单（含分组与频道）；还没加载过时为 `nil`。
-    public var liveSource: LiveSource? {
+    var liveSource: LiveSource? {
         liveState.loadedSource
     }
 
     /// 当前选中的分组：按名字取，找不到就用清单里的第一个。
-    public var selectedLiveGroupObject: LiveGroup? {
+    var selectedLiveGroupObject: LiveGroup? {
         guard let source = liveSource, !source.groups.isEmpty else {
             return nil
         }
@@ -39,7 +39,7 @@ extension AppModel {
     }
 
     /// 某频道已拿到的节目单（没有就返回 `nil`，界面按「暂无节目」处理）。
-    public func liveGuide(for channel: LiveChannel) -> EPGGuide? {
+    func liveGuide(for channel: LiveChannel) -> EPGGuide? {
         liveGuides[channel.epgID]
     }
 
@@ -47,7 +47,7 @@ extension AppModel {
     ///
     /// 已经是这个源的已解析结果就直接返回（``LiveRepository/load(_:)`` 自己也短路），
     /// `force` 用于界面上的「重新加载」。
-    public func loadLivePlaylist(force: Bool = false) async {
+    func loadLivePlaylist(force: Bool = false) async {
         guard let source = selectedLiveSource else {
             liveState = .failed("当前接口里没有直播源（配置的 `lives` 为空）")
             return
@@ -64,7 +64,8 @@ extension AppModel {
         }
         do {
             let repository = LiveRepository(transport: transportForConfiguration())
-            liveState = .loaded(try await repository.load(source))
+            let loaded = try await repository.load(source)
+            liveState = .loaded(loaded)
         } catch {
             liveState = .failed(Self.liveMessage(error))
         }
@@ -74,7 +75,7 @@ extension AppModel {
     ///
     /// 失败**不当错误处理**：界面上这一行显示「暂无节目」就行，原因留在 ``liveEPGNotice``
     /// （上游 `fetchEpgDay` 也是吞掉异常，不让某个频道的节目单拖垮整页）。
-    public func loadLiveGuide(for channel: LiveChannel) async {
+    func loadLiveGuide(for channel: LiveChannel) async {
         guard let source = liveState.loadedSource else {
             return
         }
