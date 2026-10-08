@@ -99,6 +99,18 @@ public extension View {
     }
 }
 
+/// 版本自适应的导航标题样式：`inline` 是 iOS 的原生小标题，macOS 没有这个形态（原样返回）。
+public extension View {
+    /// 把导航标题设为「内联」小标题（发现页的参考版式：标题与工具栏同一行，不占大标题高度）。
+    func adaptiveInlineNavigationTitle() -> some View {
+        #if os(iOS)
+        return navigationBarTitleDisplayMode(.inline)
+        #else
+        return self
+        #endif
+    }
+}
+
 /// 版本自适应的可搜索修饰：iOS 15+ 原生 `.searchable`，只在放置位置上做版本区分。
 public extension View {
     /// 顶部搜索框（iOS/iPadOS 的原生搜索栏；macOS 走原生工具栏搜索）。

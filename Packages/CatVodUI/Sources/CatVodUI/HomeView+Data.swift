@@ -2,59 +2,54 @@ import CatVodCore
 import CatVodSource
 import SwiftUI
 
-// 首页的数据加载逻辑（与视图分离，便于单测与复用）。
+// 发现页（`HomeView`）的数据加载逻辑（与视图分离，便于单测与复用）。
 
 extension HomeView {
-    /// 「横向展示」每行的海报张数。
+    /// 「横向展示」每行的海报张数（参考视频的网格是 3 列）。
     static let posterColumnCount = 3
 
-    /// 「横向展示」用的换行切片：每 ``posterColumnCount`` 张一行，**末尾补 `nil` 占满**。
-    ///
-    /// 为什么在数据里补齐：这样每行固定 3 个格子，最后一行的卡片不会被拉宽，
-    /// 视图里也不必写 `ForEach(0 ..< n)` 这种**非常量范围**（SwiftUI 不推荐）。
-    var posterRows: [[VodItem?]] {
-        var rows: [[VodItem?]] = []
-        var index = 0
-        let items = result.list
-        while index < items.count {
-            var row: [VodItem?] = []
-            for offset in 0 ..< Self.posterColumnCount {
-                let itemIndex = index + offset
-                row.append(itemIndex < items.count ? items[itemIndex] : nil)
-            }
-            rows.append(row)
-            index += Self.posterColumnCount
-        }
-        return rows
-    }
-
-    /// 筛选器绑定：未选择时使用上游给的初始值。
-    func binding(for filter: VodFilter) -> Binding<String> {
-        Binding(
-            get: { extend[filter.key] ?? filter.initialValue },
-            set: { extend[filter.key] = $0 }
+    /// 是否还能继续加载下一页（判定逻辑在 `DiscoverPaging`，单测覆盖）。
+    var canLoadMore: Bool {
+        DiscoverPaging.canLoadMore(
+            page: page,
+            pageCount: result.pagecount,
+            itemCount: result.list.count,
+            reachedEnd: reachedEnd
         )
     }
 
-    /// 分类选择绑定：**分类加载的唯一入口**。
+    /// `.task(id:)` 的触发键：页码或条数变化都重新尝试取下一页。
+    var loadMoreTrigger: String {
+        "\(page)-\(result.list.count)"
+    }
+
+    /// 切换分类（分类条点击）：重置筛选与翻页，然后加载第一页。
     ///
-    /// 为什么不用 `.onChange(of: selectedCategoryID)`：`loadHome()` / `loadCategory()` 内部也会写
+    /// 为什么不做成 `Binding` + `.onChange`：`loadHome()` / `loadCategory()` 内部也会回写
     /// `selectedCategoryID`，用 onChange 会把「一次加载」变成两次请求（同分类同页各发一遍）。
-    /// 这里只把「用户改分类」当事件：重置筛选与翻页 → 加载一次。
-    var categoryBinding: Binding<String> {
-        Binding(
-            get: { selectedCategoryID },
-            set: { newValue in
-                // Picker 在初次布局时可能回写同一个值：值没变就不发请求。
-                guard newValue != selectedCategoryID else {
-                    return
-                }
-                selectedCategoryID = newValue
-                extend = [:]
-                page = 1
-                Task { await loadCategory() }
-            }
-        )
+    /// 这里只把「用户改分类」当事件。
+    func selectCategory(_ categoryID: String) {
+        guard !categoryID.isEmpty, categoryID != selectedCategoryID else {
+            return
+        }
+        selectedCategoryID = categoryID
+        extend = [:]
+        page = 1
+        reachedEnd = false
+        Task { await loadCategory() }
+    }
+
+    /// 点筛选胶囊：**立即生效**（参考视频里没有「应用筛选」按钮）。
+    ///
+    /// 与当前选中值相同就不重发请求（点在当前项上不该白刷一次）。
+    func applyFilter(_ row: DiscoverFilterRow, value: String) {
+        guard row.selectedValue != value else {
+            return
+        }
+        extend[row.key] = value
+        page = 1
+        reachedEnd = false
+        Task { await loadCategory() }
     }
 
     /// 让首页与「当前接口的站点清单」保持一致。
@@ -99,6 +94,7 @@ extension HomeView {
         selectedCategoryID = ""
         extend = [:]
         page = 1
+        reachedEnd = false
         result = SpiderResult()
         errorText = ""
     }
@@ -160,6 +156,8 @@ extension HomeView {
         }
         isLoading = true
         errorText = ""
+        // 整页替换式加载：每次都要重新判断「能不能继续往下加载」。
+        reachedEnd = false
         defer { isLoading = false }
 
         // 首页缓存（设置 → 数据 → 缓存管理 → 首页缓存时间）：命中就直接用，一个请求都不发。
@@ -197,6 +195,71 @@ extension HomeView {
         }
     }
 
+    /// 上拉加载更多：把下一页**追加**到列表尾部。
+    ///
+    /// 与 `loadCategory()`（整页替换）分开写，避免把「翻页」和「换分类 / 换筛选」混成一条路径。
+    /// 对齐参考录屏：发现页没有分页按钮，滚动到底部自动接着取。
+    func loadMore() async {
+        guard let targetSite = selectedSite, !isLoading else {
+            return
+        }
+        let current = selectedCategoryID.isEmpty ? (result.categories.first?.typeID ?? "") : selectedCategoryID
+        guard !current.isEmpty else {
+            return
+        }
+        let nextPage = page + 1
+        isLoading = true
+        errorText = ""
+        defer { isLoading = false }
+
+        let cacheKey = HomeCacheStore.Key(
+            siteKey: targetSite.key,
+            categoryID: current,
+            page: nextPage,
+            extend: extend
+        )
+        if let cached = model.cachedHomeResult(cacheKey) {
+            appendPage(cached, number: nextPage)
+            return
+        }
+
+        do {
+            let category = try await model.makeSiteClient().category(
+                site: targetSite,
+                categoryID: current,
+                page: nextPage,
+                extend: extend
+            )
+            let filled = await model.makePictureFiller().fill(site: targetSite, result: category)
+            appendPage(filled, number: nextPage)
+            model.storeHomeResult(filled, key: cacheKey)
+        } catch {
+            errorText = describe(error)
+        }
+    }
+
+    /// 追加一页到列表尾部。
+    ///
+    /// 空列表是「分页到底」的信号：上游没给 `pagecount` 时，这是唯一能停住上拉加载的依据。
+    /// 后续页若带上分类 / 筛选 / 总页数（少见但上游确实会）就一并更新，否则保持原样。
+    func appendPage(_ incoming: SpiderResult, number: Int) {
+        if incoming.list.isEmpty {
+            reachedEnd = true
+            return
+        }
+        result.list.append(contentsOf: incoming.list)
+        if incoming.hasCategories {
+            result.categories = incoming.categories
+        }
+        if !incoming.filters.isEmpty {
+            result.filters = incoming.filters
+        }
+        if incoming.pagecount > 0 {
+            result.pagecount = incoming.pagecount
+        }
+        page = number
+    }
+
     func describe(_ error: Error) -> String {
         userFacingMessage(error)
     }
@@ -230,37 +293,5 @@ struct VodRow: View {
                 }
             }
         }
-    }
-}
-
-/// 海报卡片：首页「横向展示」用（封面 + 片名 + 备注）。
-///
-/// 与 ``VodRow`` 同源同数据，只是换了排布；高度固定，保证同一行里的卡片底部对齐。
-struct PosterCard: View {
-    let item: VodItem
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            AsyncImage(url: URL(string: item.vodPic)) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                Color.secondary.opacity(0.15)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 132)
-            .clipShape(RoundedRectangle(cornerRadius: PlatformShims.cardCornerRadius))
-
-            Text(item.vodName.isEmpty ? item.vodID : item.vodName)
-                .font(.caption)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-            if !item.vodRemarks.isEmpty {
-                Text(item.vodRemarks)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

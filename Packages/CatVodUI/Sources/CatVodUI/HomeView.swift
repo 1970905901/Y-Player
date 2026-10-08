@@ -2,16 +2,21 @@ import CatVodCore
 import CatVodSource
 import SwiftUI
 
-/// 首页：选择站点 → 分类/筛选 → 内容列表 → 进入详情。
+/// 发现页：选站点 → 分类 / 筛选 → 内容 → 进入详情。
+///
+/// 版式对齐用户提供的参考录屏（`RPReplay_Final1791437934`）：
+/// 左上角站点名点开是站点切换面板，右上角是刷新与搜索；下面依次是横向滚动的分类条、
+/// 逐行筛选胶囊，内容是 3 列海报网格（封面右上角带更新角标、片名居中一行），
+/// 滚动到底部**自动接着加载**下一页（参考版式里没有分页按钮）。
 ///
 /// 站点来源：CMS（`type 0/1/2/4`）与 CatSpider HTTP（`type 3`，js2p 宿主）都能浏览，
 /// 由 `AppModel.makeSiteClient()` 按类型分发；JS 源的站点清单来自内嵌 Node 宿主（macOS 进程 / iOS libnode，见 M16P4）。
-/// 数据加载逻辑见 `HomeView+Data.swift`。
+/// 数据加载逻辑见 `HomeView+Data.swift`，判定逻辑见 `DiscoverLayout.swift`，展示件见 `DiscoverViews.swift`。
 @MainActor
 public struct HomeView: View {
     @ObservedObject var model: AppModel
     @State var selectedSiteKey = ""
-    /// 当前分类。**程序内回写它不会发起加载**：分类加载的唯一入口是 `categoryBinding`
+    /// 当前分类。**程序内回写它不会发起加载**：分类加载的唯一入口是 `selectCategory(_:)`
     /// （见 `HomeView+Data.swift`），否则 `loadHome()` / `loadCategory()` 的回写会再触发一次同页请求。
     @State var selectedCategoryID = ""
     @State var extend: [String: String] = [:]
@@ -19,6 +24,10 @@ public struct HomeView: View {
     @State var page = 1
     @State var isLoading = false
     @State var errorText = ""
+    /// 上一次翻页拿到了空列表：上游没给 `pagecount` 时靠它停住「上拉加载」。
+    @State var reachedEnd = false
+    /// 站点切换面板是否展开（参考视频：点左上角站点名弹出）。
+    @State var isSitePanelPresented = false
     /// 已加载内容对应的「站点清单版本」（`AppModel.siteCatalogRevision`）。
     ///
     /// 与 `selectedSiteKey` 一起构成「这份内容属于哪个接口」的判断：
@@ -52,46 +61,32 @@ public struct HomeView: View {
         return result.filters[category.typeID] ?? category.filters
     }
 
+    /// 筛选区的回显模型（上游没给筛选名的行不占左侧标签位，与参考视频一致）。
+    var filterRows: [DiscoverFilterRow] {
+        DiscoverFilterRow.rows(filters: filters, selected: extend)
+    }
+
+    /// 站点按钮上的名字（站点名为空时回落 `key`）。
+    var siteTitle: String {
+        guard let site = selectedSite else {
+            return "选择站点"
+        }
+        return site.name.isEmpty ? site.key : site.name
+    }
+
     public var body: some View {
-        List {
-            if browsableSites.isEmpty {
-                Section("首页") {
-                    Text(emptyHint)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                siteSection
-                categorySection
-                if !filters.isEmpty {
-                    filterSection
-                }
-                contentSection
-                pagingSection
-            }
-            if !errorText.isEmpty {
-                Section("错误") {
-                    Text(errorText)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                }
+        ZStack(alignment: .top) {
+            content
+            if isSitePanelPresented {
+                sitePanelOverlay
             }
         }
-        .adaptiveListStyle()
         .navigationTitle("发现")
+        .adaptiveInlineNavigationTitle()
         .adaptiveToolbar {
-            NavigationLink {
-                SearchView(model: model)
-            } label: {
-                Image(systemName: "magnifyingglass")
-            }
+            siteSwitcherButton
         } trailing: {
-            Button {
-                Task { await loadHome(force: true) }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .disabled(isLoading || selectedSite == nil)
+            trailingButtons
         }
         .task {
             await syncHomeWithInterface()
@@ -110,128 +105,207 @@ public struct HomeView: View {
         }
     }
 
-    // MARK: - 区块
+    // MARK: - 主体
 
-    private var siteSection: some View {
-        Section("站点") {
-            Picker("当前站点", selection: $selectedSiteKey) {
-                ForEach(browsableSites) { site in
-                    Text(site.name.isEmpty ? site.key : site.name).tag(site.key)
-                }
-            }
-        }
-    }
-
-    private var categorySection: some View {
-        Section("分类") {
-            if result.categories.isEmpty {
-                Text(isLoading ? "加载中…" : "暂无分类")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+    private var content: some View {
+        VStack(spacing: 0) {
+            if browsableSites.isEmpty {
+                placeholder(emptyHint)
             } else {
-                Picker("分类", selection: categoryBinding) {
-                    ForEach(result.categories) { category in
-                        Text(category.typeName).tag(category.typeID)
+                if !result.categories.isEmpty {
+                    DiscoverCategoryStrip(
+                        categories: result.categories,
+                        selectedID: selectedCategory?.typeID ?? "",
+                        onSelect: selectCategory
+                    )
+                }
+                if !filterRows.isEmpty {
+                    DiscoverFilterStrip(rows: filterRows) { row, value in
+                        applyFilter(row, value: value)
                     }
                 }
+                contentScroll
+            }
+            if !errorText.isEmpty {
+                errorBanner
             }
         }
     }
 
-    private var filterSection: some View {
-        Section("筛选") {
-            ForEach(filters) { filter in
-                Picker(filter.name, selection: binding(for: filter)) {
-                    ForEach(filter.values) { value in
-                        Text(value.name.isEmpty ? value.value : value.name).tag(value.value)
-                    }
-                }
-            }
-            Button("应用筛选") {
-                page = 1
-                Task { await loadCategory() }
-            }
+    /// 内容区：横向展示是 3 列海报网格（参考视频的版式），纵向展示是内容行（M2 的原观感）。
+    /// 两种展示方式共用同一份数据与同一条翻页路径，只有排布不同。
+    private var contentScroll: some View {
+        ScrollView {
+            contentBody
         }
     }
 
-    private var contentSection: some View {
-        Section("内容") {
-            if result.list.isEmpty {
-                Text(isLoading ? "加载中…" : "暂无内容")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            // 展示方式来自「设置 → 首页 → 展示方式」（`AppModel.homeLayout`）：
-            // 纵向是一列内容行（默认，等同 M2 的观感），横向是海报网格。
-            // 两种布局都用同一份 `result.list`，分类 / 筛选 / 分页逻辑完全不变。
+    @ViewBuilder private var contentBody: some View {
+        if result.list.isEmpty {
+            placeholder(isLoading ? "加载中…" : "暂无内容")
+        } else {
             switch model.homeLayout {
             case .vertical:
                 verticalList
             case .horizontal:
                 posterGrid
             }
+            loadMoreFooter
         }
     }
 
     private var verticalList: some View {
-        ForEach(result.list) { item in
-            NavigationLink {
-                VodDetailView(model: model, site: selectedSite, vodID: item.vodID)
-            } label: {
-                VodRow(item: item)
+        LazyVStack(spacing: 12) {
+            ForEach(result.list) { item in
+                NavigationLink {
+                    VodDetailView(model: model, site: selectedSite, vodID: item.vodID)
+                } label: {
+                    VodRow(item: item)
+                }
+                .buttonStyle(.plain)
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
-    /// 横向展示：每行固定 ``posterColumnCount`` 张海报卡片（末行由 `posterRows` 补空位）。
-    ///
-    /// 不用 `LazyVGrid`：它嵌在 `List` 行里的布局行为在各系统版本上并不一致，
-    /// 这里用最朴素的 `HStack`（观感与交互仍交给系统控件），换行由 `posterRows` 切好。
     private var posterGrid: some View {
-        ForEach(Array(posterRows.enumerated()), id: \.offset) { _, row in
-            HStack(alignment: .top, spacing: 8) {
-                ForEach(Array(row.enumerated()), id: \.offset) { _, item in
-                    if let item {
-                        NavigationLink {
-                            VodDetailView(model: model, site: selectedSite, vodID: item.vodID)
-                        } label: {
-                            PosterCard(item: item)
-                        }
-                    } else {
-                        // 空位：只占宽度，撑住这一行的排版。
-                        Color.clear.frame(maxWidth: .infinity)
-                    }
+        LazyVGrid(columns: posterColumns, spacing: 14) {
+            ForEach(result.list) { item in
+                NavigationLink {
+                    VodDetailView(model: model, site: selectedSite, vodID: item.vodID)
+                } label: {
+                    DiscoverPosterCard(item: item)
                 }
+                .buttonStyle(.plain)
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
-    private var pagingSection: some View {
-        Section {
-            HStack {
-                Button("上一页") {
-                    page = max(page - 1, 1)
-                    Task { await loadCategory() }
-                }
-                .disabled(page <= 1 || isLoading)
+    private var posterColumns: [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(), spacing: 10, alignment: .top),
+            count: Self.posterColumnCount
+        )
+    }
 
-                Spacer()
-                Text(pageText)
+    // MARK: - 底部与状态
+
+    /// 底部：还能翻页就显示「加载中…」并触发下一页（参考版式里没有分页按钮）。
+    @ViewBuilder private var loadMoreFooter: some View {
+        if canLoadMore {
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("加载中…")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                Spacer()
-
-                Button("下一页") {
-                    page += 1
-                    Task { await loadCategory() }
-                }
-                .disabled(isLoading || (result.pagecount > 0 && page >= result.pagecount))
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            // `id` 用「页码 + 条数」：任一变化都会重新触发 —— 上一页追加完成、或上次因
+            // 正在加载被跳过时，都能接着把下一页取回来。
+            .task(id: loadMoreTrigger) {
+                await loadMore()
+            }
+        } else if !result.list.isEmpty {
+            Text("没有更多了")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
         }
     }
 
-    private var pageText: String {
-        result.pagecount > 0 ? "第 \(page) / \(result.pagecount) 页" : "第 \(page) 页"
+    /// 空态 / 加载态：居中一行（加载中时带系统指示器，与参考视频一致）。
+    private func placeholder(_ text: String) -> some View {
+        VStack(spacing: 8) {
+            if isLoading {
+                ProgressView()
+            }
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 80)
+    }
+
+    private var errorBanner: some View {
+        Text(errorText)
+            .font(.footnote)
+            .foregroundStyle(.red)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+    }
+
+    // MARK: - 工具栏
+
+    /// 左上角：站点名 + 下拉箭头，点开站点切换面板（参考视频的入口）。
+    private var siteSwitcherButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isSitePanelPresented.toggle()
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "cloud")
+                Text(siteTitle)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption2)
+            }
+            .font(.body.weight(.semibold))
+        }
+        .disabled(browsableSites.isEmpty)
+    }
+
+    /// 右上角：刷新（回到第一页并绕过缓存）与搜索。
+    private var trailingButtons: some View {
+        HStack(spacing: 16) {
+            Button {
+                // 上拉加载可能已经翻到很后面，所以刷新一律回到第一页。
+                page = 1
+                reachedEnd = false
+                Task { await loadHome(force: true) }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .disabled(isLoading || selectedSite == nil)
+
+            NavigationLink {
+                SearchView(model: model)
+            } label: {
+                Image(systemName: "magnifyingglass")
+            }
+            .disabled(browsableSites.isEmpty)
+        }
+    }
+
+    // MARK: - 站点切换面板
+
+    private var sitePanelOverlay: some View {
+        ZStack(alignment: .top) {
+            // 半透明遮罩：点一下收起面板（参考视频的弹出层行为）。
+            Color.black.opacity(0.2)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isSitePanelPresented = false
+                    }
+                }
+            DiscoverSitePanel(sites: browsableSites, selectedKey: selectedSiteKey) { key in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isSitePanelPresented = false
+                }
+                // 加载交给 `.onChange(of: selectedSiteKey)` 统一发起，避免同一次切换发两次请求。
+                selectedSiteKey = key
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+        }
     }
 
     private var emptyHint: String {
