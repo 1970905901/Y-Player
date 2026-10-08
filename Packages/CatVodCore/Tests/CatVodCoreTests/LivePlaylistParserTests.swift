@@ -25,7 +25,8 @@ struct LivePlaylistParserTests {
 
     @Test("m3u：分组、属性、`|` 后的 header、设置行、元信息频道过滤与自动编号")
     func m3uPlaylist() throws {
-        let parsed = parser.parse(m3u, into: try makeSource(#"{"name":"演示直播"}"#))
+        let source = try makeSource(#"{"name":"演示直播"}"#)
+        let parsed = parser.parse(m3u, into: source)
 
         #expect(parsed.groups.map(\.name) == ["央视", "卫视"])
         let cctv = try #require(parsed.groups.first?.channels.first)
@@ -60,7 +61,8 @@ struct LivePlaylistParserTests {
 
     @Test("txt：`#genre#` 切分组、`#` 多线路、元信息过滤、跨分组连续编号")
     func txtPlaylist() throws {
-        let parsed = parser.parse(txt, into: try makeSource(#"{"name":"演示直播"}"#))
+        let source = try makeSource(#"{"name":"演示直播"}"#)
+        let parsed = parser.parse(txt, into: source)
 
         #expect(parsed.groups.map(\.name) == ["央视", "卫视"])
         let cctv = try #require(parsed.groups.first?.channels.first)
@@ -73,7 +75,8 @@ struct LivePlaylistParserTests {
 
     @Test("txt：没有 `#genre#` 时落到默认分组（上游 `Group.create()`）")
     func txtWithoutGroups() throws {
-        let parsed = parser.parse("CCTV-1,http://live.example.com/a.m3u8", into: try makeSource(#"{"name":"源"}"#))
+        let source = try makeSource(#"{"name":"源"}"#)
+        let parsed = parser.parse("CCTV-1,http://live.example.com/a.m3u8", into: source)
         #expect(parsed.groups.count == 1)
         #expect(parsed.groups.first?.channels.first?.urls == ["http://live.example.com/a.m3u8"])
     }
@@ -81,12 +84,14 @@ struct LivePlaylistParserTests {
     @Test("分组名里的 `_密码`：默认拆开，`pass = true` 时不拆")
     func groupPassword() throws {
         let text = "加密组_1234,#genre#\nCCTV-1,http://live.example.com/a.m3u8"
-        let split = parser.parse(text, into: try makeSource(#"{"name":"源"}"#))
+        let source = try makeSource(#"{"name":"源"}"#)
+        let split = parser.parse(text, into: source)
         #expect(split.groups.first?.name == "加密组")
         #expect(split.groups.first?.pass == "1234")
         #expect(split.groups.first?.isHidden == true)
 
-        let plain = parser.parse(text, into: try makeSource(#"{"name":"源","pass":true}"#))
+        let plainSource = try makeSource(#"{"name":"源","pass":true}"#)
+        let plain = parser.parse(text, into: plainSource)
         #expect(plain.groups.first?.name == "加密组_1234")
         #expect(plain.groups.first?.pass.isEmpty == true)
     }
@@ -94,7 +99,8 @@ struct LivePlaylistParserTests {
     @Test("json：分组数组直接落成模型，并补编号")
     func jsonPlaylist() throws {
         let json = #"[{"name":"央视","channel":[{"name":"CCTV-1","urls":["http://live.example.com/a.m3u8"]}]}]"#
-        let parsed = parser.parse(json, into: try makeSource(#"{"name":"源"}"#))
+        let source = try makeSource(#"{"name":"源"}"#)
+        let parsed = parser.parse(json, into: source)
         #expect(parsed.groups.map(\.name) == ["央视"])
         #expect(parsed.groups.first?.channels.first?.number == "001")
     }

@@ -59,9 +59,10 @@ public struct LiveGroup: Codable, Sendable, Hashable, Identifiable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        container.encode(pass.isEmpty ? name : name + "_" + pass, forKey: .name)
-        container.encode(pass, forKey: .pass)
-        container.encode(channels, forKey: .channel)
+        // `encode` 是 throwing：必须逐个 `try`（CI 报过 call can throw but is not marked with 'try'）。
+        try container.encode(pass.isEmpty ? name : name + "_" + pass, forKey: .name)
+        try container.encode(pass, forKey: .pass)
+        try container.encode(channels, forKey: .channel)
     }
 
     enum CodingKeys: String, CodingKey {

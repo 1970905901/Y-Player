@@ -14,7 +14,7 @@ import Foundation
 /// 与上游的差别（均已记录）：DRM（`license_key` 等）与 EPG 拉取/时移时间格式化属后续阶段；
 /// 上游用「元信息频道名」（`更新时间…`）过滤的行，这里同样过滤（``isMetaChannel(_:)``）。
 public struct LivePlaylistParser: Sendable {
-    public init() {}
+    public init() { }
 
     /// 解析清单，返回**补全后**的直播源。
     ///
@@ -284,4 +284,3 @@ extension LivePlaylistParser {
         source.groups = groups
     }
 }
-
