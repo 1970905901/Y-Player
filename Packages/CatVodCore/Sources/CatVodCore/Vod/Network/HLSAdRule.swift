@@ -28,6 +28,15 @@ public struct HLSAdRule: Codable, Sendable, Hashable {
     /// 本地开关（nil = 没设过 → 按 ``enabledByDefault``）。
     public var enabled: Bool?
 
+    /// 规则**自己**写的开关（对齐参考实现 `HlsAdRule.isEnabled()`：只有显式 `true` 才算开）。
+    ///
+    /// 与 ``HLSAdRuleState/resolveEnabled(_:key:overrides:)`` 的区别：那个还会看本地覆盖与 `enabledByDefault`，
+    /// 用于**规则包**（默认关闭、要显式打开）；这个只看 JSON 里的 `enabled`，用于**接口配置里的 `hlsRules`**
+    /// （参考实现 `compileExternal` 就是这么判的）。
+    public var isEnabled: Bool {
+        enabled == true
+    }
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = container.lenientString(.id)

@@ -23,8 +23,13 @@ public struct SourceConfig: Codable, Sendable, Hashable {
     public var headers: [HeaderRule] = []
     /// 嗅探规则。
     public var rules: [SniffRule] = []
-    /// HLS 广告清理规则。
-    public var hlsRules: [HlsRule] = []
+    /// HLS **广告清理规则**（规则包形态）。
+    ///
+    /// ⚠️ 形状说明（M06d 修正）：这个字段在上游是**规则包形态**（`HlsAdRule`：`id` / `playlistHostSuffixes` /
+    /// `hostSuffixes` / `segmentUrlRegex` / `minDuration` / `enabled` …），
+    /// 不是 `rules` 那种 `{hosts, regex, exclude}` —— 之前按 `rules` 的形状建模，等于把配置里的规则**静默丢掉**
+    /// （解析不报错，但没有一条能匹配）。解析规则的 `exclude` 另有用途，见 `SniffRule+CleanerRule.swift`。
+    public var hlsRules: [HLSAdRule] = []
     /// 直播分组规则。
     public var groupRules: [GroupRule] = []
     /// 广告域名或正则字符串。

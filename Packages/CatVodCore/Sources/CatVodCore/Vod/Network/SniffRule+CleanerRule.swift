@@ -1,15 +1,16 @@
 import Foundation
 
-// 接口配置里的 `hlsRules`（``HlsRule``：`hosts` / `regex` / `exclude`）→ 广告清理器认的规则。
+// 接口配置里的**解析规则**（``SniffRule``：`hosts` / `regex` / `exclude` / `script`）→ 广告清理器认的规则。
 //
-// 对齐参考实现 `api/config/HlsRuleConfig.java#compileLegacyRules`：
+// 对齐参考实现 `api/config/HlsRuleConfig.java#compileLegacyRules`（那边管这叫「legacy 兜底」）：
 // - `hosts` → **清单作用域正则**（`playlistHostPatterns`）；
 // - `exclude` → **分片 URL 正则**（`segmentUrlPatterns`），也就是「广告地址特征」；
 // - `regex` 不参与（参考实现那一份也只用 `hosts` + `exclude`）；
 // - `exclude` 为空整条跳过：没有可匹配的分片特征，留着只会变成「命中一切」的空规则。
 //
-// 为什么放 Core：这是「配置 → 清理规则」的纯换算，与界面无关，和清理器在同一层，测试也不需要起服务。
-public extension HlsRule {
+// 为什么是 `rules` 而不是 `hlsRules`：`hlsRules` 是规则包形态（``HLSAdRule``），走 `compile()`；
+// 这条映射对应的是**解析规则里的 exclude**（上游 `Rule.getExclude()`），别搞混 —— M06d 就是先搞混了一次。
+public extension SniffRule {
     /// 编成清理器的规则；`exclude` 为空时返回 nil（调用方跳过这条）。
     func compiledAdRule() -> HLSManifestCleaner.Rule? {
         guard !exclude.isEmpty else { return nil }

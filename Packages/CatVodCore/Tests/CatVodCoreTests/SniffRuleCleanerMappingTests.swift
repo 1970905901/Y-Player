@@ -2,17 +2,20 @@
 import Foundation
 import Testing
 
-/// 接口配置里的 `hlsRules`（`hosts` / `regex` / `exclude`）→ 清理器规则。
+/// 解析规则（``SniffRule``）的 `exclude` → 清理器规则。
 ///
 /// 对齐参考实现 `HlsRuleConfig#compileLegacyRules`：`hosts` 当清单作用域、`exclude` 当分片正则、
 /// `regex` 不参与；没有 `exclude` 的规则整条跳过。
-@Suite("接口配置的 hlsRules → 清理器规则")
-struct HlsRuleCleanerMappingTests {
+///
+/// ⚠️ 这条路走的是**解析规则**（配置里的 `rules`），不是 `hlsRules`（那个是规则包形态，见
+/// `SourceConfigHLSRulesTests`）—— M06d 先搞混过一次，才把 `hlsRules` 的形状修正过来。
+@Suite("解析规则的 exclude → 清理器规则（对齐 compileLegacyRules）")
+struct SniffRuleCleanerMappingTests {
     private let baseURL = "https://video.example.com/index.m3u8"
 
     @Test("hosts 当作用域、exclude 当分片正则：清单 host 不匹配就不删")
     func mapsHostsAndExclude() throws {
-        let config = HlsRule(hosts: ["video\\.example\\.com"], regex: ["不参与"], exclude: ["/preroll/"])
+        let config = SniffRule(hosts: ["video\\.example\\.com"], regex: ["不参与"], exclude: ["/preroll/"])
         let rule = try #require(config.compiledAdRule())
         #expect(rule.id.hasPrefix("legacy:"))
 
@@ -35,14 +38,14 @@ struct HlsRuleCleanerMappingTests {
 
     @Test("没有 exclude 的规则整条跳过（留着只会变成「命中一切」）")
     func skipsRuleWithoutExclude() {
-        #expect(HlsRule(hosts: ["a.example.com"], regex: ["x"], exclude: []).compiledAdRule() == nil)
+        #expect(SniffRule(hosts: ["a.example.com"], regex: ["x"], exclude: []).compiledAdRule() == nil)
     }
 
     @Test("规则 id 稳定：同一份配置每次算出来一样，换了内容就变")
     func idIsStable() throws {
-        let first = try #require(HlsRule(hosts: ["a.example.com"], exclude: ["/ad/"]).compiledAdRule())
-        let again = try #require(HlsRule(hosts: ["a.example.com"], exclude: ["/ad/"]).compiledAdRule())
-        let other = try #require(HlsRule(hosts: ["a.example.com"], exclude: ["/other/"]).compiledAdRule())
+        let first = try #require(SniffRule(hosts: ["a.example.com"], exclude: ["/ad/"]).compiledAdRule())
+        let again = try #require(SniffRule(hosts: ["a.example.com"], exclude: ["/ad/"]).compiledAdRule())
+        let other = try #require(SniffRule(hosts: ["a.example.com"], exclude: ["/other/"]).compiledAdRule())
 
         #expect(first.id == again.id)
         #expect(first.id != other.id)

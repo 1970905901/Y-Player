@@ -60,7 +60,7 @@ struct LocalM3U8RouteTests {
             body: Data(playlist.utf8)
         )
         let rule = try #require(
-            HlsRule(hosts: ["cdn\\.example\\.com"], exclude: ["/preroll/"]).compiledAdRule()
+            SniffRule(hosts: ["cdn\\.example\\.com"], exclude: ["/preroll/"]).compiledAdRule()
         )
         let handler = LocalProxyHandler(
             upstream: LocalProxyUpstreamClient(transport: upstream),

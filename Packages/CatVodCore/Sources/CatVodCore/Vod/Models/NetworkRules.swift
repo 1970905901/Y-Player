@@ -129,31 +129,13 @@ public struct SniffRule: Codable, Sendable, Hashable {
     }
 }
 
-/// HLS 广告清理规则（字段形状与 `rules` 一致的精简版）。
-public struct HlsRule: Codable, Sendable, Hashable {
-    public var hosts: [String]
-    public var regex: [String]
-    public var exclude: [String]
-
-    public init(hosts: [String] = [], regex: [String] = [], exclude: [String] = []) {
-        self.hosts = hosts
-        self.regex = regex
-        self.exclude = exclude
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        hosts = container.lenientStringArray(.hosts)
-        regex = container.lenientStringArray(.regex)
-        exclude = container.lenientStringArray(.exclude)
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case hosts
-        case regex
-        case exclude
-    }
-}
+// （M06d 修正）这里原来有个 `HlsRule`（`hosts` / `regex` / `exclude`），用来接配置的 `hlsRules`。
+//
+// 那是个**形状错误**：上游的 `hlsRules` 是 `HlsAdRule`（规则包形态：`id` / `playlistHostSuffixes` /
+// `segmentUrlRegex` / `minDuration` / `enabled` …，见 `HlsAdRule.arrayFrom(fetchArray(object, "hlsRules"))`），
+// 而 `{hosts, regex, exclude}` 那种形状属于 `rules`（解析规则，对应本项目的 `SniffRule`）。
+// 按错的形状建模 ⇒ 真配置里的规则解析成空对象、**静默失效**（不报错、也没有一条能匹配）——
+// 所以整条删掉：`hlsRules` 用 `HLSAdRule`，解析规则的 `exclude` 走 `SniffRule+CleanerRule.swift`。
 
 /// 直播分组规则。
 public struct GroupRule: Codable, Sendable, Hashable {

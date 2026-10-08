@@ -69,11 +69,19 @@ public extension AppModel {
 
     /// 记录当前接口的广告清理规则（M06d）。
     ///
+    /// 两个来源，都对齐参考实现的 `HlsRuleConfig.reload()`：
+    /// 1. **`hlsRules`（规则包形态）**：只认规则自己写的 `"enabled": true`（`compileExternal` 的判法）；
+    /// 2. **解析规则的 `exclude`（legacy 兜底）**：那才是「广告地址特征」，见 `compileLegacyRules`。
+    ///
     /// 配置每次加载后调一次；**本机服务不重启** —— `/m3u8` 每个请求从 ``HLSAdRuleStore`` 现读规则。
-    /// 规则来自接口配置的 `hlsRules`（`hosts` 当清单作用域、`exclude` 当分片正则，见 `HlsRule+CleanerRule.swift`）。
     internal func refreshAdRules() {
-        let rules = state.loadedSource?.config.hlsRules.compactMap { $0.compiledAdRule() } ?? []
-        adRuleStore.update(rules)
+        guard let config = state.loadedSource?.config else {
+            adRuleStore.update([])
+            return
+        }
+        let fromPackage = config.hlsRules.filter(\.isEnabled).compactMap { try? $0.compile() }
+        let legacy = config.rules.compactMap { $0.compiledAdRule() }
+        adRuleStore.update(fromPackage + legacy)
     }
 
     /// 构造本机服务：转发侧复用与站点同一套传输层配置（默认 UA、`headers[]` 注入、`ads[]` 拦截）。
