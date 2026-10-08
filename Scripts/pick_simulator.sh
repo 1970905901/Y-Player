@@ -3,9 +3,10 @@
 #
 # 关键：**优先挑与当前 Xcode 的 iPhoneSimulator SDK 主版本一致的 runtime**。
 # macos 运行镜像里自带的模拟器 runtime 往往比 workflow 里 pin 的 Xcode 新
-# （实测实例：Xcode 16.4 + 镜像自带的 iOS 26.2 设备），拿新 runtime 跑旧 Xcode 的构建会出现
-# `PackageFrameworks/...: no such file or directory` 这类「框架莫名缺文件」的失败，
-# 见 docs/构建与分发.md 的「已知的构建陷阱」。
+# （实测实例：Xcode 16.4 + 镜像自带的 iOS 26.2 设备），拿新 runtime 跑旧 Xcode 的构建会先落到
+# 那台设备上并打印 `Could not get trait set for device iPhone18,1 with version 26.2` 这类噪声。
+# 注意：同一串报错里还有**第二层原因**（SwiftPM 产物双链接缺 `Ld`），与本脚本无关，
+# 见 docs/构建与分发.md 的「已知的构建陷阱」21、22。
 # 没有匹配的 runtime 时退回「最新的 iOS runtime」，不让脚本直接失败。
 #
 # 为什么用脚本而不是把 python 内联进 workflow：内联的多行 python 在 YAML 里极易出错，
