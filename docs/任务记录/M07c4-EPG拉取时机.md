@@ -78,4 +78,5 @@ App 里一个调用点都没有 —— 于是：
   两个老用例的过期断言），逐轮复盘见 `docs/任务记录/M07d2-直播源切换.md` 第六节。
 - 本任务的用例都在绿的那一轮里真跑过：`EPGGuideFreshnessTests`（3 例）、`LiveEPGPrefetchTests`（5 例）。
   预取判定（`LiveEPGPrefetch`）的封顶/去重/失败不重试三条规则都有断言覆盖。
-- **`Build apps (unsigned)` / `Unsigned IPA`：结论未取到**（会话结束时仍在跑）。
+- **`Build apps (unsigned)` / `Unsigned IPA`：✅**（`d5d2cab`）—— iOS 侧由 `Unsigned IPA` 作业真实构建打包，
+  iOS 15 下限类 API 这一关过了；逐条复盘见 `docs/任务记录/M07d2-直播源切换.md` 第六节。

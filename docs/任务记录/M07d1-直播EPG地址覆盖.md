@@ -81,5 +81,6 @@
   （写进了接口形态那条，那里没有 `xml` 夹具）；逐轮复盘见 `docs/任务记录/M07d2-直播源切换.md` 第六节。
 - 本任务的用例都在绿的那一轮里真跑过：`LiveEPGOverrideTests`（4 例）、
   `LiveEPGRepositoryTests` 新增 1 例（显式地址列表）、`LiveEPGSettingTests`（4 例）。
-- **`Build apps (unsigned)` / `Unsigned IPA`：结论未取到**（会话结束时仍在跑）。
-  设置页是这轮新写的 UI，`.contextMenu` / `Button(role:)` / 弹层这些都要靠它过一遍。
+- **`Build apps (unsigned)` / `Unsigned IPA`：✅**（`d5d2cab`）—— iOS 侧由 `Unsigned IPA` 作业真实构建打包，
+  设置页与解锁页（`.contextMenu`、`Button(role:)`、`Toggle`、`SecureField`、弹层/push）都过了 iOS 15 下限这一关；
+  逐条复盘见 `docs/任务记录/M07d2-直播源切换.md` 第六节。
