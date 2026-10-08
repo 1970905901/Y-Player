@@ -82,7 +82,7 @@ public struct SearchView: View {
     @ViewBuilder private var content: some View {
         if browsableSites.isEmpty {
             placeholder(emptyHint)
-        } else if result.list.isEmpty && submittedKeyword.isEmpty {
+        } else if result.list.isEmpty, submittedKeyword.isEmpty {
             historySection
         } else {
             resultsScroll

@@ -22,11 +22,12 @@ struct SearchPageTests {
     @Test("封顶：超出上限丢最旧的")
     func addingRespectsLimit() {
         var history: [String] = []
-        for index in 1...(SearchHistory.limit + 5) {
+        let count = SearchHistory.limit + 5
+        for index in 1 ... count {
             history = SearchHistory.adding("关键词\(index)", to: history)
         }
         #expect(history.count == SearchHistory.limit)
-        #expect(history.first == "关键词\(SearchHistory.limit + 5)")
+        #expect(history.first == "关键词\(count)")
         #expect(history.last == "关键词6")
     }
 
@@ -43,7 +44,8 @@ struct SearchPageTests {
 
     @Test("读存档也裁剪到上限（老存档里可能存过更多条）")
     func decodeTrimsToLimit() {
-        let tooMany = (1...(SearchHistory.limit + 3)).map { "k\($0)" }
+        let count = SearchHistory.limit + 3
+        let tooMany = (1 ... count).map { "k\($0)" }
         #expect(SearchHistory.decode(SearchHistory.encode(tooMany)).count == SearchHistory.limit)
     }
 

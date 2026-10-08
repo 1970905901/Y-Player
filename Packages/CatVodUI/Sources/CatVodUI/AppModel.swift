@@ -181,6 +181,7 @@ public final class AppModel: ObservableObject {
     }
 
     // MARK: - 引擎日志（设置 → 数据 → 日志管理）
+
     /// 引擎日志开关：控制宿主（js2p / libnode）输出是否**落盘**（参考图默认关）。
     ///
     /// 开启后宿主输出会写入日志文件，可配合「导出」带走现场；
