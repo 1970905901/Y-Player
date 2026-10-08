@@ -1,0 +1,23 @@
+# 临时诊断工作流（用完即删）：把 SwiftFormat 需要改动的地方变成 annotations。
+#
+# 背景：CI 的 lint 作业只写「需要格式化」到 job 日志，而 job 日志要登录才能看；
+# annotations 是匿名可见的，所以这里把 `git diff` 的每一处改动变成注解。
+name: format-report
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  report:
+    name: SwiftFormat report
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install SwiftFormat
+        run: brew install swiftformat && swiftformat --version
+      - name: Report what SwiftFormat would change
+        run: python3 Scripts/format_report.py
