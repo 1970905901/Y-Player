@@ -70,10 +70,11 @@ jobs:
         run: swift test --package-path Packages/CatVodPlayer
       - name: CatVodStore tests
         run: swift test --package-path Packages/CatVodStore
-      # CatVodUI 没有单测目标，只靠 Xcode 构建把关会漏掉缺 import 之类的低级错误，
-      # 这里加一次编译（macOS 平台）作为快速信号。
-      - name: CatVodUI (build only)
-        run: swift build --package-path Packages/CatVodUI
+      # CatVodUI 以前这里只做 `swift build`（注释还写着「没有单测目标」，早已不准）——
+      # 于是 `CatVodUITests` 里那些纯逻辑用例（M02P12/P13/P14、M07c、M08b 陆续加的）
+      # **从来没在 CI 里编译过**，写错也看不见。这里改成真的跑单测（顺带也完成同样的编译）。
+      - name: CatVodUI tests
+        run: swift test --package-path Packages/CatVodUI
       - name: CatVodNode tests
         run: swift test --package-path Packages/CatVodNode
 
