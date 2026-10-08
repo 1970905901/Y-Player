@@ -65,6 +65,7 @@ public final class AppModel: ObservableObject {
         static let liveGroup = "yplayer.liveGroup"
         static let liveKeep = "yplayer.liveKeep"
         static let liveFavorites = "yplayer.liveFavorites"
+        static let liveEPGSetting = "yplayer.liveEPGSetting"
     }
 
     // MARK: - 输出状态
@@ -354,6 +355,23 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    /// 直播 EPG 地址的**本地覆盖与历史**（上游 `LiveEpgSetting`：`live_epg_url` + 20 条历史）。
+    ///
+    /// 写一次就重算当前清单的频道地址（``AppModel/applyLiveEPGOverride``，只算不发请求）；
+    /// 让节目单缓存作废并重拉文件形态的是 `updateLiveEPGSetting(_:)`（在 `AppModel+Live.swift`）。
+    @Published public internal(set) var liveEPGSetting: LiveEPGSetting {
+        didSet {
+            UserDefaults.standard.set(liveEPGSetting.persistenceValue, forKey: StorageKey.liveEPGSetting)
+            applyLiveEPGOverride()
+        }
+    }
+
+    /// 上一次**解析结果**（还没套用本地 EPG 覆盖）。
+    ///
+    /// ``liveState`` 里那份是套用覆盖之后的；覆盖变了（含清空）由这份原始清单重算 ——
+    /// 否则清掉覆盖时没法把频道地址还回去，也不必为此再拉一次清单。
+    var rawLiveSource: LiveSource?
+
     /// 当前播放设置。
     public var playbackSettings: PlaybackSettings {
         PlaybackSettings(engine: preferredEngine, decoderMode: decoderMode)
@@ -421,6 +439,9 @@ public final class AppModel: ObservableObject {
 
         // 直播收藏频道：默认空（分组条上据此决定要不要给「收藏」这一组）。
         liveFavorites = LiveFavoriteBook.decode(defaults.string(forKey: StorageKey.liveFavorites))
+
+        // 直播 EPG 本地覆盖：默认空（用每个直播源自己配的 EPG）。
+        liveEPGSetting = LiveEPGSetting.decode(defaults.string(forKey: StorageKey.liveEPGSetting))
 
         // 引擎日志：默认关（与参考图的开关初始状态一致）。
         isEngineLogEnabled = defaults.object(forKey: StorageKey.engineLogEnabled) as? Bool ?? false

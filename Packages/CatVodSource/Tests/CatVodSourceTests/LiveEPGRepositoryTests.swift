@@ -296,6 +296,33 @@ struct LiveEPGInterfaceTests {
         #expect(program.startTime == EPGTimeParser.parse(date: today, time: "12:00", timeZone: zone))
     }
 
+    @Test("地址列表可以由调用方给全：本地 EPG 覆盖不带 xml/gz 字样也能拉")
+    func explicitFileURLs() async throws {
+        let recorder = ParseRequestRecorder(response: HTTPResponse(status: 200, body: Data(xml.utf8)))
+        let source = try makeSource(epg: "")
+        // 源自己没配文件（`epgXML` 为空）——地址由调用方给（`LiveEPGOverride/fileURLs(for:)` 的形态）。
+        #expect(source.epgXML.isEmpty)
+
+        let guide = try await LiveEPGRepository(transport: recorder)
+            .load(source, fileURLs: ["https://mine.example.com/epg.php"])
+        #expect(guide.schedule(key: "cctv1", date: "2026-10-07")?.programs.first?.title == "新闻联播")
+
+        let request = await recorder.firstRequest()
+        #expect(request?.url.absoluteString == "https://mine.example.com/epg.php")
+
+        // 地址列表为空：还是那句 unsupported（与「源没配文件」同一条路）。
+        let empty = ParseRequestRecorder(response: HTTPResponse(status: 200, body: Data()))
+        do {
+            _ = try await LiveEPGRepository(transport: empty).load(source, fileURLs: [])
+            Issue.record("空地址列表应当抛错")
+        } catch let error as CatVodError {
+            guard case .unsupported = error else {
+                Issue.record("错误类型不对：\(error)")
+                return
+            }
+        }
+    }
+
     @Test("频道没有节目单地址 → unsupported，且不发请求")
     func missingAddress() async throws {
         let recorder = ParseRequestRecorder(response: HTTPResponse(status: 200, body: Data(xmltv(date: "2026-10-07", title: "x").utf8)))

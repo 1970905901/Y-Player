@@ -21,6 +21,8 @@ public struct LiveView: View {
     /// 也不会把导航栈堆成「列表 → 频道 → 节目单 → 播放」四层。
     /// 存**行**而不是频道：时移地址要按「这个频道上次用的线路」拼（M07c-3），`sheet` 里没得选线路。
     @State private var scheduleRow: LiveChannelRow?
+    /// 直播设置（EPG 地址覆盖）的弹层。
+    @State private var isEPGSettingPresented = false
 
     public init(model: AppModel) {
         self.model = model
@@ -29,6 +31,22 @@ public struct LiveView: View {
     public var body: some View {
         content
             .navigationTitle("直播")
+            .adaptiveToolbar {
+                EmptyView()
+            } trailing: {
+                // 直播设置（现在只有 EPG 地址覆盖；上游 `LiveEpgSetting` 也是挂在直播页的菜单里）。
+                Button {
+                    isEPGSettingPresented = true
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .accessibilityLabel("直播设置")
+            }
+            .sheet(isPresented: $isEPGSettingPresented) {
+                AdaptiveNavigationContainer {
+                    LiveEPGSettingView(model: model)
+                }
+            }
             .task {
                 await model.loadLivePlaylist()
                 // 文件形态的节目单（`epg` 里的 `.xml` / `.gz`）：清单到手后拉一次，一份覆盖多频道

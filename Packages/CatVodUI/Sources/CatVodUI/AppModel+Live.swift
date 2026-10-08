@@ -149,17 +149,72 @@ public extension AppModel {
         // 换源 / 强制重载时清掉节目单缓存：缓存按 `epgID` 存，换源后同一个 `epgID` 可能指向另一个频道。
         let previousName = liveState.loadedSource?.name
         liveState = .loading
+        rawLiveSource = nil
         if force || previousName != source.name {
             resetLiveEPGState()
         }
         do {
             let repository = LiveRepository(transport: transportForConfiguration())
             let loaded = try await repository.load(source)
-            liveState = .loaded(loaded)
-            restoreLiveGroup(in: loaded)
+            // 解析结果按原样留底；``liveState`` 里放的是套用本地 EPG 覆盖**之后**的那份
+            // （上游也是拿到清单就 `LiveEpgSetting.apply(live)`）。
+            rawLiveSource = loaded
+            let effective = effectiveLiveSource(from: loaded)
+            liveState = .loaded(effective)
+            restoreLiveGroup(in: effective)
         } catch {
             liveState = .failed(Self.liveMessage(error))
         }
+    }
+
+    /// 套用本地 EPG 覆盖后的源（纯变换，见 ``LiveEPGOverride``）。
+    private func effectiveLiveSource(from raw: LiveSource) -> LiveSource {
+        LiveEPGOverride(url: liveEPGSetting.url).applying(to: raw)
+    }
+
+    /// 覆盖变了：拿**原始**清单重算一次（不发请求）。清单还没加载过就什么都不做。
+    ///
+    /// 由 ``AppModel/liveEPGSetting`` 的 `didSet` 调用 —— 只负责让界面上的频道地址立刻变过来；
+    /// 「让节目单缓存作废 + 重拉文件形态」是 ``updateLiveEPGSetting(_:)`` 的事。
+    func applyLiveEPGOverride() {
+        guard let raw = rawLiveSource else {
+            return
+        }
+        liveState = .loaded(effectiveLiveSource(from: raw))
+    }
+
+    /// 换一个 EPG 覆盖地址（空串 = 清除覆盖），并把节目单状态整体作废后重拉文件形态。
+    func updateLiveEPGSetting(_ value: String) async {
+        await applyLiveEPGSetting(liveEPGSetting.using(value))
+    }
+
+    /// 从历史里删一条（删的是当前在用的那条就一并清掉覆盖），同样按需重算。
+    func removeLiveEPGHistory(_ value: String) async {
+        await applyLiveEPGSetting(liveEPGSetting.removing(value))
+    }
+
+    /// 清空历史：不动当前覆盖，也就不需要重拉任何东西。
+    func clearLiveEPGHistory() {
+        liveEPGSetting = liveEPGSetting.clearingHistory()
+    }
+
+    /// 落一个设置值；**地址真的换了**才作废节目单并重拉（删历史里无关的一条不必发请求）。
+    private func applyLiveEPGSetting(_ updated: LiveEPGSetting) async {
+        let urlChanged = updated.url != liveEPGSetting.url
+        liveEPGSetting = updated
+        guard urlChanged else {
+            return
+        }
+        // 模板换了，旧的按频道结果不再对得上；文件形态立刻重拉一次，
+        // 逐频道那些由列表的「可见即预取」自然重来（缓存已清空 → `shouldQueue` 会重新排队）。
+        liveGuides.removeAll()
+        liveEPGFailed.removeAll()
+        liveEPGPending.removeAll()
+        liveEPGQueue.removeAll()
+        liveEPGPrefetchCount = 0
+        liveFileGuide = nil
+        liveEPGNotice = ""
+        await loadLiveFileGuide(force: true)
     }
 
     /// 清空节目单相关的全部状态（换源 / 强制重载时用）：缓存、队列、失败名单、预取计数、提示。
@@ -190,10 +245,16 @@ public extension AppModel {
     /// 上游按「不是今天 / 超过 6 小时」判要不要重下（`EpgParser.refreshReason`），本项目不落盘，
     /// 只用「缺今天」那一半（``EPGGuide/coversToday(now:)``）—— 进程重启内存缓存就没了，6 小时那半不需要。
     ///
-    /// 没配文件形态（`epgXML` 为空）时**直接返回**：那是接口形态的活，由 ``requestLiveGuide(for:)``
-    /// 按可见频道逐频道拉。
+    /// 没配文件形态（源自己的 `epgXML` 为空、本地覆盖也不是整源 XML）时**直接返回**：
+    /// 那是接口形态的活，由 ``requestLiveGuide(for:)`` 按可见频道逐频道拉。
     func loadLiveFileGuide(force: Bool = false) async {
-        guard let source = liveState.loadedSource, !source.epgXML.isEmpty else {
+        guard let source = liveState.loadedSource else {
+            return
+        }
+        let override = LiveEPGOverride(url: liveEPGSetting.url)
+        // 传**原始**清单算地址列表：套过覆盖的那份里 `epg` 已经含覆盖地址（去重也兜得住，原始的更清楚）。
+        let entries = override.fileURLs(for: rawLiveSource ?? source)
+        guard !entries.isEmpty else {
             return
         }
         if !force, let guide = liveFileGuide, guide.coversToday() {
@@ -201,7 +262,7 @@ public extension AppModel {
         }
         do {
             let repository = LiveEPGRepository(transport: transportForConfiguration())
-            liveFileGuide = try await repository.load(source)
+            liveFileGuide = try await repository.load(source, fileURLs: entries)
             liveEPGNotice = ""
         } catch {
             // 一次进入只发这一次请求，所以这里不「静默」：拿不到就在列表上方说清楚原因。

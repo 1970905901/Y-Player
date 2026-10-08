@@ -24,7 +24,15 @@ public struct LiveEPGRepository: Sendable {
 
     /// 拉取并解析一个直播源的**节目单文件**（`epg` 里的 `.xml` / `.gz`）。
     public func load(_ source: LiveSource) async throws -> EPGGuide {
-        let entries = source.epgXML
+        try await load(source, fileURLs: source.epgXML)
+    }
+
+    /// 同上，但地址由调用方给全（**本地 EPG 覆盖**走这条，见 ``LiveEPGOverride``）。
+    ///
+    /// 为什么要单独给一份：覆盖地址可能不带 `xml` / `gz` 字样（例如 `…/epg.php`），
+    /// 过不了 ``LiveSource/epgXML`` 的过滤，得由 ``LiveEPGOverride/fileURLs(for:)`` 算出来。
+    public func load(_ source: LiveSource, fileURLs: [String]) async throws -> EPGGuide {
+        let entries = fileURLs
         guard !entries.isEmpty else {
             throw CatVodError.unsupported(
                 feature: "直播源「\(source.name)」的节目单",
