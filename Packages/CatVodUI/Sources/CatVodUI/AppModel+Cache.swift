@@ -65,4 +65,46 @@ public extension AppModel {
     func clearAllCaches() -> Int {
         clearSourceCache() + clearHomeCache()
     }
+
+    // MARK: - 接口（源配置）缓存
+
+    /// 接口（源配置）缓存管理。M07d-5 起从 `AppModel` 主体搬到这里（类体长度压回 SwiftLint 上限内）。
+    ///
+    /// 与 ``detailCache``（详情缓存）区分：这里管的是**落盘的源配置**（JSON 文本、js2p 的 6 MB bundle 与 `.md5`）。
+    var sourceCache: SourceCacheStore {
+        SourceCacheStore(directory: cacheDirectory)
+    }
+
+    /// 接口缓存概览（接口管理页展示）；目录不可读时返回 nil。
+    func sourceCacheSummary() -> SourceCacheStore.Summary? {
+        try? sourceCache.summary(currentURL: currentSourceURL())
+    }
+
+    /// 清空接口缓存，返回删除的文件数。
+    @discardableResult
+    func clearSourceCache() -> Int {
+        (try? sourceCache.clear()) ?? 0
+    }
+
+    /// 清掉非当前接口的缓存残留（换接口后每个 JS 源会残留 ≈ 6 MB），返回删除的文件数。
+    @discardableResult
+    func pruneOrphanSourceCaches() -> Int {
+        (try? sourceCache.pruneOrphans(currentURL: currentSourceURL())) ?? 0
+    }
+
+    /// 当前配置地址对应的 URL（用于区分「当前接口的缓存」与「残留」）。
+    ///
+    /// 内联 JSON 没有 URL：此时全部缓存都算残留（符合预期——用户已改用内联配置）。
+    private func currentSourceURL() -> URL? {
+        ConfigLocator.locate(configURL.trimmingCharacters(in: .whitespacesAndNewlines))?.url
+    }
+
+    /// 容量上限自愈：超过 64 MB 时淘汰最旧的缓存，**不会删除当前接口的缓存**。
+    ///
+    /// 可见性是「模块内」而不是 `private`：`AppModel.swift` 的加载流程也要调它
+    /// （`private` 只对声明所在文件开放，跨文件调用会编译失败）。
+    internal func enforceSourceCacheLimit() {
+        // `try?` 会把 @discardableResult 变成 `Int?`，必须显式丢弃，否则是「结果未使用」警告。
+        _ = try? sourceCache.enforceLimit(currentURL: currentSourceURL())
+    }
 }

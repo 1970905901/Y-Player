@@ -95,7 +95,10 @@ public final class AppModel: ObservableObject {
     }
 
     /// 设置页提示：所选内核不可用、解码方式对所选内核无效等（如实告知，不静默处理）。
-    @Published public private(set) var playbackNotice: String = ""
+    ///
+    /// setter 是 `internal(set)`：写入点在 `AppModel+Playback.swift` 的 `refreshPlaybackNotice`
+    /// （`private(set)` 只对声明所在文件开放，跨文件写会编译失败）。
+    @Published public internal(set) var playbackNotice: String = ""
 
     /// 首页展示方式（设置 → 首页 → 展示方式）：纵向列表 / 横向海报网格。
     ///
@@ -723,43 +726,6 @@ public final class AppModel: ObservableObject {
     /// 但先把它生成并固定下来，将来启用同步时不必再换一套身份。
     public let localSyncIdentifier: String
 
-    /// 接口（源配置）缓存管理。
-    ///
-    /// 与 ``detailCache``（详情缓存）区分：这里管的是**落盘的源配置**（JSON 文本、js2p 的 6 MB bundle 与 `.md5`）。
-    public var sourceCache: SourceCacheStore {
-        SourceCacheStore(directory: cacheDirectory)
-    }
-
-    /// 接口缓存概览（接口管理页展示）；目录不可读时返回 nil。
-    public func sourceCacheSummary() -> SourceCacheStore.Summary? {
-        try? sourceCache.summary(currentURL: currentSourceURL())
-    }
-
-    /// 清空接口缓存，返回删除的文件数。
-    @discardableResult
-    public func clearSourceCache() -> Int {
-        (try? sourceCache.clear()) ?? 0
-    }
-
-    /// 清掉非当前接口的缓存残留（换接口后每个 JS 源会残留 ≈ 6 MB），返回删除的文件数。
-    @discardableResult
-    public func pruneOrphanSourceCaches() -> Int {
-        (try? sourceCache.pruneOrphans(currentURL: currentSourceURL())) ?? 0
-    }
-
-    /// 当前配置地址对应的 URL（用于区分「当前接口的缓存」与「残留」）。
-    ///
-    /// 内联 JSON 没有 URL：此时全部缓存都算残留（符合预期——用户已改用内联配置）。
-    private func currentSourceURL() -> URL? {
-        ConfigLocator.locate(configURL.trimmingCharacters(in: .whitespacesAndNewlines))?.url
-    }
-
-    /// 容量上限自愈：超过 64 MB 时淘汰最旧的缓存，**不会删除当前接口的缓存**。
-    private func enforceSourceCacheLimit() {
-        // `try?` 会把 @discardableResult 变成 `Int?`，必须显式丢弃，否则是「结果未使用」警告。
-        _ = try? sourceCache.enforceLimit(currentURL: currentSourceURL())
-    }
-
     /// 详情获取（带缓存）。
     ///
     /// 共享同一个 ``DetailCache``：详情页在「列表 → 详情 → 返回 → 再进」之间复用结果；
@@ -776,27 +742,7 @@ public final class AppModel: ObservableObject {
         )
     }
 
-    /// 严格解析播放内核（**不降级**）：不可用时返回原因，由 UI 提示用户修改设置。
-    public func resolvePlayback() -> PlayerEngineResolution {
-        PlayerCoordinator().resolve(settings: playbackSettings)
-    }
-
-    private func refreshPlaybackNotice() {
-        if case .javaScript = state.loadedSource?.kind {
-            // JS 源的站点由内嵌 Node 宿主提供（macOS 可用）：宿主失败的原因在「接口管理 → Node 宿主」里显示，
-            // 不再用一句「等 M1.6」把所有情况盖住。
-            playbackNotice = ""
-            return
-        }
-        var notes: [String] = []
-        if case let .unavailable(_, reason) = resolvePlayback() {
-            notes.append(reason)
-        }
-        if !playbackSettings.isDecoderModeEffective {
-            notes.append("\(decoderMode.displayName)对\(preferredEngine.displayName)无效：系统播放器由系统自行决定解码方式")
-        }
-        playbackNotice = notes.joined(separator: "\n")
-    }
+    // MARK: - 工具
 
     /// 本机同步标识：首次启动生成一次（`_` + 32 位十六进制），之后固定不变。
     private static func storedSyncIdentifier(defaults: UserDefaults) -> String {
