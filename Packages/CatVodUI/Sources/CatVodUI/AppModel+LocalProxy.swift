@@ -67,11 +67,26 @@ public extension AppModel {
         return copy
     }
 
+    /// 记录当前接口的广告清理规则（M06d）。
+    ///
+    /// 配置每次加载后调一次；**本机服务不重启** —— `/m3u8` 每个请求从 ``HLSAdRuleStore`` 现读规则。
+    /// 规则来自接口配置的 `hlsRules`（`hosts` 当清单作用域、`exclude` 当分片正则，见 `HlsRule+CleanerRule.swift`）。
+    internal func refreshAdRules() {
+        let rules = state.loadedSource?.config.hlsRules.compactMap { $0.compiledAdRule() } ?? []
+        adRuleStore.update(rules)
+    }
+
     /// 构造本机服务：转发侧复用与站点同一套传输层配置（默认 UA、`headers[]` 注入、`ads[]` 拦截）。
     private func makeLocalProxyServer() -> LocalHTTPServer {
         let config = state.loadedSource?.config
         let transport = config.map { URLSessionTransport(configuration: URLSessionTransport.Configuration(config: $0)) }
             ?? URLSessionTransport()
-        return LocalHTTPServer(handler: LocalProxyHandler(upstream: LocalProxyUpstreamClient(transport: transport)))
+        // 规则提供者闭包**只捕获那个 Sendable 小盒子**，不捕获 AppModel：
+        // 它会在线程池里被调用，碰到主线程状态就是数据竞争。
+        let store = adRuleStore
+        return LocalHTTPServer(handler: LocalProxyHandler(
+            upstream: LocalProxyUpstreamClient(transport: transport),
+            adRules: { store.current }
+        ))
     }
 }

@@ -232,6 +232,9 @@ public final class AppModel: ObservableObject {
 
     /// 本地代理服务实例；由 ``ensureLocalServer()`` 创建并启动（见 `AppModel+LocalProxy.swift`）。
     var localServer: LocalHTTPServer?
+    /// 广告清理规则（M06d）：接口配置里的 `hlsRules` 编译后放这里，
+    /// 本机服务的 `/m3u8` 每个请求读一次（见 `AppModel+LocalProxy.swift`）。
+    let adRuleStore = HLSAdRuleStore()
 
     // MARK: - js2p 宿主（JS 源）
 
@@ -531,6 +534,8 @@ public final class AppModel: ObservableObject {
         do {
             let loaded = try await loadSource(target: target, forceRefresh: forceRefresh, repository: repository)
             state = .loaded(loaded)
+            // 广告清理规则随配置一起换新（M06d）：本机服务的 `/m3u8` 每个请求读一次，不重启服务。
+            refreshAdRules()
             // 配置已变更：缓存里的详情可能对应旧站点/旧线路，直接清空。
             await detailCache.invalidateAll()
             // 接口缓存自愈：按容量上限淘汰最旧的（当前接口的缓存不动）。

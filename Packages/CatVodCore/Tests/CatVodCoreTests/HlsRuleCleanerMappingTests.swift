@@ -47,4 +47,17 @@ struct HlsRuleCleanerMappingTests {
         #expect(first.id == again.id)
         #expect(first.id != other.id)
     }
+
+    @Test("规则盒子：默认空、更新后能读到（本机服务每请求读的就是它）")
+    func ruleStoreHoldsCurrentRules() throws {
+        let store = HLSAdRuleStore()
+        #expect(store.current.isEmpty)
+
+        let rule = try HLSManifestCleaner.Rule(hostSuffixes: ["ads.example.com"], minimumSignals: 1)
+        store.update([rule])
+        #expect(store.current.count == 1)
+
+        store.update([])
+        #expect(store.current.isEmpty)
+    }
 }

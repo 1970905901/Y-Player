@@ -46,6 +46,36 @@ struct LocalM3U8RouteTests {
         return items
     }
 
+    @Test("清单：配了 hlsRules 时**先清广告、再改写地址**（顺序反了规则就匹配不上）")
+    func cleansAdsBeforeRewriting() async throws {
+        let playlist = "#EXTM3U\n"
+            + "#EXTINF:7.0,\nhttps://ads.example.com/preroll/ad.ts\n"
+            + "#EXTINF:5.0,\nseg-1.ts\n"
+            + "#EXTINF:5.0,\nseg-2.ts\n"
+            + "#EXTINF:5.0,\nseg-3.ts\n"
+            + "#EXT-X-ENDLIST\n"
+        let upstream = StubUpstreamTransport(
+            status: 200,
+            headers: ["Content-Type": "application/vnd.apple.mpegurl"],
+            body: Data(playlist.utf8)
+        )
+        let rule = try #require(
+            HlsRule(hosts: ["cdn\\.example\\.com"], exclude: ["/preroll/"]).compiledAdRule()
+        )
+        let handler = LocalProxyHandler(
+            upstream: LocalProxyUpstreamClient(transport: upstream),
+            adRules: { [rule] }
+        )
+
+        let response = try await handler.handleRequest(makeRequest(query: urlQuery(playlistURL)))
+        let body = String(data: response.body, encoding: .utf8) ?? ""
+
+        #expect(!body.contains("ad.ts"))
+        #expect(body.contains("seg-1.ts"))
+        // 剩下的分片仍要改写成走本机：清理与改写是两件事，不能互相抵消
+        #expect(body.contains("127.0.0.1:9978/m3u8"))
+    }
+
     @Test("路由：`/m3u8` 归到 m3u8（前缀命中）")
     func routing() {
         #expect(LocalProxyHandler.route(forPath: "/m3u8") == .m3u8)

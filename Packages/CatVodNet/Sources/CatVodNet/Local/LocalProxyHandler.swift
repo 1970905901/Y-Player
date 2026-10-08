@@ -29,10 +29,20 @@ public struct LocalProxyHandler: HTTPHandler {
 
     private let upstream: LocalProxyUpstreamClient
     private let timeout: TimeInterval
+    /// 广告清理规则的提供者（M06d）。
+    ///
+    /// **每个清单请求读一次**：配置换了不需要重启本机服务。
+    /// 默认给空数组 —— 没配规则的部署行为与 M06c 完全一致（清理器拿到空规则会直接原样返回）。
+    private let adRules: @Sendable () -> [HLSManifestCleaner.Rule]
 
-    public init(upstream: LocalProxyUpstreamClient, timeout: TimeInterval = 30) {
+    public init(
+        upstream: LocalProxyUpstreamClient,
+        timeout: TimeInterval = 30,
+        adRules: @escaping @Sendable () -> [HLSManifestCleaner.Rule] = { [] }
+    ) {
         self.upstream = upstream
         self.timeout = timeout
+        self.adRules = adRules
     }
 
     /// 路径 → 路由；nil 表示本服务不处理。
@@ -119,7 +129,11 @@ public struct LocalProxyHandler: HTTPHandler {
                 // 分片 / 密钥 / 上游错误：原样回（播放器应当看到真实状态码与内容）。
                 return passthrough(response, request: request)
             }
-            let rewritten = HLSPlaylistRewriter.rewrite(text, baseURL: target) { nested in
+            // 广告清理（M06d）：**先**按接口配置的规则清一遍，**再**把相对地址改写成回本机。
+            // 顺序不能反 —— 规则里的 host / 域名说的是**上游**地址，改写之后就只剩 127.0.0.1 了。
+            let cleaned = HLSManifestCleaner.clean(baseURL: target, manifest: text, rules: adRules())
+            let source = cleaned.changed ? cleaned.manifest : text
+            let rewritten = HLSPlaylistRewriter.rewrite(source, baseURL: target) { nested in
                 Self.childURL(nested, authority: Self.authority(from: request), injectedHeaders: request.query["h"] ?? "")
             }
             return Self.playlistResponse(response, body: rewritten)
