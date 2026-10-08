@@ -109,7 +109,13 @@ public struct LiveView: View {
     /// 一点就到、并且仍然用上次那条线路（线路名来自清单里的 `地址$线路名`）。
     private func resumeRow(_ target: LiveKeepTarget) -> some View {
         NavigationLink {
-            LiveChannelPlaybackView(model: model, channel: target.channel, lineIndex: target.lineIndex)
+            // 「继续观看」进来时，换台的范围就是这个频道所在的组。
+            LiveChannelPlaybackView(
+                model: model,
+                channels: target.group.channels,
+                channel: target.channel,
+                lineIndex: target.lineIndex
+            )
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "play.circle.fill")
@@ -176,7 +182,12 @@ public struct LiveView: View {
             ForEach(rows) { row in
                 HStack(spacing: 8) {
                     NavigationLink {
-                        LiveChannelPlaybackView(model: model, channel: row.channel, lineIndex: row.initialLineIndex)
+                        LiveChannelPlaybackView(
+                            model: model,
+                            channels: rows.map(\.channel),
+                            channel: row.channel,
+                            lineIndex: row.initialLineIndex
+                        )
                     } label: {
                         LiveChannelRowView(row: row, isFavorite: model.isLiveFavorite(row.channel))
                     }
@@ -294,43 +305,91 @@ private struct LiveChannelRowView: View {
 
 /// 频道的播放页。
 ///
-/// 三件事：
+/// 四件事：
 /// - 进入时顺手拉这个频道的节目单（回到列表就有「正在播」）；
 /// - 把这次观看记成「上次观看」（`分组名@@@频道名@@@线路下标`，上游 `Live.keep` 的形态）；
-/// - 一个频道有多条线路时，右上角给线路菜单（清单写了 `地址$线路名` 就用线路名）。
+/// - 一个频道有多条线路时，右上角给线路菜单（清单写了 `地址$线路名` 就用线路名）；
+/// - 左上角给**上一台 / 下一台**（上游 `control.prev` / `control.next` → `mLive.nextChannel()`）。
+///   换台在**当前分组内环形**、跳过没有地址的频道，换过去线路回到第 0 条（见 ``zap(_:)``）。
 ///
-/// `lineIndex` 由调用方给（上次看的那条），在这里只往上改、不再往下改：换线路同样要写「上次观看」。
+/// `channels` 是「当前看着的那份列表」（普通分组就是该组的频道，收藏分组就是收藏的频道），
+/// 换台只在这份列表里循环 —— 与用户眼前的列表一致，不会切到列表里看不到的频道。
 ///
 /// 资源交给 ``AppModel/proxiedMediaResource(_:)``：需要 header 时改走本机 `/proxy`，
 /// 让 header 覆盖到子清单 / 分片 / 密钥请求上（M6 的约定）。
 @MainActor
 private struct LiveChannelPlaybackView: View {
     @ObservedObject var model: AppModel
-    let channel: LiveChannel
+    /// 换台的范围（当前列表的频道，顺序即列表顺序）。
+    let channels: [LiveChannel]
+    /// 当前正在播的频道（换台会改它）。
+    @State private var current: LiveChannel
     @State private var lineIndex: Int
 
-    init(model: AppModel, channel: LiveChannel, lineIndex: Int) {
+    init(model: AppModel, channels: [LiveChannel], channel: LiveChannel, lineIndex: Int) {
         self.model = model
-        self.channel = channel
+        self.channels = channels
+        _current = State(initialValue: channel)
         _lineIndex = State(initialValue: lineIndex)
     }
 
     var body: some View {
         PlaybackView(resource: resource, title: title, settings: model.playbackSettings)
-            // 换线路 = 换资源：`PlaybackView` 自己的 `.task` 只在视图出现时跑一次，所以用 `id`
-            // 让播放页重建（不重建就会继续播旧线路）。
-            .id(lineIndex)
+            // 换频道 / 换线路 = 换资源：`PlaybackView` 自己的 `.task` 只在视图出现时跑一次，
+            // 所以用 `id` 让播放页重建（不重建就会继续播旧地址）。
+            .id(playbackKey)
             .adaptiveToolbar {
-                EmptyView()
+                HStack(spacing: 16) {
+                    zapButton(step: -1, icon: "chevron.up", label: "上一台")
+                    zapButton(step: 1, icon: "chevron.down", label: "下一台")
+                }
             } trailing: {
-                if channel.urls.count > 1 {
+                if current.urls.count > 1 {
                     lineMenu
                 }
             }
             .task {
-                await model.loadLiveGuide(for: channel)
-                model.rememberLiveChannel(channel, lineIndex: lineIndex)
+                await model.loadLiveGuide(for: current)
+                model.rememberLiveChannel(current, lineIndex: lineIndex)
             }
+    }
+
+    // MARK: - 换台
+
+    /// 上一台 / 下一台；没有可换的（只有一条可播）时置灰。
+    private func zapButton(step: Int, icon: String, label: String) -> some View {
+        Button {
+            zap(step)
+        } label: {
+            Image(systemName: icon)
+        }
+        .disabled(neighbor(step: step) == nil)
+        .accessibilityLabel(label)
+    }
+
+    private func neighbor(step: Int) -> LiveChannel? {
+        LiveChannelNavigation.neighbor(of: current, step: step, in: channels)
+    }
+
+    /// 换台：记下新的「上次观看」、把线路重置到第 0 条，并顺手拉它的节目单。
+    ///
+    /// 线路为什么重置：每个频道有**几条**线路是各自的事，沿用上一条下标可能撞上「这个频道没有第 N 条」
+    /// （`playbackURL(index:)` 会给空地址）。重置是可预期的，也让「换台 = 从头切到另一个频道」更好理解。
+    ///
+    /// `id` 重建不一定会重放外层的 `.task`（换台只改子视图身份），所以节目单与 keep 都显式写。
+    private func zap(_ step: Int) {
+        guard let next = neighbor(step: step) else {
+            return
+        }
+        current = next
+        lineIndex = 0
+        model.rememberLiveChannel(next, lineIndex: 0)
+        Task { await model.loadLiveGuide(for: next) }
+    }
+
+    /// 播放页的重建键：频道 + 线路。
+    private var playbackKey: String {
+        current.name + "#" + String(lineIndex)
     }
 
     // MARK: - 线路
@@ -338,19 +397,19 @@ private struct LiveChannelPlaybackView: View {
     /// 线路菜单：当前线路带对勾；没写线路名的线路按「线路 N」。
     private var lineMenu: some View {
         Menu {
-            ForEach(Array(channel.urls.indices), id: \.self) { index in
+            ForEach(Array(current.urls.indices), id: \.self) { index in
                 Button {
                     selectLine(index)
                 } label: {
                     if index == lineIndex {
-                        Label(LiveListLayout.lineTitle(channel: channel, lineIndex: index), systemImage: "checkmark")
+                        Label(LiveListLayout.lineTitle(channel: current, lineIndex: index), systemImage: "checkmark")
                     } else {
-                        Text(LiveListLayout.lineTitle(channel: channel, lineIndex: index))
+                        Text(LiveListLayout.lineTitle(channel: current, lineIndex: index))
                     }
                 }
             }
         } label: {
-            Text(LiveListLayout.lineTitle(channel: channel, lineIndex: lineIndex))
+            Text(LiveListLayout.lineTitle(channel: current, lineIndex: lineIndex))
         }
     }
 
@@ -361,20 +420,20 @@ private struct LiveChannelPlaybackView: View {
             return
         }
         lineIndex = index
-        model.rememberLiveChannel(channel, lineIndex: index)
+        model.rememberLiveChannel(current, lineIndex: index)
     }
 
     // MARK: - 播放
 
     /// 标题：EPG 的 `<display-name>` 优先，否则清单里的频道名（与列表同一口径）。
     private var title: String {
-        model.liveGuide(for: channel)?.displayName(for: channel.epgID, fallback: channel.name) ?? channel.name
+        model.liveGuide(for: current)?.displayName(for: current.epgID, fallback: current.name) ?? current.name
     }
 
     private var resource: MediaResource {
         model.proxiedMediaResource(MediaResource(
-            url: channel.playbackURL(index: lineIndex),
-            headers: channel.requestHeaders(fallback: model.liveSource?.headers() ?? [:])
+            url: current.playbackURL(index: lineIndex),
+            headers: current.requestHeaders(fallback: model.liveSource?.headers() ?? [:])
         ))
     }
 }
