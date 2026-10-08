@@ -13,7 +13,7 @@ import Foundation
 /// - 取值一律「取关键字**第一次**出现之后到行尾」，而上游 `split(key)[1]` 在「值里又出现同名 key」时行为不同。
 struct LivePlaylistSettings: Sendable {
     private(set) var ua = ""
-    private(set) var parse: Int?
+    private(set) var parse: Int? = nil
     private(set) var click = ""
     private(set) var format = ""
     private(set) var origin = ""
