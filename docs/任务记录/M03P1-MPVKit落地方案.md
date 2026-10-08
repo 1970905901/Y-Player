@@ -1,6 +1,8 @@
 # M03P1 MPVKit 落地方案（依赖接入 → 渲染 PoC → 引擎实现）
 
-- 状态：**第 1 步（lock 对齐）已随 CI 验证**；**第 2 步（接依赖 + 编译期探针）已提交、待 CI 验证**；第 3 步需要 Mac/真机
+- 状态：**第 1 步（lock 对齐）、第 2 步（接依赖 + 编译期探针）均已随 CI 全绿**；
+  **第 4 步的「CI 能验的那半」已完成**（引擎实装 + 假会话单测，见 `M03P3-MpvEngine实装.md`）；
+  第 3 步（渲染路径 PoC）需要 Mac/真机，仍是 MPV 对外可用的唯一闸门
 - 渲染路径**首选候选 B：MoltenVK + libplacebo**（MPVKit 已自带这两者）—— 但必须由第 3 步的 PoC 证实：
   官方 README 明确说 Metal 后端只有补丁级支持，所以「首选」是实验假设，不是结论。
 - 依赖：M2（`PlayerEngine` 抽象与 `PlayerCoordinator` 严格选择）、`docs/任务记录/M02P3-播放设置手动选择.md`
@@ -49,10 +51,15 @@ MPVKit 的 Metal 后端是补丁级的，所以要用最小实验挑一条稳定
 
 PoC 产出：同一段流的三条路径截图/帧耗时对照 + 结论（写进任务记录）→ 定下 `MpvEngine` 的默认渲染方式。
 
-### 第 4 步：`MpvEngine` 真实实现
-- 实现既有的 `PlayerEngine`（`load/play/pause/seek/currentState/teardown`）＋ `MediaResource`（headers/format/artwork）；
-- **保持** `PlayerCoordinator` 的严格语义：手动选内核、不可用时如实报错、**不自动降级**；
-- M4 的自研 `FFmpegEngine` 直接复用同一套 Libav*（不引第二份 FFmpeg）。
+### 第 4 步（「CI 能验的那半」已完成）：`MpvEngine` 真实实现
+- 实现既有的 `PlayerEngine`（`load/play/pause/seek/setRate/selectTrack/currentState/teardown`）＋ `MediaResource`（headers / format / 起播位置 / 外部字幕）；
+- 分层（**关键**）：`MpvSession`（libmpv 最小接口）= seam、`MpvEventMapping`（纯映射）、`MpvEngine`（actor 状态机）、
+  `LibmpvSession`（唯一的 `mpv_*` 调用点）→ 状态机能用假会话在 CI 上单测，第 3 步定路径后**只动 `LibmpvSession`**；
+- 可用性**仍然收紧**：`MpvAvailability.isEngineImplemented = true` 但新增 `isVideoOutputReady = false`，
+  `PlayerEngineKind.mpv.isAvailable` 要两者都真 → 现阶段仍是 false（没有画面 = 不能用，别急着宣称可用）；
+- **保持** `PlayerCoordinator` 的严格语义：手动选内核、不可用时如实报错、**不自动降级**（`.mpv` 暂不接创建路径）；
+- M4 的自研 `FFmpegEngine` 直接复用同一套 Libav*（不引第二份 FFmpeg），并可照搬这套分层。
+- 详情与盲区清单：`docs/任务记录/M03P3-MpvEngine实装.md`。
 
 ## 三、CI 能验到哪一步（提前说清，避免误会）
 
