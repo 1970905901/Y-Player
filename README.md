@@ -1,5 +1,7 @@
 # YPlayer
 
+<p align="center"><img src="docs/images/app-icon-master.png" width="180" alt="YPlayer 图标"></p>
+
 基于 [FongMi/TV](https://github.com/FongMi/TV) / [CatVod](https://github.com/FongMi/CatVodSpider) 生态的 **Apple 平台影音壳**，Swift 实现，iOS/iPadOS 15+ 与 macOS 13+。
 
 参考实现：[Silent1566/webhtv](https://github.com/Silent1566/webhtv)（作为协议与交互的兼容基准，不移植其 Java/Android 实现）。

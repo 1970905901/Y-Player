@@ -39,6 +39,10 @@ jobs:
             --exclude .build,DerivedData,ThirdParty,Tools,.swiftpm,Packages/*/.build
       - name: SwiftLint (阻断：当前 0 违规)
         run: swiftlint lint --config .swiftlint.yml
+      # 图标资源校验：actool 对「缺文件/尺寸不符」是硬报错，但对 iOS 图标带 alpha **只警告**，
+      # 很容易带着问题进包（等 App Store 上传被拒才发现）。纯标准库实现，无需 Pillow。
+      - name: App icon assets (阻断：清单/尺寸/alpha 通道)
+        run: python3 Scripts/check_app_icons.py
 
   core-tests:
     name: SwiftPM tests
