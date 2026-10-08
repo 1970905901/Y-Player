@@ -179,7 +179,7 @@ struct LiveEPGInterfaceTests {
     }
 
     private func makeSource() throws -> LiveSource {
-        let json = #"{"name":"演示直播","url":"https://live.example.com/list.m3u8","timeZone":"Asia/Shanghai","ua":"UA-live"}"#
+        let json = #"{"name":"演示直播","url":"https://live.example.com/list.m3u8","timeZone":"Asia/Shanghai","ua":"UA-live","epg":"https://epg.example.com/api?ch={name}&date={date}"}"#
         return try JSONDecoder().decode(LiveSource.self, from: Data(json.utf8))
     }
 
@@ -188,12 +188,12 @@ struct LiveEPGInterfaceTests {
         try JSONDecoder().decode(LiveChannel.self, from: Data(json.utf8))
     }
 
-    /// 带接口模板的频道（`{name}`/`{date}` 都留着，等展开）。
-    private let interfaceChannelJSON =
-        #"{"name":"CCTV-1 综合","tvgId":"cctv1","tvgName":"CCTV1","epg":"https://epg.example.com/api?ch={name}&date={date}"}"#
-
+    /// 走一遍生产路径：频道的接口地址由**源级 `epg` 模板**展开而来（`{name}` → `tvgName`），
+    /// 只留下 `{date}` 交给仓库按天替换 —— 上游 `Channel.live(Live)` 就是这个顺序。
     private func makeInterfaceChannel() throws -> LiveChannel {
-        try makeChannel(interfaceChannelJSON)
+        var channel = try makeChannel(#"{"name":"CCTV-1 综合","tvgId":"cctv1","tvgName":"CCTV1"}"#)
+        channel.inherit(from: try makeSource())
+        return channel
     }
 
     private func interfaceURL(date: String) -> String {
