@@ -68,7 +68,8 @@ struct LocalM3U8RouteTests {
         )
 
         let response = try await handler.handleRequest(makeRequest(query: urlQuery(playlistURL)))
-        let body = String(data: response.body, encoding: .utf8) ?? ""
+        let data = try #require(response.body)
+        let body = String(data: data, encoding: .utf8) ?? ""
 
         #expect(!body.contains("ad.ts"))
         #expect(body.contains("seg-1.ts"))
