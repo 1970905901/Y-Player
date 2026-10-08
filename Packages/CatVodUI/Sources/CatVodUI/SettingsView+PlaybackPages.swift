@@ -100,12 +100,13 @@ struct SettingsPlayerControlView: View {
             Section("当前形态") {
                 InfoRow(title: "控制方式", value: "系统播放器")
                 InfoRow(title: "当前内核", value: model.preferredEngine.displayName)
-                Text("播放 / 暂停、进度拖动、全屏、画中画、后台播放与手势都由系统播放器提供，我们不自绘 —— 因此现在没有可调的控制项。")
+                InfoRow(title: "倍速", value: "播放页「播放速度」区（0.1x–5.0x，含预设）")
+                Text("播放 / 暂停、进度拖动、全屏、画中画、后台播放与手势都由系统播放器提供，我们不自绘 —— 除倍速外没有其它可调项。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
             Section("后续") {
-                Text("M3（MPVKit）/ M4（自研 FFmpeg）接入后，这里会出现内核专属控制：手势映射、长按倍速、逐帧步进、音频增益等。")
+                Text("M3（MPVKit）/ M4（自研 FFmpeg）接入后，这里会出现内核专属控制：手势映射、逐帧步进、音频增益等。上游的「长按屏幕临时加速」要接管手势、与系统播放器自带手势冲突，暂不做（见 M02P15）。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

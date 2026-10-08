@@ -33,6 +33,8 @@ public struct PlaybackView: View {
     @State private var resumedFromText = ""
     @State private var latestPosition: Double = 0
     @State private var latestDuration: Double = 0
+    /// 当前倍速（初值在 `start()` 里从存档读；范围与预设见 ``SpeedSetting``）。
+    @State private var speed: Float = SpeedSetting.normal
     @State private var isFinished = false
     @State private var lastPersistAt = Date.distantPast
 
@@ -73,6 +75,9 @@ public struct PlaybackView: View {
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
+                }
+                if engine != nil {
+                    speedSection
                 }
                 if !resumedFromText.isEmpty {
                     Section("进度") {
@@ -129,6 +134,7 @@ extension PlaybackView {
         }
         let coordinator = PlayerCoordinator()
         engineText = settings.engine.displayName
+        speed = PlaybackSpeedBook.speed()
 
         // 策略：严格按用户设置执行，**不自动降级**。不可用就提示，让用户改设置。
         if case let .unavailable(kind, reason) = coordinator.resolve(settings: settings) {
@@ -156,6 +162,9 @@ extension PlaybackView {
             // 续播：有进度记录就从上次位置起播（已看完或过短会从头，规则在 PlaybackProgress.resumePosition）。
             try await systemEngine.load(resumableResource())
             await systemEngine.play()
+            // 套用存档里的倍速：必须在加载**之后**设 —— 引擎在 `load` 时会回到正常速度
+            // （倍速属「本次播放的偏好」，引擎不跨资源记忆，见 `AVPlayerEngine.requestedRate`）。
+            await systemEngine.setRate(speed)
         } catch let error as PlayerError {
             errorText = error.message
         } catch {
@@ -236,6 +245,69 @@ extension PlaybackView {
             return
         }
         await engine.seek(to: 0)
+    }
+
+    /// 「播放速度」区：当前值 + 预设 + 恢复。
+    ///
+    /// 排版跟本页其它区一致（一行行文字），因为画面交给系统原生 `VideoPlayer`，我们不自绘播放控件
+    /// （`docs/UI 规范.md`）。范围/步进/预设与显示格式全部对齐上游 `SpeedSetting`；
+    /// 上游那套的「长按倍速」「跳过静音」不改（前者是手势、后者要内核支持，见 M02P15）。
+    @ViewBuilder
+    private var speedSection: some View {
+        Section("播放速度") {
+            HStack {
+                Text(SpeedSetting.format(speed))
+                    .monospacedDigit()
+                Spacer()
+                Button("恢复 1.0x") {
+                    setSpeed(SpeedSetting.normal, persist: true)
+                }
+                .disabled(SpeedSetting.isNormal(speed))
+            }
+            Slider(
+                value: speedSlider,
+                in: SpeedSetting.minimum ... SpeedSetting.maximum,
+                step: SpeedSetting.step,
+                onEditingChanged: { editing in
+                    // 拖动过程中已经即时生效；松手才落盘（一次拖动几十个中间值，不必写几十次 UserDefaults）。
+                    guard !editing else { return }
+                    PlaybackSpeedBook.save(speed)
+                }
+            )
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(SpeedSetting.presets, id: \.self) { preset in
+                        Button(SpeedSetting.format(preset)) {
+                            setSpeed(preset, persist: true)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(SpeedSetting.isSame(preset, speed) ? .accentColor : .secondary)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    /// 滑杆绑定：拖动中即时生效（改倍速要能马上听出来）。
+    private var speedSlider: Binding<Float> {
+        Binding(
+            get: { speed },
+            set: { newValue in setSpeed(newValue, persist: false) }
+        )
+    }
+
+    /// 改倍速的**唯一出口**：夹紧 → 记进界面 →（可选）落盘 → 下发内核。
+    private func setSpeed(_ value: Float, persist: Bool) {
+        let target = SpeedSetting.clamp(value)
+        speed = target
+        if persist {
+            PlaybackSpeedBook.save(target)
+        }
+        guard let engine else {
+            return
+        }
+        Task { await engine.setRate(target) }
     }
 
     /// 时间文本（`1:02:03` 或 `2:34`）。

@@ -24,6 +24,11 @@ public final class AVPlayerEngine: PlayerEngine {
     // `SystemPlayerEngine+Monitoring.swift`（`private` 是文件作用域，跨文件无法访问）。
     var continuation: AsyncStream<PlayerEvent>.Continuation?
     let player = AVPlayer()
+    /// 用户请求的倍速。
+    ///
+    /// 为什么必须记着它：`AVPlayer.play()` 等价于「rate 置 1」，于是「设了 1.5x → 暂停 → 继续」
+    /// 会悄悄退回正常速度（M02P15 修的就是这个）。`play()` 现在按这里记的值恢复。
+    var requestedRate: Float = SpeedSetting.normal
     var timeObserver: Any?
     var endObserver: NSObjectProtocol?
     var monitoringTask: Task<Void, Never>?
@@ -65,6 +70,8 @@ public final class AVPlayerEngine: PlayerEngine {
 
         let item = AVPlayerItem(asset: Self.makeAsset(url: url, headers: resource.headers))
         duration = 0
+        // 每条资源从正常速度起播：倍速是「本次播放的偏好」，由上层加载后自己套用（播放页从存档读）。
+        requestedRate = SpeedSetting.normal
         lastTime = max(resource.startPosition, 0)
         player.replaceCurrentItem(with: item)
         installObservers(item: item)
@@ -79,8 +86,9 @@ public final class AVPlayerEngine: PlayerEngine {
 
     public func play() async {
         player.play()
-        if player.rate == 0 {
-            player.rate = 1
+        // `AVPlayer.play()` 等价于把 rate 置 1：把记着的倍速找回来，否则「设 1.5x → 暂停 → 继续」会退回 1.0x。
+        if player.rate != requestedRate {
+            player.rate = requestedRate
         }
         update(.playing)
     }
@@ -97,7 +105,12 @@ public final class AVPlayerEngine: PlayerEngine {
         emit(.timeChanged(current: target, duration: duration))
     }
 
+    /// 设倍速。
+    ///
+    /// 注意 AVFoundation 的语义：`rate != 0` 就等于「在播」——暂停状态下设倍速会**开始播放**
+    /// （与上游 ExoPlayer 的 `setSpeed` 同类）。播放页只在用户操作时调用，所以不额外拦。
     public func setRate(_ rate: Float) async {
+        requestedRate = rate
         player.rate = rate
         emit(.speedChanged(rate))
     }
