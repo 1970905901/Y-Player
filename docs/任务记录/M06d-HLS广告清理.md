@@ -8,14 +8,24 @@
 
 ## 一、为什么不是「把 hlsRules 套上就完事」
 
-接口配置里的 `hlsRules`（``HlsRule``：`hosts` / `regex` / `exclude`）从 M2 起就只有模型、没有消费点。
-翻参考实现才发现那套东西是**两层**：
+接口配置里的 `hlsRules` 从 M2 起就只有模型、没有消费点；而且**模型的形状还是错的**：
+
+- 上游 `VodConfig` / `LiveConfig` 里都是 `setHlsRules(HlsAdRule.arrayFrom(fetchArray(object, "hlsRules")))`
+  —— 这个字段是**规则包形态**（`id` / `playlistHostSuffixes` / `segmentUrlRegex` / `minDuration` / `enabled` …）；
+- 本项目原来按 `rules` 的 `{hosts, regex, exclude}` 形状建模（`HlsRule`），于是真配置里的规则会解析成
+  空对象 —— **静默失效**：不报错、也一条都匹配不上；
+- 这一轮改对了：`SourceConfig.hlsRules` 现在是 `[HLSAdRule]`，`HlsRule` 整条删掉；
+  `{hosts, regex, exclude}` 那种形状属于**解析规则**（`SniffRule`），它的 `exclude` 另有用途（见第五节）。
+- **代价与教训**：错形状的模型不会让任何测试变红，它只是「什么都没发生」。所以「字段名对上了」不等于
+  「形状对上了」—— 对上游要连字段**类型**一起核（这次是靠 `grep hlsRules` 追到 `arrayFrom(...)` 才发现的）。
+
+所以这一轮做三件事：清理器、规则编译、**把配置形状对齐**；接线在第五节。
 
 | 参考实现 | 本项目 |
 | --- | --- |
 | `HlsAdRule` + `HlsRulePackage`（带 `schemaVersion` 的规则包；字段多、默认关闭、另有来源与更新要求文档） | `HLSAdRule` + `HLSAdRulePackage`（本次） |
 | `HlsManifestCleaner`（**信号制**清理器，删片段前过六道安全阀） | `HLSManifestCleaner`（本次，逐条对齐） |
-| `HlsRuleConfig#compileLegacyRules`（把配置里的 `hosts`/`exclude` 当一条手工规则） | `HlsRule.compiledAdRule()`（本次） |
+| `HlsRuleConfig#compileLegacyRules`（把**解析规则**的 `hosts`/`exclude` 当一条手工规则） | `SniffRule.compiledAdRule()`（本次） |
 
 也就是说：**配置里那对 `hosts`/`exclude` 只是「一条手工规则」**，真正的清理器是另一套。
 所以这一轮先把「清理器 + 规则编译」落地（纯逻辑、可测、无副作用），下一轮才谈接线 ——
@@ -51,8 +61,10 @@
   主清单、半截片段、信号数不够、跨域+不连续块、直播删开头并推进两个序号、直播删中间段放弃、
   `DISCONTINUITY-SEQUENCE` 不算边界、跨 `#EXT-X-KEY` 不重复计、字节范围、总时长超限、多条规则算第一条）；
 - `HLSAdRuleTests`：JSON 编出来能用 + 该拒的六种都拒 + 坏 JSON 解析成「没配」；
+- `SourceConfigHLSRulesTests`：**配置 `hlsRules` 的形状**（M06d 修正的回归测试）——
+  真形状能解析并编成规则、没写 `enabled` 不算开、旧形状写进 `hlsRules` 会解析成空规则且明确编不出来、解析规则不串味；
 - `HLSAdRulePackageTests`：版本只认 2、空包、内置默认关闭、状态键形状（源标识不进键）；
-- `HlsRuleCleanerMappingTests`：配置规则映射（`hosts` 当作用域、`exclude` 当分片正则）、空 `exclude` 跳过、id 稳定。
+- `SniffRuleCleanerMappingTests`：解析规则映射（`hosts` 当作用域、`exclude` 当分片正则）、空 `exclude` 跳过、id 稳定。
 
 ## 五、接线（`/m3u8` 真的用上规则了）
 
@@ -63,7 +75,7 @@
 | `LocalProxyHandler` | 新增 `adRules: @Sendable () -> [HLSManifestCleaner.Rule]`（默认空数组）；清单流程变成「取上游 → **清理** → 改写相对地址 → 回客户端」 |
 | 顺序（**关键**） | 清理必须在**改写之前**：规则里的 host / 域名说的是**上游**地址，改写完之后这里只剩 `127.0.0.1`，规则会一条都匹配不上 |
 | `HLSAdRuleStore`（Core） | 规则的「当前生效值」小盒子（`NSLock` + `@unchecked Sendable`，理由同 `StorageFailureRecorder`）；本机服务**每个请求读一次** |
-| `AppModel` + `AppModel+LocalProxy` | 配置加载成功后 `refreshAdRules()` 把 `SourceConfig.hlsRules` 编译进盒子；规则提供者闭包**只捕获盒子、不捕获 AppModel**（它在线程池里被调用，碰主线程状态就是数据竞争） |
+| `AppModel` + `AppModel+LocalProxy` | 配置加载成功后 `refreshAdRules()` 装两种规则：**`hlsRules`**（规则包形态，只认显式 `"enabled": true`）+ **解析规则的 `exclude`**（legacy 兜底，对齐 `compileLegacyRules`）；规则提供者闭包**只捕获盒子、不捕获 AppModel**（它在线程池里跑，碰主线程状态就是数据竞争） |
 | 配置换了怎么办 | **不重启本机服务** —— 换个源之后 `/m3u8` 下一次请求读到的就是新规则（重启会换端口，正在播的那条链路会断） |
 
 没配规则的部署行为与 M06c 完全一致：清理器拿到空规则数组会直接原样返回（`Result.unchanged`）。
@@ -72,8 +84,8 @@
 
 1. **启用开关的落盘与界面入口**：`HLSAdRuleState` 已经能算出「该不该开」，但存覆盖值的那份偏好
    （参考实现叫 `builtin_hls_rule_overrides`）与设置页入口都没做。
-   注意语义差别：**接口配置里的 `hlsRules` 是「用户自己写的规则」，一律生效**（对齐参考实现的 legacy 路径）；
-   `HLSAdRule.enabled` 那套「默认关闭、要显式打开」说的是**规则包**（内置/外来的），等做规则包时再一起做；
+   语义差别要记清：**接口配置里的 `hlsRules` 必须显式写 `"enabled": true` 才生效**（对齐 `compileExternal` 的
+   `rule.isEnabled()`）；`enabledByDefault` + 本地开关那套（默认关闭、用户再打开）说的是**规则包**，等做规则包时一起做；
 2. **内置规则包**：参考项目那份 `assets/rules/hls_rules.json` 现在是 **`rules: []`（空包）**，我们照样子先留空 ——
    内置规则要背「误杀率」的责任（参考项目自己的更新要求：至少一个应删 fixture + 一个反 fixture + 一个错误 host 反 fixture）；
 3. **「跳过广告」提示**：参考实现有 `HlsAdblockNotice`（界面上提示这次跳了多少秒），我们只把统计放在
