@@ -39,6 +39,10 @@ struct LiveChannelRow: Identifiable, Equatable {
     var hasCatchup: Bool
     /// 有没有可用地址（没有就点不动，界面按上游给「无地址」提示）。
     var isPlayable: Bool
+    /// 是不是「上次观看」的那个频道（界面加个小标记）。
+    var isLastWatched: Bool
+    /// 打开这个频道时先用第几条线路（上次看的那一条；不是上次那个频道就是 0）。
+    var initialLineIndex: Int
 
     var id: String { channel.id }
 }
@@ -53,17 +57,31 @@ enum LiveListLayout {
     }
 
     /// 某个分组的频道行（顺序即清单顺序）。
-    static func channelRows(_ group: LiveGroup, guide: EPGGuide?, at now: Date = Date()) -> [LiveChannelRow] {
-        group.channels.map { row($0, guide: guide, at: now) }
+    static func channelRows(
+        _ group: LiveGroup,
+        guide: EPGGuide?,
+        resume: LiveKeepTarget? = nil,
+        at now: Date = Date()
+    ) -> [LiveChannelRow] {
+        group.channels.map { row($0, guide: guide, resume: resume, at: now) }
     }
 
     /// 单个频道行。
     ///
     /// - `guide` 为 `nil` 表示这个源没有节目单（或还没拉到）：节目文案给空串，界面显示「暂无节目」，
     ///   名字与图标回落清单里的值；
-    /// - 匹配键用 ``LiveChannel/epgID``（`tvg-id` → `tvg-name` → 频道名三级回落，M07a）。
-    static func row(_ channel: LiveChannel, guide: EPGGuide?, at now: Date) -> LiveChannelRow {
+    /// - 匹配键用 ``LiveChannel/epgID``（`tvg-id` → `tvg-name` → 频道名三级回落，M07a）；
+    /// - `resume` 是「上次观看」（M07c-3）：命中这个频道就带上「上次」标记与上次的线路下标。
+    ///   线路下标在 ``LiveKeep/resolve(in:)`` 里已收敛；**没有地址的频道不算命中** ——
+    ///   点了也播不了，标「上次」只会误导。
+    static func row(
+        _ channel: LiveChannel,
+        guide: EPGGuide?,
+        resume: LiveKeepTarget? = nil,
+        at now: Date
+    ) -> LiveChannelRow {
         let key = channel.epgID
+        let resumedLine = lastWatchedLine(of: channel, resume: resume)
         return LiveChannelRow(
             channel: channel,
             number: channel.number,
@@ -72,8 +90,23 @@ enum LiveListLayout {
             currentText: guide?.currentProgram(key: key, at: now)?.formatted ?? "",
             nextText: guide?.nextProgram(key: key, at: now)?.formatted ?? "",
             hasCatchup: channel.catchupForCurrentURL() != nil,
-            isPlayable: !channel.urls.isEmpty
+            isPlayable: !channel.urls.isEmpty,
+            isLastWatched: resumedLine != nil,
+            initialLineIndex: resumedLine ?? 0
         )
+    }
+
+    /// 「上次观看」命中这个频道时该用第几条线路；不命中 / 没地址时为 `nil`。
+    private static func lastWatchedLine(of channel: LiveChannel, resume: LiveKeepTarget?) -> Int? {
+        guard let resume, resume.channel == channel, resume.isPlayable else {
+            return nil
+        }
+        return resume.lineIndex
+    }
+
+    /// 线路的显示名：清单写了 `地址$线路名` 就用它，否则按「线路 N」（上游用资源字符串，属界面职责）。
+    static func lineTitle(channel: LiveChannel, lineIndex: Int) -> String {
+        channel.lineName(index: lineIndex) ?? "线路 \(lineIndex + 1)"
     }
 }
 
@@ -106,19 +139,21 @@ extension LiveListLayout {
     ///
     /// 三件事在这里定死，界面不再判断：
     /// - **状态**：`isLive` / `isFuture` / 其余算已播（``EPGProgram`` 的既有语义）；
-    /// - **时移地址**：只有「已播 + 这个频道当前线路配了时移」才拼 ``LiveCatchup/playbackURL(_:start:end:)``
-    ///   （``LiveChannel/catchupForCurrentURL(index:)`` 已经处理了 `regex` 命中与 `/PLTV/` 自动套用）；
+    /// - **时移地址**：只有「已播 + 这条线路配了时移」才拼 ``LiveCatchup/playbackURL(_:start:end:)``
+    ///   （``LiveChannel/catchupForCurrentURL(index:)`` 已经处理了 `regex` 命中与 `/PLTV/` 自动套用）——
+    ///   `lineIndex` 就是「按哪条线路拼」，与直播页打开频道时用的是同一条（M07c-3）；
     /// - **没有节目单**：返回空数组，界面显示「暂无节目单」。
     static func programRows(
         channel: LiveChannel,
         schedule: EPGSchedule?,
+        lineIndex: Int = 0,
         at now: Date = Date()
     ) -> [LiveProgramRow] {
         guard let schedule else {
             return []
         }
-        let catchup = channel.catchupForCurrentURL()
-        let liveURL = channel.playbackURL()
+        let catchup = channel.catchupForCurrentURL(index: lineIndex)
+        let liveURL = channel.playbackURL(index: lineIndex)
         return schedule.programs.map { program in
             let state = state(of: program, at: now)
             let catchupURL = state == .past ? catchup?.playbackURL(liveURL, start: program.startTime, end: program.endTime) : nil

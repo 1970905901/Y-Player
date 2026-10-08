@@ -43,6 +43,42 @@ public extension AppModel {
         liveGuides[channel.epgID]
     }
 
+    /// 当前源的上次观看：先看本地存档（``liveKeeps``），再回落源自己的 `keep` 字段。
+    ///
+    /// 上游把这一行写在源对象上、随配置一起带过来（`Live.getKeep()`），所以源的 `keep`
+    /// 是「别人给的起始值」，本地存档是「这台机器上真实看过的那一次」，后者优先。
+    var liveKeep: LiveKeep? {
+        guard let source = selectedLiveSource else {
+            return nil
+        }
+        if let raw = liveKeeps[source.name], let stored = LiveKeep(raw: raw) {
+            return stored
+        }
+        return LiveKeep(raw: source.keep)
+    }
+
+    /// 上次观看落到当前清单上的结果（分组 / 频道 / 线路）。
+    ///
+    /// 清单还没加载、或记录里的频道已经不在清单里 → `nil`（界面就不给「继续观看」入口）。
+    var liveResumeTarget: LiveKeepTarget? {
+        guard let source = liveSource, let keep = liveKeep else {
+            return nil
+        }
+        return keep.resolve(in: source)
+    }
+
+    /// 记一次「上次观看」（界面在打开频道 / 换线路时调用）。
+    ///
+    /// 写的是**上游那一行**：`分组名@@@频道名@@@线路下标`（`LiveKeep` 负责编码），
+    /// 键是当前源名。清单里的分组名已经脱过 `_密码`，与上游 `Group.getName()` 同一口径。
+    func rememberLiveChannel(_ channel: LiveChannel, group: String, lineIndex: Int) {
+        guard let sourceName = selectedLiveSource?.name, !sourceName.isEmpty else {
+            return
+        }
+        let keep = LiveKeep(group: group, channel: channel.name, line: lineIndex)
+        liveKeeps = LiveKeepBook.recording(keep, for: sourceName, in: liveKeeps)
+    }
+
     /// 加载选中源的清单。
     ///
     /// 已经是这个源的已解析结果就直接返回（``LiveRepository/load(_:)`` 自己也短路），
@@ -66,9 +102,21 @@ public extension AppModel {
             let repository = LiveRepository(transport: transportForConfiguration())
             let loaded = try await repository.load(source)
             liveState = .loaded(loaded)
+            restoreLiveGroup(in: loaded)
         } catch {
             liveState = .failed(Self.liveMessage(error))
         }
+    }
+
+    /// 清单到齐后把分组条切回「上次观看」那一组。
+    ///
+    /// 只切分组，**不自动开播**：进页面就出声是打扰（上游 `LiveActivity` 也是列表优先，
+    /// 是否续播交给用户点）。频道本身的入口由 ``liveResumeTarget`` 摆在列表上方。
+    private func restoreLiveGroup(in source: LiveSource) {
+        guard let target = liveKeep?.resolve(in: source), selectedLiveGroup != target.group.name else {
+            return
+        }
+        selectedLiveGroup = target.group.name
     }
 
     /// 拉一个频道的节目单（接口形态按「昨天 / 今天 / 明天」逐频道拉；文件形态一次拿全源）。

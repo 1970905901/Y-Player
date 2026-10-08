@@ -8,6 +8,9 @@ import SwiftUI
 /// `LiveApi.getEpg` 的 `{-1, 0, 1}` 一致），所以不需要日期切换器 —— 上游也是把这几天的切片
 /// 一起挂在频道上，界面自己选「今天」。
 ///
+/// `lineIndex` 是「这个频道当前用第几条线路」（由直播页带进来，通常是上次看的那条）：
+/// 时移地址要拼在**具体某个地址**后面，所以这个下标必须跟着走。
+///
 /// 每档的三种形态：
 /// - `.live` 正在播：高亮，点它进直播；
 /// - `.past` 已播：有时移地址就能点（走 `LiveCatchup` 拼出来的那一段），没有时移说明原因；
@@ -16,6 +19,8 @@ import SwiftUI
 struct LiveScheduleView: View {
     @ObservedObject var model: AppModel
     let channel: LiveChannel
+    /// 时移地址按第几条线路拼（直播页带进来）。
+    let lineIndex: Int
 
     var body: some View {
         List {
@@ -24,6 +29,13 @@ struct LiveScheduleView: View {
                     ForEach(rows(for: schedule)) { row in
                         programRow(row)
                     }
+                }
+            }
+            if channel.urls.count > 1 {
+                Section {
+                    Text("时移地址按「\(LiveListLayout.lineTitle(channel: channel, lineIndex: lineIndex))」拼接。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -42,7 +54,7 @@ struct LiveScheduleView: View {
     }
 
     private func rows(for schedule: EPGSchedule) -> [LiveProgramRow] {
-        LiveListLayout.programRows(channel: channel, schedule: schedule)
+        LiveListLayout.programRows(channel: channel, schedule: schedule, lineIndex: lineIndex)
     }
 
     // MARK: - 行
@@ -57,7 +69,11 @@ struct LiveScheduleView: View {
             }
         } else if row.state == .live {
             NavigationLink {
-                PlaybackView(resource: resource(url: channel.playbackURL()), title: channel.name, settings: model.playbackSettings)
+                PlaybackView(
+                    resource: resource(url: channel.playbackURL(index: lineIndex)),
+                    title: channel.name,
+                    settings: model.playbackSettings
+                )
             } label: {
                 label(row)
             }

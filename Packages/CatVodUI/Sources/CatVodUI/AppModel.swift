@@ -63,6 +63,7 @@ public final class AppModel: ObservableObject {
         static let searchHistory = "yplayer.searchHistory"
         static let liveSource = "yplayer.liveSource"
         static let liveGroup = "yplayer.liveGroup"
+        static let liveKeep = "yplayer.liveKeep"
     }
 
     // MARK: - 输出状态
@@ -310,6 +311,17 @@ public final class AppModel: ObservableObject {
     /// 但原因要留痕，免得「为什么没有节目单」永远查不出来）。
     @Published public internal(set) var liveEPGNotice: String = ""
 
+    /// 直播「上次观看」：**源名 → `分组名@@@频道名@@@线路下标`**（上游 `Live.keep` 的字符串形态）。
+    ///
+    /// 上游把这一行写在源对象自己的 `keep` 字段里、随配置落库；本项目不持有可写的配置副本
+    /// （配置是只读解码出来的），所以按源名存进 `UserDefaults` —— 写法与 ``selectedLiveKey`` 一致。
+    /// setter 是 `internal(set)`：唯一写回点是 `AppModel+Live.swift` 的 `rememberLiveChannel`。
+    @Published public internal(set) var liveKeeps: [String: String] {
+        didSet {
+            UserDefaults.standard.set(LiveKeepBook.encode(liveKeeps), forKey: StorageKey.liveKeep)
+        }
+    }
+
     /// 当前播放设置。
     public var playbackSettings: PlaybackSettings {
         PlaybackSettings(engine: preferredEngine, decoderMode: decoderMode)
@@ -371,6 +383,9 @@ public final class AppModel: ObservableObject {
 
         // 搜索历史：默认空（搜索页据此决定显示历史胶囊还是「还没有搜索记录」）。
         searchHistory = SearchHistory.decode(defaults.string(forKey: StorageKey.searchHistory) ?? "")
+
+        // 直播「上次观看」：默认空（直播页据此决定要不要给「继续观看」入口）。
+        liveKeeps = LiveKeepBook.decode(defaults.string(forKey: StorageKey.liveKeep) ?? "")
 
         // 引擎日志：默认关（与参考图的开关初始状态一致）。
         isEngineLogEnabled = defaults.object(forKey: StorageKey.engineLogEnabled) as? Bool ?? false

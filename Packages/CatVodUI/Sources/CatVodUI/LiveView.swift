@@ -18,7 +18,8 @@ public struct LiveView: View {
 
     /// 节目单页用 `sheet` 弹出：一个频道一档节目，弹层比 push 更贴上游的 `EpgDialog`，
     /// 也不会把导航栈堆成「列表 → 频道 → 节目单 → 播放」四层。
-    @State private var scheduleChannel: LiveChannel?
+    /// 存**行**而不是频道：时移地址要按「这个频道上次用的线路」拼（M07c-3），`sheet` 里没得选线路。
+    @State private var scheduleRow: LiveChannelRow?
 
     public init(model: AppModel) {
         self.model = model
@@ -51,8 +52,45 @@ public struct LiveView: View {
         VStack(spacing: 0) {
             groupStrip(source)
             Divider()
+            if let target = model.liveResumeTarget {
+                resumeRow(target)
+                Divider()
+            }
             channelList
         }
+    }
+
+    /// 「继续观看」：**不自动开播**（进页面就出声是打扰），把上次看的频道摆在列表上方，
+    /// 一点就到、并且仍然用上次那条线路（线路名来自清单里的 `地址$线路名`）。
+    private func resumeRow(_ target: LiveKeepTarget) -> some View {
+        NavigationLink {
+            LiveChannelPlaybackView(
+                model: model,
+                channel: target.channel,
+                groupName: target.group.name,
+                lineIndex: target.lineIndex
+            )
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "play.circle.fill")
+                    .font(.title2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("继续观看")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Text("\(target.channel.name) · \(LiveListLayout.lineTitle(channel: target.channel, lineIndex: target.lineIndex))")
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.forward")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// 分组条：当前分组加粗（与发现页分类条同一形态；加密分组带一个锁）。
@@ -89,13 +127,18 @@ public struct LiveView: View {
             ForEach(rows) { row in
                 HStack(spacing: 8) {
                     NavigationLink {
-                        LiveChannelPlaybackView(model: model, row: row)
+                        LiveChannelPlaybackView(
+                            model: model,
+                            channel: row.channel,
+                            groupName: currentGroupName,
+                            lineIndex: row.initialLineIndex
+                        )
                     } label: {
                         LiveChannelRowView(row: row)
                     }
                     // 节目单入口：一个频道的各档节目（时移回看从这里进）。
                     Button {
-                        scheduleChannel = row.channel
+                        scheduleRow = row
                     } label: {
                         Image(systemName: "calendar")
                             .font(.body)
@@ -107,21 +150,28 @@ public struct LiveView: View {
             }
         }
         .adaptiveListStyle()
-        .sheet(item: $scheduleChannel) { channel in
+        .sheet(item: $scheduleRow) { row in
             AdaptiveNavigationContainer {
-                LiveScheduleView(model: model, channel: channel)
+                LiveScheduleView(model: model, channel: row.channel, lineIndex: row.initialLineIndex)
             }
         }
     }
 
-    /// 当前分组的频道行：节目单按**频道各自**取（缓存就在 ``AppModel/liveGuides`` 里）。
+    /// 当前分组的名字（写「上次观看」要用 `分组名@@@频道名@@@线路下标` 里的第一段）。
+    private var currentGroupName: String {
+        model.selectedLiveGroupObject?.name ?? ""
+    }
+
+    /// 当前分组的频道行：节目单按**频道各自**取（缓存就在 ``AppModel/liveGuides`` 里），
+    /// 「上次观看」也按行标出来（`resume` 传一次，别在每行里各解析一遍）。
     private var rows: [LiveChannelRow] {
         guard let group = model.selectedLiveGroupObject else {
             return []
         }
         let now = Date()
+        let resume = model.liveResumeTarget
         return group.channels.map { channel in
-            LiveListLayout.row(channel, guide: model.liveGuide(for: channel), at: now)
+            LiveListLayout.row(channel, guide: model.liveGuide(for: channel), resume: resume, at: now)
         }
     }
 
@@ -140,7 +190,7 @@ public struct LiveView: View {
     }
 }
 
-/// 频道列表的一行：图标 + 名字 + 「正在播」，右侧给回看标记与频道号。
+/// 频道列表的一行：图标 + 名字 + 「正在播」，右侧给「上次」标记、回看标记与频道号。
 private struct LiveChannelRowView: View {
     let row: LiveChannelRow
 
@@ -165,6 +215,11 @@ private struct LiveChannelRowView: View {
 
             Spacer(minLength: 8)
 
+            if row.isLastWatched {
+                Text("上次")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
             if row.hasCatchup {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.footnote)
@@ -180,22 +235,90 @@ private struct LiveChannelRowView: View {
 
 /// 频道的播放页。
 ///
-/// 进入时顺手拉这个频道的节目单（回到列表就有「正在播」），资源交给
-/// ``AppModel/proxiedMediaResource(_:)``：需要 header 时改走本机 `/proxy`，
+/// 三件事：
+/// - 进入时顺手拉这个频道的节目单（回到列表就有「正在播」）；
+/// - 把这次观看记成「上次观看」（`分组名@@@频道名@@@线路下标`，上游 `Live.keep` 的形态）；
+/// - 一个频道有多条线路时，右上角给线路菜单（清单写了 `地址$线路名` 就用线路名）。
+///
+/// `lineIndex` 由调用方给（上次看的那条），在这里只往上改、不再往下改：换线路同样要写「上次观看」。
+///
+/// 资源交给 ``AppModel/proxiedMediaResource(_:)``：需要 header 时改走本机 `/proxy`，
 /// 让 header 覆盖到子清单 / 分片 / 密钥请求上（M6 的约定）。
+@MainActor
 private struct LiveChannelPlaybackView: View {
     @ObservedObject var model: AppModel
-    let row: LiveChannelRow
+    let channel: LiveChannel
+    /// 这个频道所属的分组名（写「上次观看」要用它，上游写的是 `Group.getName()`）。
+    let groupName: String
+    @State private var lineIndex: Int
+
+    init(model: AppModel, channel: LiveChannel, groupName: String, lineIndex: Int) {
+        self.model = model
+        self.channel = channel
+        self.groupName = groupName
+        _lineIndex = State(initialValue: lineIndex)
+    }
 
     var body: some View {
-        PlaybackView(resource: resource, title: row.title, settings: model.playbackSettings)
-            .task { await model.loadLiveGuide(for: row.channel) }
+        PlaybackView(resource: resource, title: title, settings: model.playbackSettings)
+            // 换线路 = 换资源：`PlaybackView` 自己的 `.task` 只在视图出现时跑一次，所以用 `id`
+            // 让播放页重建（不重建就会继续播旧线路）。
+            .id(lineIndex)
+            .adaptiveToolbar {
+                EmptyView()
+            } trailing: {
+                if channel.urls.count > 1 {
+                    lineMenu
+                }
+            }
+            .task {
+                await model.loadLiveGuide(for: channel)
+                model.rememberLiveChannel(channel, group: groupName, lineIndex: lineIndex)
+            }
+    }
+
+    // MARK: - 线路
+
+    /// 线路菜单：当前线路带对勾；没写线路名的线路按「线路 N」。
+    private var lineMenu: some View {
+        Menu {
+            ForEach(Array(channel.urls.indices), id: \.self) { index in
+                Button {
+                    selectLine(index)
+                } label: {
+                    if index == lineIndex {
+                        Label(LiveListLayout.lineTitle(channel: channel, lineIndex: index), systemImage: "checkmark")
+                    } else {
+                        Text(LiveListLayout.lineTitle(channel: channel, lineIndex: index))
+                    }
+                }
+            }
+        } label: {
+            Text(LiveListLayout.lineTitle(channel: channel, lineIndex: lineIndex))
+        }
+    }
+
+    /// 换线路：先记住这次选择（`id` 重建会重放 `.task`，但不能指望它 —— 换线路只是换个
+    /// 子视图的身份，外层的 `.task` 不一定重跑），再切地址让播放页重建。
+    private func selectLine(_ index: Int) {
+        guard index != lineIndex else {
+            return
+        }
+        lineIndex = index
+        model.rememberLiveChannel(channel, group: groupName, lineIndex: index)
+    }
+
+    // MARK: - 播放
+
+    /// 标题：EPG 的 `<display-name>` 优先，否则清单里的频道名（与列表同一口径）。
+    private var title: String {
+        model.liveGuide(for: channel)?.displayName(for: channel.epgID, fallback: channel.name) ?? channel.name
     }
 
     private var resource: MediaResource {
         model.proxiedMediaResource(MediaResource(
-            url: row.channel.playbackURL(),
-            headers: row.channel.requestHeaders(fallback: model.liveSource?.headers() ?? [:])
+            url: channel.playbackURL(index: lineIndex),
+            headers: channel.requestHeaders(fallback: model.liveSource?.headers() ?? [:])
         ))
     }
 }
