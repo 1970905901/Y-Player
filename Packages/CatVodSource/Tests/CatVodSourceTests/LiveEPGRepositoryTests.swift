@@ -116,7 +116,7 @@ struct LiveEPGRepositoryTests {
     }
 
     @Test("坏响应：非 2xx → network；不是 XMLTV → parseFailed；gzip 坏数据 → parseFailed")
-    func failures() async throws {
+    func failures() async {
         let notFound = ParseRequestRecorder(response: HTTPResponse(status: 404, body: Data("<html>404</html>".utf8)))
         await expectFailure(.network, from: notFound, epg: "epg/cctv.xml")
 
@@ -182,6 +182,10 @@ private actor RoutingRecorder: HTTPTransport {
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         urls.append(request.url.absoluteString)
-        return responses[request.url.absoluteString] ?? HTTPResponse(status: 404)
+        // 没配置的地址直接抛：`throws` 不是摆设（SwiftFormat `redundantThrows` 也会盯这个）。
+        guard let response = responses[request.url.absoluteString] else {
+            throw CatVodError.network(status: 404, url: request.url.absoluteString, reason: "未配置该地址的假响应")
+        }
+        return response
     }
 }
