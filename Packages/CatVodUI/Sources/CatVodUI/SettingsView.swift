@@ -27,6 +27,7 @@ public struct SettingsView: View {
             playbackSection
             dataSection
             syncSection
+            aboutSection
         }
         .adaptiveListStyle()
         .navigationTitle("设置")
@@ -194,5 +195,48 @@ public struct SettingsView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    // MARK: - 版本与群组（设置页最底部）
+
+    /// 底部信息：当前版本号 + TG 群组入口。
+    ///
+    /// 版本取自 App bundle（`CFBundleShortVersionString` / `CFBundleVersion`），**不写死** ——
+    /// 写死的话发版时必然忘记改。群组用 `Link` 交给系统打开（iOS 上就是 Safari），
+    /// 不内嵌 WebView：这类页面用系统浏览器打开更稳，也符合「各系统用各自原生控件」的约定。
+    private var aboutSection: some View {
+        Section {
+            InfoRow(title: "版本", value: Self.versionText)
+            if let group = URL(string: Self.groupURL) {
+                Link(destination: group) {
+                    HStack(spacing: 8) {
+                        Text("TG 群组")
+                        Spacer(minLength: 8)
+                        Text(Self.groupURL)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 官方 TG 群组地址。
+    static let groupURL = "https://t.me/YPlayerGroup"
+
+    /// 当前版本，形如 `1.0（42）`；取不到就如实说「未知」，不编一个。
+    static var versionText: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let short = info["CFBundleShortVersionString"] as? String ?? ""
+        let build = info["CFBundleVersion"] as? String ?? ""
+        if short.isEmpty, build.isEmpty {
+            return "未知"
+        }
+        if build.isEmpty || build == short {
+            return short
+        }
+        return short.isEmpty ? build : short + "（" + build + "）"
     }
 }
