@@ -20,7 +20,9 @@ import NodeMobile
 /// 再次 ``start()`` 会返回同一个 baseURL 而不会重复启动。要真正重启只能重启 App。
 /// 这条限制写进返回值与文档，而不是假装「停掉了」。
 public actor NodeMobileRuntime: NodeRuntimeLaunching {
-    private let configuration: NodeRuntimeConfiguration
+    /// 「运行时可改」而不是 `let`：日志开关（``NodeRuntimeConfiguration/persistsHostOutput``）
+    /// 需要在宿主已启动的情况下生效 —— 内嵌 node 每进程只能起一个实例，重建运行时不可行。
+    private var configuration: NodeRuntimeConfiguration
 
     // 与 NodeRuntimeAdapter 同构的状态机（模块内可见，便于同文件内的扩展读写）。
     var isRunning = false
@@ -38,6 +40,8 @@ public actor NodeMobileRuntime: NodeRuntimeLaunching {
     private var savedStderrFD: Int32 = -1
     /// 落盘日志路径（仅当预载成功注入时非空；诊断时附给调用方）。
     private var preloadLogURL: URL?
+    /// 落盘日志文件句柄（日志开关打开时按需打开；写失败会置空、下次重试）。
+    private var logHandle: FileHandle?
 
     public init(configuration: NodeRuntimeConfiguration) {
         self.configuration = configuration
@@ -211,11 +215,47 @@ extension NodeMobileRuntime {
             if output.count > 200 {
                 output.removeFirst(output.count - 200)
             }
+            persistIfNeeded(trimmed)
             if let port = NodeReadiness.port(fromLine: trimmed) {
                 markReady(port: port)
             }
         }
     }
+
+    /// 运行时切换落盘（设置 → 数据 → 日志管理 → 日志开关）。
+    ///
+    /// 只改标记，不碰已经采集到的输出：开关打开后**从下一行起**开始落盘，
+    /// 关掉后也不再追加（已经在文件里的历史保留，用户可在日志页导出或清理）。
+    public func setPersistsHostOutput(_ enabled: Bool) async {
+        configuration.persistsHostOutput = enabled
+    }
+
+    /// 把一行输出追加到落盘日志（仅在开关打开时）。
+    ///
+    /// 写不上（磁盘满、容器权限异常）就放弃本次落盘并把句柄置空：内存输出仍在，
+    /// 诊断能力不因此丢失 —— 落盘是增强，不是前提。
+    private func persistIfNeeded(_ line: String) {
+        guard configuration.persistsHostOutput else {
+            return
+        }
+        do {
+            let url = NodePreloadScript.logURL()
+            if logHandle == nil {
+                let directory = url.deletingLastPathComponent()
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                if !FileManager.default.fileExists(atPath: url.path) {
+                    FileManager.default.createFile(atPath: url.path, contents: nil)
+                }
+                let handle = try FileHandle(forWritingTo: url)
+                try handle.seekToEnd()
+                logHandle = handle
+            }
+            try logHandle?.write(contentsOf: Data((line + "\n").utf8))
+        } catch {
+            logHandle = nil
+        }
+    }
+}
 
     func markReady(port: Int) {
         guard !isReady else {

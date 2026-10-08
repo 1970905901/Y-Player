@@ -135,6 +135,33 @@ extension VodDetailView {
         }
     }
 
+    /// 自动播放（设置 → 播放 → 播放页 → 自动播放）：**首次进入**时自动选中第一集开播。
+    ///
+    /// 三个条件同时成立才触发：
+    /// 1. 偏好为开；
+    /// 2. 没有观看记录 —— 有记录时留给「上次看到」标记，由用户点它续播；
+    /// 3. 本次进入还没有触发过（`autoPlayEpisodeIndex == nil`），所以下拉刷新、从播放页返回都不会再弹。
+    func scheduleAutoPlayIfNeeded() {
+        guard model.autoPlayFirstEpisode, autoPlayEpisodeIndex == nil, !episodes.isEmpty else {
+            return
+        }
+        let hasRecord = progress.map { !$0.isFinished && $0.position > 0 } ?? false
+        guard !hasRecord else {
+            return
+        }
+        let episodeIndex = progress?.episodeIndex ?? 0
+        guard episodes.indices.contains(episodeIndex) else {
+            return
+        }
+        autoPlayEpisodeIndex = episodeIndex
+        // 等一小会儿再激活导航链：详情刚加载完时列表可能还没画出来，
+        // 这时直接推入播放页、返回后看到一片空白，观感像「点了没反应」。
+        Task {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            isAutoPlaying = true
+        }
+    }
+
     /// 构造可直接播放的资源；不可直接播放时返回 nil（由 UI 展示原因）。
     func makeResource(for episode: PlaylistParser.Episode) -> MediaResource? {
         guard let site, !episode.url.isEmpty else {

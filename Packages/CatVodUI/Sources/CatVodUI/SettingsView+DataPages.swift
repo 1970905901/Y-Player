@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // 设置页的「数据」子页：下载管理 / 缓存管理 / 日志管理。
 //
@@ -6,25 +7,97 @@ import SwiftUI
 
 // MARK: - 下载管理
 
-/// 下载管理：尚未落地，如实说明（不摆一个空任务列表出来骗人）。
+/// 下载管理：存储空间条 + 下载内容区。
+///
+/// 两块结构对齐参考图：上面是「进度条 + 图例（总空间 / 已用 / 下载）」，
+/// 下面是内容区（参考图是空态卡片「暂无下载内容」）。
+///
+/// 三个数字都来自真实查询（``StorageSpace``：卷容量 + 下载目录实际占用）；
+/// 离线下载（分片下载 + 任务队列 + 本地播放地址接管）尚未接入，所以空态是**真实状态**，
+/// 卡片下方写明缺什么、属于哪个里程碑 —— 不摆一个空任务列表出来骗人。
 @MainActor
 struct SettingsDownloadView: View {
+    /// 空间快照：进页面查一次（查询要遍历下载目录，不适合每次重绘都算）。
+    @State private var snapshot = StorageSpace.Snapshot()
+
     var body: some View {
         List {
-            Section("现状") {
-                Label("尚未实现", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
-                Text("离线下载需要「分片下载 + 任务队列 + 本地播放地址接管」，依赖 M6 的本地代理与后续的下载调度，尚未开始做，所以这里没有任何可管理的任务。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            Section {
+                StorageBar(snapshot: snapshot)
             }
-            Section("相关计划") {
-                Text("M6：本地 `/proxy`（播放地址前缀语义与请求 header 透传）")
-                Text("M8：本地落库（收藏 / 历史 / 播放进度）")
+            Section {
+                emptyState
             }
         }
         .adaptiveListStyle()
         .navigationTitle("下载管理")
+        .task { refresh() }
+    }
+
+    /// 空态卡片：图标 + 标题 + 原因（对齐参考图的居中块）。
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "tray")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(.secondary)
+            Text("暂无下载内容")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            Text("离线下载尚未接入：还缺分片下载、任务队列与本地播放地址接管（M6 的本地代理已提供 `/proxy`，下载调度排在它之后）。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+    }
+
+    private func refresh() {
+        snapshot = StorageSpace.snapshot(downloadDirectory: AppModel.downloadDirectory)
+    }
+}
+
+/// 存储空间条：灰底 + 蓝色「已用」段 + 绿色「下载」段，下面一行图例。
+///
+/// 自绘而不是 `ProgressView`：参考图里同一条上有两种颜色（已用 / 下载），
+/// 系统进度视图只支持单色，用 `GeometryReader` + `Capsule` 才能如实还原。
+struct StorageBar: View {
+    let snapshot: StorageSpace.Snapshot
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.secondary.opacity(0.2))
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: proxy.size.width * snapshot.usedRatio)
+                    Capsule()
+                        .fill(Color.green)
+                        .frame(width: proxy.size.width * snapshot.downloadRatio)
+                }
+            }
+            .frame(height: 8)
+
+            HStack(spacing: 10) {
+                Label("总空间 \(snapshot.formattedTotal)", systemImage: "internaldrive")
+                swatch(color: .accentColor, text: "已用 \(snapshot.formattedUsed)")
+                swatch(color: .green, text: "下载 \(snapshot.formattedDownload)")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// 图例小方块（参考图里是彩色小方块 + 文字）。
+    private func swatch(color: Color, text: String) -> some View {
+        HStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(text)
+        }
     }
 }
 
@@ -36,31 +109,81 @@ struct SettingsDownloadView: View {
 /// 这里把「清空」做成需要二次确认的破坏性操作。
 @MainActor
 struct SettingsCacheView: View {
+    /// 三个「清空」共用一次二次确认：点哪一行就把待确认目标换成哪一行。
+    private enum ClearTarget {
+        case source
+        case home
+        case all
+
+        var confirmTitle: String {
+            switch self {
+            case .source: "确定清空源缓存？"
+            case .home: "确定清空首页缓存？"
+            case .all: "确定清空全部缓存？"
+            }
+        }
+
+        var confirmMessage: String {
+            switch self {
+            case .source:
+                "下次加载接口要重新下载配置（JS 源约 6 MB）。站点清单与播放设置不受影响。"
+            case .home:
+                "首页与分类列表要重新请求一次。收藏、播放进度与站点配置都不受影响。"
+            case .all:
+                "接口配置与首页数据都要重新拉取一次。收藏、播放进度与站点配置不受影响。"
+            }
+        }
+    }
+
     @ObservedObject var model: AppModel
     @State private var isConfirmingClear = false
+    @State private var clearTarget: ClearTarget = .source
     @State private var actionMessage = ""
 
     var body: some View {
         List {
-            storageSection
             cacheSection
+            storageSection
             Section("说明") {
-                Text("缓存的是**接口配置本身**（JSON 文本、js2p 的 bundle 与 `.md5`），用于离线回退与跳过重复下载；清理后只是下次加载要重新下载，站点清单与播放设置不受影响。详情缓存是内存缓存（M02P5），不在这里管理。")
+                Text(explanationText)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                Text("下载内容与本地库（收藏 / 播放进度）不算缓存：前者见「下载管理」，后者见下方「本地存储」。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            // 换接口后旧 bundle 会永久残留（每个 ≈ 6 MB）：参考图没有这一项，
+            // 但它是 M02P7 就有的真实能力，丢掉会让用户没地方回收这块空间 —— 只在真的有残留时出现。
+            if let orphanSize = model.sourceCacheSummary()?.formattedOrphanSize,
+               (model.sourceCacheSummary()?.orphanByteCount ?? 0) > 0
+            {
+                Section("回收") {
+                    Button("清理其他接口残留（\(orphanSize)）") {
+                        let removed = model.pruneOrphanSourceCaches()
+                        actionMessage = "已清理 \(removed) 个其他接口的缓存文件"
+                    }
+                }
             }
         }
         .adaptiveListStyle()
         .navigationTitle("缓存管理")
-        .confirmationDialog("确定清空接口缓存？", isPresented: $isConfirmingClear, titleVisibility: .visible) {
-            Button("清空全部缓存", role: .destructive) {
-                let removed = model.clearSourceCache()
-                actionMessage = "已清理 \(removed) 个缓存文件"
-            }
+        .confirmationDialog(clearTarget.confirmTitle, isPresented: $isConfirmingClear, titleVisibility: .visible) {
+            Button("清空", role: .destructive) { performClear() }
             Button("取消", role: .cancel) { }
         } message: {
-            Text("下次加载接口需要重新下载配置（JS 源约 6 MB）。站点与播放设置不受影响。")
+            Text(clearTarget.confirmMessage)
         }
+    }
+
+    /// 说明区文案：把「两个时间怎么生效」「当前各占多少」写清楚，不必靠猜。
+    private var explanationText: String {
+        let sourcePart = model.sourceCacheSummary()
+            .map { "源缓存 \($0.entryCount) 个文件、\($0.formattedTotalSize)" } ?? "源缓存目录不可读"
+        let homePart = model.homeCacheSummary()
+            .map { "首页缓存 \($0.entryCount) 个文件、\($0.formattedSize)" } ?? "首页缓存目录不可读"
+        return "源缓存时间：接口配置在有效期内**直接读本地、不联网**，过期或手动「刷新接口」才重新下载；"
+            + "首页缓存时间：首页与分类列表在有效期内直接读本地缓存。"
+            + "当前 \(sourcePart)；\(homePart)。详情缓存仍是内存缓存（M02P5），不在这里管理。"
     }
 
     /// 本地存储（M08b）：落库路径与最近失败 —— 「存不上」必须能被看到，而不是静默丢数据。
@@ -85,44 +208,36 @@ struct SettingsCacheView: View {
         }
     }
 
+    /// 「缓存」组：结构与顺序**逐行对齐参考图** ——
+    /// 源缓存时间 / 源缓存数据 / 首页缓存时间 / 首页缓存数据 / 全部缓存 (大小)。
+    ///
+    /// 两个「时间」是真生效的偏好（读取侧见 `SourceRepository+FreshCache.swift` 与
+    /// `HomeView+Data.swift`），三个「清空」按参考图放在行右，二次确认后执行。
     private var cacheSection: some View {
-        let summary = model.sourceCacheSummary()
-        return Section("接口缓存") {
-            if let summary, summary.entryCount > 0 {
-                InfoRow(title: "条目", value: "\(summary.entryCount)")
-                InfoRow(title: "占用", value: summary.formattedTotalSize)
-                if let latest = summary.latestModifiedAt {
-                    InfoRow(title: "最近更新", value: latest.formatted(date: .abbreviated, time: .shortened))
+        Section("缓存") {
+            Picker("源缓存时间", selection: $model.sourceCacheLifetime) {
+                ForEach(CacheLifetime.allCases, id: \.self) { lifetime in
+                    Text(lifetime.displayName).tag(lifetime)
                 }
-                if summary.currentEntryCount > 0 {
-                    InfoRow(title: "当前接口", value: "\(summary.currentEntryCount) 个文件")
-                }
-                if summary.orphanByteCount > 0 {
-                    InfoRow(title: "其他接口残留", value: summary.formattedOrphanSize)
-                }
-            } else {
-                Text("暂无缓存：首次加载接口后会把配置存到本地（JS 源约 6 MB），用于离线回退与跳过重复下载。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
+            .pickerStyle(.menu)
 
-            Button(role: .destructive) {
-                isConfirmingClear = true
-            } label: {
-                Label("清空全部缓存", systemImage: "trash")
-            }
-            .disabled((summary?.entryCount ?? 0) == 0)
+            clearRow(title: "源缓存数据", target: .source, isEnabled: model.sourceCacheByteCount > 0)
 
-            if (summary?.orphanByteCount ?? 0) > 0 {
-                Button {
-                    let removed = model.pruneOrphanSourceCaches()
-                    actionMessage = removed > 0
-                        ? "已清理 \(removed) 个其他接口的缓存文件"
-                        : "没有需要清理的残留"
-                } label: {
-                    Label("清理其他接口的缓存", systemImage: "rectangle.stack.badge.minus")
+            Picker("首页缓存时间", selection: $model.homeCacheLifetime) {
+                ForEach(CacheLifetime.allCases, id: \.self) { lifetime in
+                    Text(lifetime.displayName).tag(lifetime)
                 }
             }
+            .pickerStyle(.menu)
+
+            clearRow(title: "首页缓存数据", target: .home, isEnabled: model.homeCacheByteCount > 0)
+
+            clearRow(
+                title: "全部缓存 (\(model.formattedTotalCacheSize))",
+                target: .all,
+                isEnabled: model.totalCacheByteCount > 0
+            )
 
             if !actionMessage.isEmpty {
                 Text(actionMessage)
@@ -131,59 +246,163 @@ struct SettingsCacheView: View {
             }
         }
     }
+
+    /// 参考图的「清空」：标题在左、蓝色「清空」在右。
+    ///
+    /// 用 `.buttonStyle(.borderless)` 让点击热区只落在「清空」两个字上（默认整行都会变成按钮）；
+    /// 破坏性由二次确认承担，所以不把整行染红，保持与参考图一致的系统蓝。
+    private func clearRow(title: String, target: ClearTarget, isEnabled: Bool) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Button("清空") {
+                clearTarget = target
+                isConfirmingClear = true
+            }
+            .buttonStyle(.borderless)
+            .disabled(!isEnabled)
+        }
+    }
+
+    /// 执行二次确认后的清理。
+    private func performClear() {
+        switch clearTarget {
+        case .source:
+            actionMessage = "已清理源缓存 \(model.clearSourceCache()) 个文件"
+        case .home:
+            actionMessage = "已清理首页缓存 \(model.clearHomeCache()) 个文件"
+        case .all:
+            actionMessage = "已清理全部缓存 \(model.clearAllCaches()) 个条目"
+        }
+    }
 }
 
 // MARK: - 日志管理
 
-/// 日志管理：目前唯一可查的运行日志是 js2p 宿主的输出。
+/// 日志管理：日志开关 + 引擎日志导出。
 ///
-/// 读得到就列出来，读不到就说清哪一类日志还没有 —— 不摆一个空列表假装有日志系统。
+/// 结构对齐参考图的两行：`日志开关`（Toggle）与 `引擎日志 (大小)` → `导出`。
+///
+/// - 开关是**真实生效**的偏好：它决定宿主（js2p / libnode）的输出是否**落盘**
+///   （关闭时只在内存里保留最近若干行，不占磁盘）；
+/// - 「导出」优先导出落盘日志，没有落盘时退回内存里的最近输出，走系统原生的
+///   `fileExporter`（iOS 14+ / macOS 11+），不自绘文件对话框。
 @MainActor
 struct SettingsLogView: View {
     @ObservedObject var model: AppModel
     @State private var lines: [String] = []
+    @State private var logPath: URL?
+    @State private var logByteCount: Int64 = 0
     @State private var isLoading = false
+    @State private var isExporting = false
+    @State private var exportDocument = EngineLogDocument(text: "")
 
     var body: some View {
         List {
-            Section("宿主日志") {
+            Section {
+                Toggle("日志开关", isOn: $model.isEngineLogEnabled)
+                HStack {
+                    Text("引擎日志 (\(StorageSpace.format(logByteCount)))")
+                    Spacer()
+                    Button("导出") {
+                        Task { await prepareExport() }
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(isLoading || (lines.isEmpty && logByteCount == 0))
+                }
                 Text(model.hostStatus.summary)
                     .font(.footnote)
                     .foregroundStyle(model.hostStatus.isRunning ? Color.secondary : Color.orange)
-                Button {
-                    Task { await reload() }
-                } label: {
-                    Label("读取最近输出", systemImage: "arrow.clockwise")
-                }
-                .disabled(isLoading)
-                if isLoading {
-                    ProgressView()
-                }
-                if lines.isEmpty, !isLoading {
-                    Text("点上面的按钮读取宿主最近的 stdout / stderr。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                    Text(line)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
             }
-            Section("现状") {
-                Text("可查的日志目前只有 js2p 宿主输出（Node 进程 / libnode）；网络请求、解析链与播放器的结构化日志尚未落地（属于 M5/M6 与后续的可观测性工作）。")
+            Section("说明") {
+                Text("日志开关控制宿主输出是否落盘：开启后运行日志会写进日志文件，重启应用后仍在；关闭时只在内存里保留最近若干行，进程退出即消失（致命错误无论如何都会落盘，否则崩溃就没有现场）。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                Text("可查的日志目前只有 js2p 宿主（Node 进程 / libnode）的输出；网络请求、解析链与播放器的结构化日志尚未落地（属于 M5/M6 与后续的可观测性工作）。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if !lines.isEmpty {
+                Section("最近输出") {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                        Text(line)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
         }
         .adaptiveListStyle()
         .navigationTitle("日志管理")
         .task { await reload() }
+        .fileExporter(
+            isPresented: $isExporting,
+            document: exportDocument,
+            contentType: .plainText,
+            defaultFilename: "YPlayer-引擎日志"
+        ) { _ in }
     }
 
+    /// 读一次日志现状：内存输出 + 落盘文件（路径与大小）。
     private func reload() async {
         isLoading = true
         defer { isLoading = false }
-        lines = await model.hostDiagnostics()
+        lines = await model.hostDiagnostics(limit: 200)
+        logPath = await model.hostLogPath()
+        let onDisk = Self.byteCount(of: logPath)
+        // 开关关闭时宿主不落盘，此时「引擎日志」就是内存里这份输出的体量。
+        logByteCount = model.isEngineLogEnabled ? onDisk : Int64(lines.joined(separator: "\n").utf8.count)
+    }
+
+    /// 导出：先刷新一次，再把内容交给系统文件导出器。
+    private func prepareExport() async {
+        await reload()
+        let content = exportText()
+        guard !content.isEmpty else {
+            return
+        }
+        exportDocument = EngineLogDocument(text: content)
+        isExporting = true
+    }
+
+    private func exportText() -> String {
+        if let logPath, let text = try? String(contentsOf: logPath, encoding: .utf8), !text.isEmpty {
+            return text
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func byteCount(of url: URL?) -> Int64 {
+        guard let url,
+              let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber
+        else {
+            return 0
+        }
+        return size.int64Value
+    }
+}
+
+/// 导出用的纯文本文档（引擎日志）。
+///
+/// 用 `FileDocument` 而不是把日志写到共享目录再让用户自己找：`fileExporter` 是原生导出通道，
+/// 两端（iOS / macOS）都会给出系统自己的「存储到…」界面。
+struct EngineLogDocument: FileDocument {
+    static var readableContentTypes: [UTType] {
+        [.plainText]
+    }
+
+    var text: String
+
+    init(text: String) {
+        self.text = text
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        let data = configuration.file.regularFileContents ?? Data()
+        text = String(decoding: data, as: UTF8.self)
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
     }
 }

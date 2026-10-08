@@ -42,19 +42,23 @@ public actor JS2PHostService {
     /// - Parameters:
     ///   - transport: 用于 `GET /health` 与 `GET /full-config`。
     ///   - scriptURL: 本地 bundle 路径（文件名必须是 `index.js`）。
+    ///   - persistsHostOutput: 初值 —— 宿主输出是否落盘（设置 → 数据 → 日志管理 → 日志开关）；
+    ///     运行中可用 ``setLogPersistence(_:)`` 再切换。
     ///   - runtime: 测试用替身；默认是真正的 ``NodeRuntimeAdapter``。
     public init(
         transport: HTTPTransport,
         scriptURL: URL,
         preferredPort: Int = 9988,
         readinessTimeout: TimeInterval = 30,
+        persistsHostOutput: Bool = false,
         runtime: (any NodeRuntimeLaunching)? = nil
     ) {
-        let configuration = NodeRuntimeConfiguration(
+        var configuration = NodeRuntimeConfiguration(
             scriptURL: scriptURL,
             preferredPort: preferredPort,
             readinessTimeout: readinessTimeout
         )
+        configuration.persistsHostOutput = persistsHostOutput
         self.configuration = configuration
         catalog = HostSiteCatalog(transport: transport)
         self.runtime = runtime ?? NodeRuntimeEnvironment.makeRuntime(configuration: configuration)
@@ -127,6 +131,13 @@ public actor JS2PHostService {
     /// 界面可以据此提供「查看/导出宿主日志」；内嵌 node 崩溃后，这是唯一还能读到的现场。
     public func hostLogPath() async -> URL? {
         await runtime.persistentLogPath()
+    }
+
+    /// 运行时切换「宿主输出是否落盘」（设置 → 数据 → 日志管理 → 日志开关）。
+    ///
+    /// 宿主一旦启动就常驻（内嵌 node 每进程只能起一个实例），所以开关只能在运行中改。
+    public func setLogPersistence(_ enabled: Bool) async {
+        await runtime.setPersistsHostOutput(enabled)
     }
 
     /// 停止宿主。

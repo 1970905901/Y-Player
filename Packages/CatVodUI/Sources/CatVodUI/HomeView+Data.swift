@@ -116,24 +116,41 @@ extension HomeView {
         defer { isLoading = false }
 
         do {
-            let home = try await model.makeSiteClient().home(site: site)
-            // 补图是 best-effort：失败或站点不支持时原样返回，不打断首页。
-            result = await model.makePictureFiller().fill(site: site, result: home)
-            let firstCategoryID = home.categories.first?.typeID ?? ""
+            result = try await loadHomeResult(site: site, force: force)
+            let firstCategoryID = result.categories.first?.typeID ?? ""
             if selectedCategoryID.isEmpty {
                 selectedCategoryID = firstCategoryID
             }
             let targetCategory = selectedCategoryID.isEmpty ? firstCategoryID : selectedCategoryID
             if !targetCategory.isEmpty {
-                await loadCategory(categoryID: targetCategory, site: site)
+                await loadCategory(categoryID: targetCategory, site: site, force: force)
             }
         } catch {
             errorText = describe(error)
         }
     }
 
+    /// 取首页数据（分类清单 + 首屏内容）：先看首页缓存，命中就**不发请求**。
+    ///
+    /// 缓存键用 `categoryID: ""`，与分类页区分开 —— 首页返回的是分类清单本身，
+    /// 不是某个分类下的某一页内容，两者不能互相顶掉。
+    func loadHomeResult(site: Site, force: Bool) async throws -> SpiderResult {
+        let key = HomeCacheStore.Key(siteKey: site.key, categoryID: "", page: 1)
+        if !force, let cached = model.cachedHomeResult(key) {
+            return cached
+        }
+        let home = try await model.makeSiteClient().home(site: site)
+        // 补图是 best-effort：失败或站点不支持时原样返回，不打断首页。
+        let filled = await model.makePictureFiller().fill(site: site, result: home)
+        model.storeHomeResult(filled, key: key)
+        return filled
+    }
+
     /// 加载某个分类的某页。
-    func loadCategory(categoryID: String? = nil, site: Site? = nil) async {
+    ///
+    /// - Parameter force: 为 true 时绕过首页缓存（工具栏「刷新」用）；其余入口
+    ///   （切换分类、应用筛选、翻页）都允许命中缓存。
+    func loadCategory(categoryID: String? = nil, site: Site? = nil, force: Bool = false) async {
         guard let targetSite = site ?? selectedSite else {
             return
         }
@@ -145,6 +162,21 @@ extension HomeView {
         errorText = ""
         defer { isLoading = false }
 
+        // 首页缓存（设置 → 数据 → 缓存管理 → 首页缓存时间）：命中就直接用，一个请求都不发。
+        let cacheKey = HomeCacheStore.Key(
+            siteKey: targetSite.key,
+            categoryID: targetCategory,
+            page: page,
+            extend: extend
+        )
+        if !force, let cached = model.cachedHomeResult(cacheKey) {
+            result = cached
+            if selectedCategoryID != targetCategory {
+                selectedCategoryID = targetCategory
+            }
+            return
+        }
+
         do {
             let category = try await model.makeSiteClient().category(
                 site: targetSite,
@@ -155,6 +187,7 @@ extension HomeView {
             let filled = await model.makePictureFiller().fill(site: targetSite, result: category)
             if filled.hasList || filled.hasCategories || filled.code == 0 {
                 result = filled
+                model.storeHomeResult(filled, key: cacheKey)
             }
             if selectedCategoryID != targetCategory {
                 selectedCategoryID = targetCategory

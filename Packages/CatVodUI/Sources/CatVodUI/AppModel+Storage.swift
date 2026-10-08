@@ -49,4 +49,16 @@ public extension AppModel {
         }
         return "已落库：\(Self.storageDatabaseURL().path)"
     }
+
+    /// 下载目录（离线下载的落地位置）。
+    ///
+    /// 与本地库同级放在 Application Support 下；离线下载本身尚未接入，
+    /// 所以这个目录通常还不存在 —— 「下载管理」页按 0 字节呈现（空态是真实状态）。
+    static var downloadDirectory: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base
+            .appendingPathComponent("YPlayer", isDirectory: true)
+            .appendingPathComponent("Downloads", isDirectory: true)
+    }
 }

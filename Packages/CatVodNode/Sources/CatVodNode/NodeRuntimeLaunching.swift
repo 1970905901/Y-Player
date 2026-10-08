@@ -19,6 +19,11 @@ public protocol NodeRuntimeLaunching: Sendable {
     /// 为什么进协议：内嵌 node 崩溃会带走整个进程，此时捕获在内存里的输出也一起消失，
     /// 落盘日志是唯一还能带回现场的来源（见 ``NodePreloadScript``）。
     func persistentLogPath() async -> URL?
+    /// 运行时切换「宿主输出是否落盘」（设置 → 数据 → 日志管理 → 日志开关）。
+    ///
+    /// 为什么是运行时方法而不是构造参数：开关在设置页随时可能改，而宿主一旦启动就常驻
+    /// （内嵌 node 每进程只能起一个实例），靠重建运行时来生效在 iOS 上根本做不到。
+    func setPersistsHostOutput(_ enabled: Bool) async
 }
 
 public extension NodeRuntimeLaunching {
@@ -26,6 +31,9 @@ public extension NodeRuntimeLaunching {
     func persistentLogPath() async -> URL? {
         nil
     }
+
+    /// 默认不支持落盘：没有落盘能力的实现（如 macOS 的进程方式）静默忽略。
+    func setPersistsHostOutput(_ enabled: Bool) async { }
 }
 
 /// 真正的进程实现天然满足协议（`stop()` 虽是 actor 内同步方法，也能满足 `async` 要求）。

@@ -54,6 +54,12 @@ public final class AppModel: ObservableObject {
         static let homeLayout = "yplayer.homeLayout"
         static let localProxyEnabled = "yplayer.localProxyEnabled"
         static let syncIdentifier = "yplayer.syncIdentifier"
+        static let sourceCacheLifetime = "yplayer.sourceCacheLifetime"
+        static let homeCacheLifetime = "yplayer.homeCacheLifetime"
+        static let playbackPageLayout = "yplayer.playbackPageLayout"
+        static let autoPlayFirstEpisode = "yplayer.autoPlayFirstEpisode"
+        static let danmakuAPI = "yplayer.danmakuAPI"
+        static let engineLogEnabled = "yplayer.engineLogEnabled"
     }
 
     // MARK: - 输出状态
@@ -90,6 +96,70 @@ public final class AppModel: ObservableObject {
     @Published public var homeLayout: HomeLayout {
         didSet {
             UserDefaults.standard.set(homeLayout.rawValue, forKey: StorageKey.homeLayout)
+        }
+    }
+
+    // MARK: - 缓存有效期（设置 → 数据 → 缓存管理）
+
+    /// 源缓存时间：接口配置在有效期内**直接读本地、不联网**（参考图默认「12小时」）。
+    ///
+    /// 生效点在 ``load(forceRefresh:)``：过期或用户手动强制刷新时才走网络。
+    @Published public var sourceCacheLifetime: CacheLifetime {
+        didSet {
+            UserDefaults.standard.set(sourceCacheLifetime.rawValue, forKey: StorageKey.sourceCacheLifetime)
+        }
+    }
+
+    /// 首页缓存时间：首页/分类结果在有效期内直接读落盘缓存（参考图默认「7天」）。
+    ///
+    /// 生效点在 `HomeView+Data.swift`（读缓存命中就不发请求）。
+    @Published public var homeCacheLifetime: CacheLifetime {
+        didSet {
+            UserDefaults.standard.set(homeCacheLifetime.rawValue, forKey: StorageKey.homeCacheLifetime)
+        }
+    }
+
+    // MARK: - 播放页与播放器（设置 → 播放）
+
+    /// 播放页显示视图（精简视图 / Emby 视图）：详情页换排布，数据与交互都不变。
+    @Published public var playbackPageLayout: PlaybackPageLayout {
+        didSet {
+            UserDefaults.standard.set(playbackPageLayout.rawValue, forKey: StorageKey.playbackPageLayout)
+        }
+    }
+
+    /// 自动播放：首次进入详情页是否自动选中第一集开始播放（参考图副标题的原文语义）。
+    ///
+    /// 生效点在 `VodDetailView`：详情加载完成后按它决定是否自动进入第一集；
+    /// 有「上次看到」的进度时以续播为准，不会把用户从上次位置拽回第一集。
+    @Published public var autoPlayFirstEpisode: Bool {
+        didSet {
+            UserDefaults.standard.set(autoPlayFirstEpisode, forKey: StorageKey.autoPlayFirstEpisode)
+        }
+    }
+
+    // MARK: - 弹幕 API（设置 → 播放 → 弹幕 API）
+
+    /// 弹幕 API 配置：启用开关 + 四个地址槽位。
+    ///
+    /// 参考图里它的副标题写明「开启后将禁用视频源的弹幕功能」——
+    /// 弹幕的请求链与渲染属于 M8，本里程碑只把地址**真实保存**下来（页内如实说明）。
+    @Published public var danmakuAPI: DanmakuAPIConfig {
+        didSet {
+            UserDefaults.standard.set(danmakuAPI.persistenceValue, forKey: StorageKey.danmakuAPI)
+        }
+    }
+
+    // MARK: - 引擎日志（设置 → 数据 → 日志管理）
+
+    /// 引擎日志开关：控制宿主（js2p / libnode）输出是否**落盘**（参考图默认关）。
+    ///
+    /// 开启后宿主输出会写入日志文件，可配合「导出」带走现场；
+    /// 关闭时只保留内存里的最近若干行（诊断仍可用，不占磁盘）。
+    @Published public var isEngineLogEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(isEngineLogEnabled, forKey: StorageKey.engineLogEnabled)
+            applyLogPreferenceToHost()
         }
     }
 
@@ -151,7 +221,11 @@ public final class AppModel: ObservableObject {
 
     // MARK: - 依赖
 
-    private let cacheDirectory: URL
+    /// 缓存根目录：接口缓存直接落在它下面（`SourceCacheStore`），首页缓存在 `Home/` 子目录。
+    ///
+    /// 可见性是「模块内」而不是 `private`：``AppModel+Cache`` 扩展文件要按它推导首页缓存目录
+    /// （`private` 只对声明所在文件开放，跨文件读会编译失败）。
+    let cacheDirectory: URL
     private let sessionTransport: URLSessionTransport
     /// 详情缓存（进程内共享）。
     private let detailCache = DetailCache()
@@ -182,6 +256,23 @@ public final class AppModel: ObservableObject {
         homeLayout = storedLayout.flatMap(HomeLayout.init(rawValue:)) ?? .vertical
         isLocalProxyEnabled = defaults.object(forKey: StorageKey.localProxyEnabled) as? Bool ?? true
         localSyncIdentifier = Self.storedSyncIdentifier(defaults: defaults)
+
+        // 缓存有效期：默认值与参考图一致（源 12 小时、首页 7 天）。
+        let storedSourceLifetime = defaults.string(forKey: StorageKey.sourceCacheLifetime)
+        sourceCacheLifetime = storedSourceLifetime.flatMap(CacheLifetime.init(rawValue:)) ?? .hours12
+        let storedHomeLifetime = defaults.string(forKey: StorageKey.homeCacheLifetime)
+        homeCacheLifetime = storedHomeLifetime.flatMap(CacheLifetime.init(rawValue:)) ?? .days7
+
+        // 播放页与播放器：默认精简视图、不自动播放（与参考图的初始状态一致）。
+        let storedPlaybackLayout = defaults.string(forKey: StorageKey.playbackPageLayout)
+        playbackPageLayout = storedPlaybackLayout.flatMap(PlaybackPageLayout.init(rawValue:)) ?? .compact
+        autoPlayFirstEpisode = defaults.object(forKey: StorageKey.autoPlayFirstEpisode) as? Bool ?? false
+
+        // 弹幕 API：默认未启用、四个槽位为空。
+        danmakuAPI = DanmakuAPIConfig.decode(defaults.string(forKey: StorageKey.danmakuAPI))
+
+        // 引擎日志：默认关（与参考图的开关初始状态一致）。
+        isEngineLogEnabled = defaults.object(forKey: StorageKey.engineLogEnabled) as? Bool ?? false
         refreshPlaybackNotice()
     }
 
@@ -242,7 +333,7 @@ public final class AppModel: ObservableObject {
         let transport = transportForConfiguration()
         let repository = SourceRepository(transport: transport, cacheDirectory: cacheDirectory)
         do {
-            let loaded = try await repository.load(configURL: target, forceRefresh: forceRefresh)
+            let loaded = try await loadSource(target: target, forceRefresh: forceRefresh, repository: repository)
             state = .loaded(loaded)
             // 配置已变更：缓存里的详情可能对应旧站点/旧线路，直接清空。
             await detailCache.invalidateAll()
@@ -258,6 +349,23 @@ public final class AppModel: ObservableObject {
         refreshPlaybackNotice()
         // 站点清单可能已经整体换过（新接口 / 宿主新站点 / 加载失败后清空）：通知界面作废旧内容并重载。
         bumpSiteCatalogRevision()
+    }
+
+    /// 取配置：先看「源缓存时间」——有效期内**直接用本地缓存、一次网络请求都不发**；
+    /// 过期、没有缓存或用户手动强制刷新时才联网（见 `SourceRepository+FreshCache.swift`）。
+    ///
+    /// 缓存读坏（文件被截断、内容不再是合法配置）不算致命：吞掉错误继续联网，
+    /// 不该因为一份坏缓存让用户打不开应用。
+    private func loadSource(
+        target: String,
+        forceRefresh: Bool,
+        repository: SourceRepository
+    ) async throws -> LoadedSource {
+        let maxAge = sourceCacheLifetime.timeInterval
+        if !forceRefresh, let cached = try? await repository.loadCached(configURL: target, maxAge: maxAge) {
+            return cached
+        }
+        return try await repository.load(configURL: target, forceRefresh: forceRefresh)
     }
 
     /// 冷启动恢复：本地保存了配置地址、且本进程这次还没加载过任何配置时，自动加载一次。
@@ -312,8 +420,14 @@ public final class AppModel: ObservableObject {
         }
 
         hostStatus = .starting
-        let service = js2pHost ?? JS2PHostService(transport: sessionTransport, scriptURL: scriptURL)
+        let service = js2pHost ?? JS2PHostService(
+            transport: sessionTransport,
+            scriptURL: scriptURL,
+            persistsHostOutput: isEngineLogEnabled
+        )
         js2pHost = service
+        // 开关可能在宿主启动之后被改过（设置 → 数据 → 日志管理）：每次刷新都对一次。
+        await service.setLogPersistence(isEngineLogEnabled)
         do {
             let snapshot = try await service.sites(forceRestartHost: forceRestart)
             hostSites = snapshot.sites
@@ -350,12 +464,25 @@ public final class AppModel: ObservableObject {
         bumpSiteCatalogRevision()
     }
 
-    /// 宿主最近输出（诊断用；失败时界面可展开查看，避免「为什么没有站点」只能靠猜）。
-    public func hostDiagnostics(limit: Int = 20) async -> [String] {
-        guard let service = js2pHost else {
-            return []
+    /// 宿主落盘日志路径（没有落盘能力时为 nil）。
+    ///
+    /// 日志开关（``isEngineLogEnabled``）决定宿主是否把输出写文件；
+    /// 「设置 → 数据 → 日志管理 → 导出」用它拿到要导出的内容。
+    public func hostLogPath() async -> URL? {
+        await js2pHost?.hostLogPath()
+    }
+
+    /// 把日志开关应用到正在运行的宿主。
+    ///
+    /// 宿主不能重建（内嵌 node 每进程只能起一个实例），所以开关必须能**运行中改**；
+    /// 宿主还没起来时什么都不做 —— 下次 ``refreshHost(for:forceRestart:)`` 会带上当前值。
+    private func applyLogPreferenceToHost() {
+        guard let host = js2pHost else {
+            return
         }
-        return await service.recentOutput(limit: limit)
+        Task {
+            await host.setLogPersistence(isEngineLogEnabled)
+        }
     }
 
     /// 列表补图（best-effort）：首页 / 分类 / 搜索拿到列表后按需补封面。

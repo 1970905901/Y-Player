@@ -28,6 +28,12 @@ public struct NodeRuntimeConfiguration: Sendable, Equatable {
     /// 之所以留开关：预载依赖 `-r` 被 libnode 的选项解析接受，
     /// 万一某个版本不接受，可以关掉它先恢复可用性（见 M16P4 记录）。
     public var prefersPreload: Bool
+    /// 是否把宿主输出**持续落盘**（设置 → 数据 → 日志管理 → 日志开关）。
+    ///
+    /// 默认为假：只在内存里保留最近若干行（诊断够用，不占磁盘）。
+    /// 开启后内嵌运行时（``NodeMobileRuntime``）会把每一行追加写入 ``NodePreloadScript/logURL()``，
+    /// 进程结束后仍可读、可导出；macOS 的进程方式暂不落盘（由系统日志承载）。
+    public var persistsHostOutput: Bool
 
     public init(
         scriptURL: URL,
@@ -37,7 +43,8 @@ public struct NodeRuntimeConfiguration: Sendable, Equatable {
         readinessTimeout: TimeInterval = 30,
         suppressBundleLogging: Bool = true,
         executableOverride: URL? = nil,
-        prefersPreload: Bool = true
+        prefersPreload: Bool = true,
+        persistsHostOutput: Bool = false
     ) {
         self.scriptURL = scriptURL
         self.preferredPort = preferredPort
@@ -47,6 +54,7 @@ public struct NodeRuntimeConfiguration: Sendable, Equatable {
         self.suppressBundleLogging = suppressBundleLogging
         self.executableOverride = executableOverride
         self.prefersPreload = prefersPreload
+        self.persistsHostOutput = persistsHostOutput
     }
 
     /// 契约里的自启动前置条件：`argv[1]` 以 `index.js` 结尾（JS 侧为正则且忽略大小写）。
