@@ -16,7 +16,7 @@
 | `CatVodCore/Vod/Live/LiveEPGOverride.swift` | 覆盖的**生效规则**（纯函数）：`isEmpty` / `isGlobalXML` / `applying(to:)` / `fileURLs(for:)` |
 | `CatVodSource/Live/LiveEPGRepository.swift` | 新增 `load(_:fileURLs:)`：文件形态的地址由调用方给全（覆盖地址可能不带 `xml` / `gz` 字样，过不了 `epgXML` 的过滤） |
 | `CatVodUI/LiveEPGSetting.swift` | 覆盖地址 + 历史（上限 20、去重置顶、坏存档当默认）+ JSON 落 `UserDefaults` |
-| `CatVodUI/LiveEPGSettingView.swift` | 直播设置页：地址输入 + 「使用这个地址」/「清除覆盖」+ 历史（点一条即用、可单条删、可清空）+ 当前状态三种形态的说明 |
+| `CatVodUI/LiveEPGSettingView.swift` | 直播设置页：地址输入 + 「使用这个地址」/「清除覆盖」+ 历史（点一条即用、可单条删、可清空）+ 当前状态三种形态的说明（**M07d-2 改名为 `LiveSettingsView.swift`**，因为同一页后来还装了「直播源」） |
 | `CatVodUI/LiveView.swift` | 工具栏齿轮 → 「直播设置」弹层（`AdaptiveNavigationContainer` 承载，右上角「完成」关掉） |
 | `AppModel` / `AppModel+Live` | `liveEPGSetting`（写一次落盘 + 重算）、`rawLiveSource`（未套覆盖的解析结果）、`applyLiveEPGOverride()`、`updateLiveEPGSetting(_:)` / `removeLiveEPGHistory(_:)` / `clearLiveEPGHistory()` |
 | 单测 | `CatVodCoreTests/LiveEPGOverrideTests`（4 例）、`CatVodSourceTests/LiveEPGRepositoryTests` +1 例（显式地址列表）、`CatVodUITests/LiveEPGSettingTests`（4 例） |
@@ -70,11 +70,16 @@
 
 ## 五、回滚
 
-删掉 `LiveEPGOverride.swift` / `LiveEPGSetting.swift` / `LiveEPGSettingView.swift` 与
-`AppModel.liveEPGSetting` / `rawLiveSource` / `AppModel+Live` 里那几个入口，`LiveView` 的齿轮与弹层，
-并把 `loadLivePlaylist` 改回「`liveState = .loaded(loaded)`」即可；
+删掉 `LiveEPGOverride.swift` / `LiveEPGSetting.swift` / `LiveSettingsView.swift`（M07d-1 时叫
+`LiveEPGSettingView.swift`）与 `AppModel.liveEPGSetting` / `rawLiveSource` / `AppModel+Live` 里那几个入口，
+`LiveView` 的齿轮与弹层，并把 `loadLivePlaylist` 改回「`liveState = .loaded(loaded)`」即可；
 `LiveEPGRepository.load(_:fileURLs:)` 可以留着（它只是多一个显式地址列表的入口）。
 
 ## 六、验证记录
 
-（推送后回填。）
+- **Lint / SwiftPM tests：✅**（`be5b86c`）。这一轮 CI 连红了三次，其中一次就是本任务的用例放错了 suite
+  （写进了接口形态那条，那里没有 `xml` 夹具）；逐轮复盘见 `docs/任务记录/M07d2-直播源切换.md` 第六节。
+- 本任务的用例都在绿的那一轮里真跑过：`LiveEPGOverrideTests`（4 例）、
+  `LiveEPGRepositoryTests` 新增 1 例（显式地址列表）、`LiveEPGSettingTests`（4 例）。
+- **`Build apps (unsigned)` / `Unsigned IPA`：结论未取到**（会话结束时仍在跑）。
+  设置页是这轮新写的 UI，`.contextMenu` / `Button(role:)` / 弹层这些都要靠它过一遍。

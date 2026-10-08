@@ -64,4 +64,8 @@
 
 ## 六、验证记录
 
-（推送后回填。）
+- **Lint / SwiftPM tests：✅**（`be5b86c`）。本轮 CI 连红三轮才绿，逐轮复盘见
+  `docs/任务记录/M07d2-直播源切换.md` 第六节。
+- **本任务没有新增单测**：Tab 入口与 `.onChange` 重载都是界面行为，没有可纯函数化的部分；
+  `RootView` 的四 Tab 结构靠「人工看一眼」+ 编译把关（这轮新写的 SwiftUI 代码还没过 `Build apps` 那一关）。
+- **`Build apps (unsigned)` / `Unsigned IPA`：结论未取到**（会话结束时仍在跑）。

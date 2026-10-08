@@ -74,4 +74,8 @@ App 里一个调用点都没有 —— 于是：
 
 ## 六、验证记录
 
-（推送后回填。）
+- **Lint / SwiftPM tests：✅**（`be5b86c`）。本轮 CI 连红三轮才绿（SwiftFormat 7 处、CatVodUI 单测首次编译、
+  两个老用例的过期断言），逐轮复盘见 `docs/任务记录/M07d2-直播源切换.md` 第六节。
+- 本任务的用例都在绿的那一轮里真跑过：`EPGGuideFreshnessTests`（3 例）、`LiveEPGPrefetchTests`（5 例）。
+  预取判定（`LiveEPGPrefetch`）的封顶/去重/失败不重试三条规则都有断言覆盖。
+- **`Build apps (unsigned)` / `Unsigned IPA`：结论未取到**（会话结束时仍在跑）。
