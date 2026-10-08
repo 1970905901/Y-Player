@@ -13,9 +13,9 @@ import Foundation
 ///    否则等于把一次偶发故障固化下来；
 /// 3. **显式失效**：`invalidate` / `invalidateAll` 与 `forceRefresh`（下拉刷新、换源、重载配置前）必须能绕过缓存。
 ///
-/// ⚠️ 说明：上游 `VodDetailCache` 的**具体判定条件尚未取得源码核对**
-/// （`FongMi/TV` 下按常见路径 404，见 `docs/任务记录/M02P5-详情缓存.md` 的待校准项），
-/// 因此本实现按上述原则自定档板，拿到上游源码后再逐条校准；不要把当前条件当作「逐行对齐上游」。
+/// ⚠️ 这三条是**本项目自定**的：已核过 `FongMi/TV`（fongmi 分支）的 `bean/` 目录与参考项目 webhtv，
+/// 两边都**没有**详情缓存类（M02P5 的「待与上游源码校准」在等一个不存在的东西）。
+/// 所以别再挂「待校准」——判定依据就是上面三条原则：**宁可少缓存**。
 public actor DetailCache {
     /// 缓存配置。
     public struct Configuration: Sendable {

@@ -97,6 +97,35 @@ struct AppModelIntegrationTests {
         #expect(fixture.model.adSkipRecorder.stats == AdSkipRecorder.Stats())
     }
 
+    @Test("广告清理规则（M06d/M06h）：配置载入后规则进了 store，关掉开关后 store 也空")
+    func hlsAdRuleWiring() async throws {
+        let fixture = try AppModelFixture()
+        defer { fixture.tearDown() }
+        await fixture.load("""
+        {"sites":[],
+         "hlsRules":[{"id":"builtin.test.v1","name":"示例","enabled":true,
+                      "playlistHostSuffixes":["video.example.com"],
+                      "hostSuffixes":["ads.example.com"],"minimumSignals":1}]}
+        """)
+
+        // 接口写了 enabled=true → 编出来进 store（`/m3u8` 每请求现读这里）
+        let entries = fixture.model.hlsAdRuleEntries
+        #expect(entries.count == 1)
+        #expect(entries.first?.isEnabled == true)
+        #expect(fixture.model.adRuleStore.current.count == 1)
+
+        // 本地关掉 → 立刻重算：列表变、store 也空
+        let key = try #require(entries.first?.key)
+        fixture.model.setHLSAdRule(key, enabled: false)
+        #expect(fixture.model.hlsAdRuleEntries.first?.isEnabled == false)
+        #expect(fixture.model.adRuleStore.current.isEmpty)
+
+        // 恢复默认（nil）= 回到接口的写法
+        fixture.model.setHLSAdRule(key, enabled: nil)
+        #expect(fixture.model.hlsAdRuleEntries.first?.isEnabled == true)
+        #expect(fixture.model.adRuleStore.current.count == 1)
+    }
+
     @Test("弹幕（M08c）：开关关着 / 没填地址时**不发请求**且不显示状态行")
     func danmakuGuardsDoNotFetch() async throws {
         let fixture = try AppModelFixture()
