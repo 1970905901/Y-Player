@@ -13,12 +13,19 @@ import Foundation
 /// - 取值一律「取关键字**第一次**出现之后到行尾」，而上游 `split(key)[1]` 在「值里又出现同名 key」时行为不同。
 struct LivePlaylistSettings: Sendable {
     private(set) var ua = ""
-    private(set) var parse: Int? = nil
+    private(set) var parse: Int?
     private(set) var click = ""
     private(set) var format = ""
     private(set) var origin = ""
     private(set) var referer = ""
     private(set) var header: [String: String] = [:]
+
+    /// 显式无参构造。
+    ///
+    /// 为什么要写：`parse` 是 Optional 但**不能**写 `= nil`（SwiftFormat 的 `redundantNilInit` 会拦），
+    /// 而合成的成员初始化器一旦有一个属性没有默认值，就不再有「全部默认」的形态 ——
+    /// 显式 `init() { }` 同时满足两边，解析器里的 `LivePlaylistSettings()` 才成立。
+    init() { }
 
     /// 上游 `Setting.find(line)`：这一行是不是设置行。
     static func matches(_ line: String) -> Bool {

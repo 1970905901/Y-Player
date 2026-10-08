@@ -42,12 +42,12 @@ public struct LivePlaylistParser: Sendable {
 extension LivePlaylistParser {
     /// 上游 `M3U` 正则 `^(?!.*#genre#).*#EXTM3U.*`（多行）的等价判定：
     /// **任意一行**同时满足「不含 `#genre#`」且「含 `#EXTM3U`」即为 m3u。
-    static func looksLikeM3U(_ text: String) -> Bool {
+    public static func looksLikeM3U(_ text: String) -> Bool {
         lines(text).contains { !$0.contains("#genre#") && $0.contains("#EXTM3U") }
     }
 
     /// 上游 `Json.isArray(text)`：去掉空白后是 `[…]` 且能解析成 JSON。
-    static func isJSONArray(_ text: String) -> Bool {
+    public static func isJSONArray(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("["), trimmed.hasSuffix("]") else {
             return false
