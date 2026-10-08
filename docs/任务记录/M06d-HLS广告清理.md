@@ -1,6 +1,6 @@
 # M06d HLS 广告清理（清单规则核心）
 
-- 状态：清理器 + 规则编译**已实装并有单测**（本次提交）；**接到播放路径与设置开关是下一步**（见第五节）
+- 状态：清理器 + 规则编译 + **`/m3u8` 播放路径接线**都已实装并有单测；**启用开关落盘、内置规则包与「跳过广告」提示**是下一步（见第六节）
 - 时间：2026-10-08
 - 依赖：M06c（`/m3u8` 清单改写 + 本地服务）、参考项目 webhtv 的
   `utils/HlsManifestCleaner.java`、`bean/HlsAdRule.java`、`bean/HlsRulePackage.java`、
@@ -54,24 +54,39 @@
 - `HLSAdRulePackageTests`：版本只认 2、空包、内置默认关闭、状态键形状（源标识不进键）；
 - `HlsRuleCleanerMappingTests`：配置规则映射（`hosts` 当作用域、`exclude` 当分片正则）、空 `exclude` 跳过、id 稳定。
 
-## 五、明确未做（下一步）
+## 五、接线（`/m3u8` 真的用上规则了）
 
-1. **接到播放路径**：本地服务的 `/m3u8` 目前只做「代理 + 改写相对地址」，还没跑清理器。
-   接法是给 `LocalProxyHandler` 注入一个「清单清理」闭包（启用哪些规则由上层决定），与 `upstream` 的注入方式一致；
-2. **启用开关的落盘**：`HLSAdRuleState` 已经能算出「该不该开」，但存覆盖值的那份偏好
-   （参考实现叫 `builtin_hls_rule_overrides`）与界面入口都还没做；
-3. **内置规则包**：参考项目那份 `assets/rules/hls_rules.json` 现在是 **`rules: []`（空包）**，我们照样子先留空 ——
-   内置规则要背「误杀率」的责任，参考项目自己的更新要求写着「至少一个应删 fixture + 一个反 fixture + 一个错误 host 反 fixture」；
+这一轮一起把消费点接上，否则清理器就是又一个「写好了没人调用」：
+
+| 件 | 改动 |
+| --- | --- |
+| `LocalProxyHandler` | 新增 `adRules: @Sendable () -> [HLSManifestCleaner.Rule]`（默认空数组）；清单流程变成「取上游 → **清理** → 改写相对地址 → 回客户端」 |
+| 顺序（**关键**） | 清理必须在**改写之前**：规则里的 host / 域名说的是**上游**地址，改写完之后这里只剩 `127.0.0.1`，规则会一条都匹配不上 |
+| `HLSAdRuleStore`（Core） | 规则的「当前生效值」小盒子（`NSLock` + `@unchecked Sendable`，理由同 `StorageFailureRecorder`）；本机服务**每个请求读一次** |
+| `AppModel` + `AppModel+LocalProxy` | 配置加载成功后 `refreshAdRules()` 把 `SourceConfig.hlsRules` 编译进盒子；规则提供者闭包**只捕获盒子、不捕获 AppModel**（它在线程池里被调用，碰主线程状态就是数据竞争） |
+| 配置换了怎么办 | **不重启本机服务** —— 换个源之后 `/m3u8` 下一次请求读到的就是新规则（重启会换端口，正在播的那条链路会断） |
+
+没配规则的部署行为与 M06c 完全一致：清理器拿到空规则数组会直接原样返回（`Result.unchanged`）。
+
+## 六、明确未做（下一步）
+
+1. **启用开关的落盘与界面入口**：`HLSAdRuleState` 已经能算出「该不该开」，但存覆盖值的那份偏好
+   （参考实现叫 `builtin_hls_rule_overrides`）与设置页入口都没做。
+   注意语义差别：**接口配置里的 `hlsRules` 是「用户自己写的规则」，一律生效**（对齐参考实现的 legacy 路径）；
+   `HLSAdRule.enabled` 那套「默认关闭、要显式打开」说的是**规则包**（内置/外来的），等做规则包时再一起做；
+2. **内置规则包**：参考项目那份 `assets/rules/hls_rules.json` 现在是 **`rules: []`（空包）**，我们照样子先留空 ——
+   内置规则要背「误杀率」的责任（参考项目自己的更新要求：至少一个应删 fixture + 一个反 fixture + 一个错误 host 反 fixture）；
+3. **「跳过广告」提示**：参考实现有 `HlsAdblockNotice`（界面上提示这次跳了多少秒），我们只把统计放在
+   `Result` 里没往上带 —— 要显示就得让 `/m3u8` 把结果回传给界面，属另一条链路（等有真机数据再谈）；
 4. **`legacy` 兜底规则**（按分片路径前缀分组、按不连续块时长差找广告那两套启发式）不做：
    它们比规则更「猜」，先要有实测数据。
 
-## 六、验证记录
+## 七、验证记录
 
-- 本地自查：`Tools/out/check_braces.py`（括号 / 连续空行 / 行尾空白）**干净**；
-  `Tools/out/check_swift.py` 对本轮新代码只报三条**已知假阳性**，都已核对：
-  ① `[shadow] 局部 fallback 与同文件方法同名` —— 其实是 `Result.fallback` **字段**与 `Result.fallback(_:)` **静态工厂**
-  的合法重载（从不出现「局部遮蔽后调用静态方法」那种真错误，代码里一律写 `Result.fallback(…)` 限定）；
-  ②③ 两条 `[toggle_bool]` —— 该规则要求 `x = !x` 这种同表达式自赋值，这里是 `let x = !y.isEmpty`（取反，不是自赋值）。
-- 工具本身这轮修掉一个真问题：`check_swift.py` 以前把 Windows 工作副本的 CRLF 当成「行尾空白」，
-  287 个文件报出 8658 条「问题」；现在先归一化行尾再判定（教训记在 `docs/构建与分发.md` 第 36 条）。
+- 本地自查：`Tools/out/check_braces.py`（括号 / 连续空行 / 行尾空白）对 121 个文件**0 问题**；
+  `Tools/out/check_swift.py` 对本轮新代码只有三条**已核对的假阳性**（`Result.fallback` 字段与静态工厂的合法重载、
+  两条 `let x = !y.isEmpty` 被误判成 `toggle_bool`）。
+- 工具这轮修掉两个假阳性：`check_swift.py` 把 Windows 工作副本的 CRLF 当「行尾空白」（287 个文件报 8658 条）；
+  `check_braces.py` 不认原始字符串 `#"…"#`，把含引号的 JSON 片段当「字符串提前结束」，害得四个老测试文件一直挂着
+  「圆括号不平衡」的假告警（教训记在 `docs/构建与分发.md` 第 36 条）。
 - CI：待跑（本轮按指示不盯）。
