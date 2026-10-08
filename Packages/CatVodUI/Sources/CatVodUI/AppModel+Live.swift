@@ -30,6 +30,33 @@ public extension AppModel {
         liveState.loadedSource
     }
 
+    /// 当前源「组名里的 `_` 不当密码」的**有效值**：本地覆盖优先，否则跟源自己的 `pass`（上游同字段）。
+    var liveGroupPassEnabled: Bool {
+        guard let source = selectedLiveSource else {
+            return false
+        }
+        return livePassOverrides[source.name] ?? source.pass
+    }
+
+    /// 改这个开关：落盘 → **重新解析**清单（`pass` 是解析期字段）+ 重拉文件形态节目单。
+    ///
+    /// 上游 `Live.pass(boolean)` 就是「清空 groups 后重新解析」（`getGroups().clear()`），
+    /// 这里做的是同一件事；只是本项目不缓存清单文本，所以要重新请求一次（一次请求，能接受）。
+    ///
+    /// 为什么要给两个方向都能拨：有些源自己写了 `pass: true`，而用户的实际分组名里没有密码 ——
+    /// 那就得能关掉；反过来（源里没写、组名里却有 `_`）也得能打开，否则那几组会被当成加密分组藏起来。
+    func setLiveGroupPass(_ enabled: Bool) async {
+        guard let name = selectedLiveSource?.name, !name.isEmpty else {
+            return
+        }
+        guard liveGroupPassEnabled != enabled else {
+            return
+        }
+        livePassOverrides = LivePassBook.setting(enabled, for: name, in: livePassOverrides)
+        await loadLivePlaylist(force: true)
+        await loadLiveFileGuide(force: true)
+    }
+
     /// 界面上要显示的分组：**未解锁的加密分组不出现**（上游把它们收在 `mHides` 里）。
     var liveVisibleGroups: [LiveGroup] {
         guard let source = liveSource else {
@@ -215,7 +242,10 @@ public extension AppModel {
         }
         do {
             let repository = LiveRepository(transport: transportForConfiguration())
-            let loaded = try await repository.load(source)
+            // 「组名里的 `_` 不当密码」的本地覆盖要在**解析前**套上（`pass` 是解析期字段，
+            // 它决定组名怎么拆、进而决定哪些组算加密分组）。
+            let effective = source.applyingGroupPass(livePassOverrides[source.name])
+            let loaded = try await repository.load(effective)
             // 解析结果按原样留底；``liveState`` 里放的是套用本地 EPG 覆盖**之后**的那份
             // （上游也是拿到清单就 `LiveEpgSetting.apply(live)`）。
             rawLiveSource = loaded

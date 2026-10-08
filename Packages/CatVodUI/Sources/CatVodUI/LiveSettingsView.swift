@@ -25,6 +25,7 @@ struct LiveSettingsView: View {
     var body: some View {
         List {
             sourceSection
+            groupNameSection
             addressSection
             historySection
             Section("当前状态") {
@@ -77,6 +78,36 @@ struct LiveSettingsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - 分组名
+
+    /// 组名里的 `_` 要不要当密码分隔符（上游 `Live.pass`；默认跟源自己的字段）。
+    ///
+    /// 这个开关是 M07d-4「加密分组默认不显示」的**逃生门**：源里组名本来就有 `_` 的那几个源，
+    /// 拆成「名字 + 密码」之后那几组会被当成加密分组**藏起来**，而且永远解锁不了
+    /// （密码其实是名字的一部分）。上游留 `pass` 正是为这类源。
+    private var groupNameSection: some View {
+        Section("分组名") {
+            Toggle(isOn: groupPassBinding) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("组名里的 `_` 不当密码")
+                    Text("默认跟直播源自己的 `pass` 字段。打开后不再把「组名_密码」拆开；"
+                        + "本机覆盖只对当前源生效，改完会重新拉一次清单。")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .disabled(model.liveSource == nil)
+        }
+    }
+
+    /// 开关两个方向都写进本地覆盖（`setLiveGroupPass` 负责落盘 + 重新解析）。
+    private var groupPassBinding: Binding<Bool> {
+        Binding(
+            get: { model.liveGroupPassEnabled },
+            set: { enabled in Task { await model.setLiveGroupPass(enabled) } }
+        )
     }
 
     // MARK: - EPG 地址

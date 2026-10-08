@@ -50,6 +50,28 @@ struct LivePlaylistParserTests {
         #expect(parsed.epgXML == ["https://epg.example.com/xml.gz"])
     }
 
+    @Test("`pass = true`：组名里的 `_` 不当密码 —— 组名原样保留，也不算加密分组（M07d-5）")
+    func passKeepsUnderscoreInGroupName() throws {
+        let playlist = """
+        #EXTM3U
+        #EXTINF:-1 group-title="央视_高清",CCTV-1
+        http://live.example.com/cctv1.m3u8
+        """
+        let source = try makeSource(#"{"name":"演示直播"}"#)
+
+        // 默认（源里没写 `pass`）：按第一个 `_` 拆成「名字 + 密码」→ 这一组成了加密分组。
+        let split = parser.parse(playlist, into: source)
+        #expect(split.groups.map(\.name) == ["央视"])
+        #expect(split.groups.map(\.pass) == ["高清"])
+        #expect(split.groups.first?.isHidden == true)
+
+        // 本地覆盖打开（上游 `Live.pass`）：组名原样保留，也不隐藏 —— 这就是「组名里本来有 `_`」的逃生门。
+        let kept = parser.parse(playlist, into: source.applyingGroupPass(true))
+        #expect(kept.groups.map(\.name) == ["央视_高清"])
+        #expect(kept.groups.map(\.pass) == [""])
+        #expect(kept.groups.first?.isHidden == false)
+    }
+
     private let txt = """
     央视,#genre#
     CCTV-1,http://live.example.com/cctv1.m3u8#http://backup.example.com/cctv1.m3u8

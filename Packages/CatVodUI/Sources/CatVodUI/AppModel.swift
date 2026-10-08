@@ -66,6 +66,7 @@ public final class AppModel: ObservableObject {
         static let liveKeep = "yplayer.liveKeep"
         static let liveFavorites = "yplayer.liveFavorites"
         static let liveEPGSetting = "yplayer.liveEPGSetting"
+        static let livePassOverrides = "yplayer.livePassOverrides"
     }
 
     // MARK: - 输出状态
@@ -379,6 +380,16 @@ public final class AppModel: ObservableObject {
     /// 不划算。
     @Published var unlockedLiveGroups: Set<String> = []
 
+    /// 「组名里的 `_` 不当密码」的本地覆盖：**源名 → 覆盖值**（上游 `Live.pass`）。
+    ///
+    /// 不在表里 = 跟源自己的 `pass` 字段。`pass` 是**解析期**字段，所以覆盖要在解析前套用
+    /// （见 `AppModel+Live` 的 `loadLivePlaylist`），改这个开关会重新拉一次清单。
+    @Published public internal(set) var livePassOverrides: [String: Bool] {
+        didSet {
+            UserDefaults.standard.set(LivePassBook.encode(livePassOverrides), forKey: StorageKey.livePassOverrides)
+        }
+    }
+
     /// 当前播放设置。
     public var playbackSettings: PlaybackSettings {
         PlaybackSettings(engine: preferredEngine, decoderMode: decoderMode)
@@ -449,6 +460,9 @@ public final class AppModel: ObservableObject {
 
         // 直播 EPG 本地覆盖：默认空（用每个直播源自己配的 EPG）。
         liveEPGSetting = LiveEPGSetting.decode(defaults.string(forKey: StorageKey.liveEPGSetting))
+
+        // 「组名里的 `_` 不当密码」的本地覆盖：默认空（跟每个直播源自己的 `pass` 字段）。
+        livePassOverrides = LivePassBook.decode(defaults.string(forKey: StorageKey.livePassOverrides))
 
         // 引擎日志：默认关（与参考图的开关初始状态一致）。
         isEngineLogEnabled = defaults.object(forKey: StorageKey.engineLogEnabled) as? Bool ?? false
