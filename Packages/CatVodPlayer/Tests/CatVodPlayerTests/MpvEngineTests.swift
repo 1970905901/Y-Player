@@ -267,7 +267,7 @@ struct MpvEngineTests {
             ["set", "speed", "1.500"],
             ["set", "sid", "no"],
             ["set", "aid", "2"],
-            ["set", "vid", "auto"]
+            ["set", "vid", "auto"],
         ])
         // 跳转后状态与进度要跟上（UI 立刻画，不等内核回属性）
         let state = await engine.currentState()

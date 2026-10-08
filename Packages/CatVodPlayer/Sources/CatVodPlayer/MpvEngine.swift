@@ -167,8 +167,11 @@ public actor MpvEngine: PlayerEngine {
         eventLoop?.cancel()
         eventLoop = Task.detached { [weak self] in
             while !Task.isCancelled {
-                guard let self, let event = await self.nextEvent() else { return }
-                await self.handle(event)
+                // 每轮重新取一次引擎：它被释放后循环自己退出，不留空转任务。
+                // 用局部名 `engine` 而不是 `self`：SwiftFormat 的 `redundantSelf` 要求
+                // 局部绑定后再写 `self.` 是多余的（而脱开闭包时编译器又要求显式 self）—— 换个名字两边都干净。
+                guard let engine = self, let event = await engine.nextEvent() else { return }
+                await engine.handle(event)
             }
         }
     }

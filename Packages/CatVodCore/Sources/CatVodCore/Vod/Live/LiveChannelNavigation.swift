@@ -14,7 +14,6 @@ import Foundation
 // - `channel(number:in:)`：按号扫描（两边能解析成整数就按整数比，前导零/空白不影响），
 //   空串 / 非数字 / 找不到一律 nil（上游 `Integer.parseInt` 会抛异常，界面不该跟着崩）。
 
-
 import Foundation
 
 /// 播放页换台的取值语义。
