@@ -63,8 +63,9 @@
 
 ## 五、下一步（M07c-2：直播页）
 
-- 入口：发现页工具栏的**纸飞机按钮**（参考录屏就是它；上游手机版也是 `LiveActivity.start(this)` 走 push，
-  不是第 4 个 Tab —— 与「发现 / 追剧 / 设置」三 Tab 的既有版式一致）。
+- 入口：~~发现页工具栏的**纸飞机按钮**~~ → **已改为底部 Tab「直播」**（M07c-6，按用户指定；
+  反转理由见 `docs/任务记录/M07c6-直播入口改底部Tab.md`。原方案是参考录屏的纸飞机入口 ——
+  上游手机版也走 `LiveActivity.start(this)` 的 push 形态，不是第 4 个 Tab）。
 - 界面：分组 → 频道列表（当前节目显示「正在播」，点历史节目走时移），播放复用现有 `PlaybackView`
   （系统 `AVPlayer` + 本地代理注入 header）。
 - 顺带接线：图标回填（`logo(for:fallback:)`）、时移（`LiveCatchup` + `EPGProgram.clockQuery`）、`keep`（上次观看位置）。
@@ -83,7 +84,7 @@
 | `CatVodUI/LiveLayout.swift` | 纯逻辑：分组行（名字 / 频道数 / 加密标记）、频道行（EPG 覆盖显示名与图标、`epgID` 三级回落、「正在播 / 下一档」文案、时移入口判定含 `/PLTV/` 自动套用） |
 | `CatVodUI/LiveView.swift` | 直播页：顶部分组条（当前分组加粗、加密组带锁）+ 频道列表（图标 / 名字 / 正在播 / 回看标记 / 频道号）；空态 / 加载中 / 失败三种分支都给真话；播放复用 `PlaybackView` + `proxiedMediaResource(_:)` |
 | `CatVodUI/AppModel+Live.swift` | `liveSources`（配置 `lives`）、`selectedLiveSource` / `selectedLiveGroupObject`（选择落 `UserDefaults`）、`loadLivePlaylist(force:)`（换源清节目单缓存）、`loadLiveGuide(for:)`（失败只留 `liveEPGNotice`，不弹错） |
-| `CatVodUI/HomeView` | 工具栏新增**纸飞机**入口（参考录屏的形态；不是第 4 个 Tab），没有 `lives` 时置灰 |
+| `CatVodUI/RootView` | 底部 Tab 新增「直播」（M07c-6 入口从发现页工具栏改到这里，见 `M07c6-直播入口改底部Tab.md`） |
 | 单测 | `LiveLayoutTests`（6 例：分组行 / EPG 覆盖名字与图标 / `epgID` 回落 / 无节目单回落 / 时移入口 / 顺序与可播放） |
 
 未做（下一步）：
