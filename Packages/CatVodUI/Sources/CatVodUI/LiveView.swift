@@ -56,6 +56,7 @@ public struct LiveView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 20) {
                 ForEach(LiveListLayout.groupRows(source)) { row in
+                    let isSelected = row.name == model.selectedLiveGroupObject?.name
                     Button {
                         model.selectedLiveGroup = row.name
                     } label: {
@@ -64,10 +65,12 @@ public struct LiveView: View {
                                 Image(systemName: "lock.fill")
                                     .font(.caption2)
                             }
+                            // 字重加在 `Text` 上（iOS 13+）：`.fontWeight` 这个 **View 修饰符**要 iOS 16+，
+                            // 是「iOS 15 下限」踩过的一个坑（与发现页分类条同一写法）。
                             Text(row.name)
+                                .font(isSelected ? .body.weight(.semibold) : .body)
+                                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
                         }
-                        .fontWeight(row.name == model.selectedLiveGroupObject?.name ? .semibold : .regular)
-                        .foregroundStyle(row.name == model.selectedLiveGroupObject?.name ? Color.primary : Color.secondary)
                     }
                     .buttonStyle(.plain)
                 }
