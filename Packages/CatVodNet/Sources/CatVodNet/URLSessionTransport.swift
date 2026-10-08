@@ -21,17 +21,27 @@ public actor URLSessionTransport: HTTPTransport {
         public var hostHeaders: [String: [String: String]]
         /// 广告域名/正则（上游 `ads`）；命中即拒绝请求。
         public var blockedHosts: [String]
+        /// 按 host 选代理；返回 `nil` = 直连（默认）。
+        ///
+        /// 代理是**会话级**的（`URLSessionConfiguration.connectionProxyDictionary` 建完就不能改），
+        /// 而选哪条代理取决于目标 host，所以这里给的是「问一次」的闭包，由传输层按端点缓存会话，见 ``URLSessionTransport``。
+        public var proxyResolver: ProxyResolver?
+
+        /// 按 host 选代理（`Core` 的 ``ProxyRuleResolver/selection(forHost:)`` 外面包一层即可）。
+        public typealias ProxyResolver = @Sendable (_ host: String) -> ProxyEndpoint?
 
         public init(
             defaultTimeout: TimeInterval = 15,
             defaultHeaders: [String: String] = [:],
             hostHeaders: [String: [String: String]] = [:],
-            blockedHosts: [String] = []
+            blockedHosts: [String] = [],
+            proxyResolver: ProxyResolver? = nil
         ) {
             self.defaultTimeout = defaultTimeout
             self.defaultHeaders = defaultHeaders
             self.hostHeaders = hostHeaders
             self.blockedHosts = blockedHosts
+            self.proxyResolver = proxyResolver
         }
 
         /// 默认配置：常见浏览器 UA（部分源对 UA 敏感）。
@@ -58,19 +68,55 @@ public actor URLSessionTransport: HTTPTransport {
     }
 
     private let configuration: Configuration
-    private let session: URLSession
+    /// 建代理会话时的模板（直连会话也由它来，保证两边行为一致：超时、cookie 策略、缓存策略）。
+    private let baseSessionConfiguration: URLSessionConfiguration
+    private let directSession: URLSession
+    /// 代理会话池：**按端点**缓存（同一个代理只建一次会话）。
+    private var proxiedSessions: [ProxyEndpoint: URLSession] = [:]
 
     public init(
         configuration: Configuration = .default,
         sessionConfiguration: URLSessionConfiguration = .ephemeral
     ) {
         self.configuration = configuration
-        let session = URLSession(configuration: sessionConfiguration)
-        self.session = session
+        baseSessionConfiguration = sessionConfiguration
+        directSession = URLSession(configuration: sessionConfiguration)
+    }
+
+    /// 取这次请求该用的会话：按 host 问一次代理，命中就复用 / 新建对应的代理会话。
+    ///
+    /// 为什么要有池：代理只能建会话时指定，而选哪条代理是按 host 的 —— 没有池的话，
+    /// 每个请求都要新建一个 `URLSession`（连接、cookie 策略、内存全部重建），代价很大。
+    private func session(for url: URL) -> URLSession {
+        guard let endpoint = proxyEndpoint(for: url) else {
+            return directSession
+        }
+        if let existing = proxiedSessions[endpoint] {
+            return existing
+        }
+        let sessionConfiguration = (baseSessionConfiguration.copy() as? URLSessionConfiguration)
+            ?? URLSessionConfiguration.ephemeral
+        sessionConfiguration.connectionProxyDictionary = endpoint.connectionProxyDictionary
+        let session = URLSession(
+            configuration: sessionConfiguration,
+            delegate: ProxyAuthDelegate(endpoint: endpoint),
+            delegateQueue: nil
+        )
+        proxiedSessions[endpoint] = session
+        return session
+    }
+
+    /// 问一次代理选择器（没有配置 / host 解析不出来都当直连）。
+    private func proxyEndpoint(for url: URL) -> ProxyEndpoint? {
+        guard let resolver = configuration.proxyResolver, let host = url.host, !host.isEmpty else {
+            return nil
+        }
+        return resolver(host)
     }
 
     public func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         let urlRequest = try prepare(request)
+        let session = session(for: urlRequest.url ?? request.url)
         do {
             let (data, response) = try await session.data(for: urlRequest)
             let http = response as? HTTPURLResponse

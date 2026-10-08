@@ -404,6 +404,8 @@ public final class AppModel: ObservableObject {
     let sessionTransport: URLSessionTransport
     /// 详情缓存（进程内共享）。
     let detailCache = DetailCache()
+    /// 站点传输的缓存（接口换过才重建，见 ``AppModel/transportForConfiguration()``）。
+    var cachedTransport: HTTPTransport?
 
     public init(cacheDirectory: URL? = nil, defaults: UserDefaults = .standard) {
         let base = cacheDirectory ?? Self.defaultCacheDirectory()
@@ -541,6 +543,8 @@ public final class AppModel: ObservableObject {
             state = .loaded(loaded)
             // 广告清理规则随配置一起换新（M06d）：本机服务的 `/m3u8` 每个请求读一次，不重启服务。
             refreshAdRules()
+            // 缓存里的传输也作废：header / 广告拦截 / 代理都来自旧配置（M06j）。
+            cachedTransport = nil
             // 配置已变更：缓存里的详情可能对应旧站点/旧线路，直接清空。
             await detailCache.invalidateAll()
             // 接口缓存自愈：按容量上限淘汰最旧的（当前接口的缓存不动）。
@@ -591,11 +595,38 @@ public final class AppModel: ObservableObject {
     }
 
     /// 为站点请求构造传输层：把配置里的 `headers` 与 `ads` 规则带进去。
+    /// 站点传输（按当前接口配置构造）。
+    ///
+    /// **按接口缓存**：代理会话池、cookie、连接复用都挂在传输内部的 `URLSession` 上 ——
+    /// 每次动作都新建一个传输，等于每次动作都重建连接与 cookie（好多站点靠同一条连接上的 cookie 认人）。
+    /// 缓存键就是「配置是否换过」：``load(forceRefresh:)`` 会把它清掉，所以换接口必然重建。
     public func transportForConfiguration() -> HTTPTransport {
+        if let cachedTransport {
+            return cachedTransport
+        }
         guard let config = state.loadedSource?.config else {
             return sessionTransport
         }
-        return URLSessionTransport(configuration: URLSessionTransport.Configuration(config: config))
+        let transport = URLSessionTransport(configuration: Self.transportConfiguration(for: config))
+        cachedTransport = transport
+        return transport
+    }
+
+    /// 从接口配置造传输层配置：header / 广告拦截 / **代理选择器**。
+    ///
+    /// 代理是 M06j 接上的：Core 早就把「按 host 选哪条代理」算好了（``ProxyRuleResolver``），
+    /// 这里只是把它包成传输层要的闭包 —— 代理端点列表里**第一条**生效。
+    /// 上游是「按顺序失败切换」（OkHttp 的 proxy 列表语义），那一层**没做**（见 M06j 记录的遗留）。
+    static func transportConfiguration(for config: SourceConfig) -> URLSessionTransport.Configuration {
+        var configuration = URLSessionTransport.Configuration(config: config)
+        let resolver = ProxyRuleResolver(rules: config.proxy)
+        guard !resolver.isEmpty else {
+            return configuration
+        }
+        configuration.proxyResolver = { host in
+            resolver.selection(forHost: host).endpoints.first
+        }
+        return configuration
     }
 
     /// 站点客户端（CMS 通道）。
