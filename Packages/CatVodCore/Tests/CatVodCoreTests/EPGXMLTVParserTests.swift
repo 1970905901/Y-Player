@@ -191,4 +191,3 @@ struct EPGXMLTVParserTests {
         #expect(EPGXMLTVParser.parse(data: Data("<html>404</html>".utf8), key: "cctv1", timeZone: shanghai) == nil)
     }
 }
-

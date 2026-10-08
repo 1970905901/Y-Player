@@ -19,7 +19,9 @@ public enum EPGJSONParser {
             return nil
         }
         let rawDate = string(object["date"])
-        let date = rawDate.isEmpty ? EPGTimeParser.dateString(dayOffset: 0, timeZone: timeZone) : normalize(date: rawDate, timeZone: timeZone)
+        let date = rawDate.isEmpty
+            ? EPGTimeParser.dateString(dayOffset: 0, timeZone: timeZone)
+            : normalize(date: rawDate, timeZone: timeZone)
         var programs: [EPGProgram] = []
         for case let item as [String: Any] in (object["epg_data"] as? [Any]) ?? [] {
             let title = string(item["title"])

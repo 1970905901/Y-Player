@@ -223,7 +223,7 @@ struct LiveEPGInterfaceTests {
         }
         let recorder = RoutingRecorder(responses: responses)
         let guide = try await LiveEPGRepository(transport: recorder)
-            .load(channel: try makeInterfaceChannel(), source: try makeSource())
+            .load(channel: makeInterfaceChannel(), source: makeSource())
 
         #expect(guide.schedules.map(\.key) == ["cctv1", "cctv1", "cctv1"])
         #expect(guide.schedules.map(\.date) == dates)
@@ -242,7 +242,7 @@ struct LiveEPGInterfaceTests {
         let existing = EPGGuide(timeZone: zone, schedules: [EPGSchedule(key: "cctv1", date: dates[1], programs: [])])
         let recorder = RoutingRecorder(responses: responses)
         let guide = try await LiveEPGRepository(transport: recorder)
-            .load(channel: try makeInterfaceChannel(), source: try makeSource(), existing: existing)
+            .load(channel: makeInterfaceChannel(), source: makeSource(), existing: existing)
 
         let urls = await recorder.urls
         #expect(urls.count == 2)
@@ -259,14 +259,14 @@ struct LiveEPGInterfaceTests {
         responses[interfaceURL(date: dates[1])] = HTTPResponse(status: 200, body: Data(xmltv(date: dates[1], title: "今天").utf8))
         responses[interfaceURL(date: dates[2])] = HTTPResponse(status: 500, body: Data("oops".utf8))
         let guide = try await LiveEPGRepository(transport: RoutingRecorder(responses: responses))
-            .load(channel: try makeInterfaceChannel(), source: try makeSource())
+            .load(channel: makeInterfaceChannel(), source: makeSource())
         #expect(guide.schedules.map(\.date) == [dates[1]])
 
         // 全坏：把第一个错误抛出来（这里是「地址没配假响应」的 network）。
         let broken = RoutingRecorder(responses: [:])
         do {
             _ = try await LiveEPGRepository(transport: broken)
-                .load(channel: try makeInterfaceChannel(), source: try makeSource())
+                .load(channel: makeInterfaceChannel(), source: makeSource())
             Issue.record("三天全坏应当抛错")
         } catch let error as CatVodError {
             guard case .network = error else {
@@ -287,7 +287,7 @@ struct LiveEPGInterfaceTests {
             responses[interfaceURL(date: date)] = HTTPResponse(status: 200, body: Data(payload.utf8))
         }
         let guide = try await LiveEPGRepository(transport: RoutingRecorder(responses: responses))
-            .load(channel: try makeInterfaceChannel(), source: try makeSource())
+            .load(channel: makeInterfaceChannel(), source: makeSource())
 
         let program = try #require(guide.schedule(key: "cctv1", date: today)?.programs.first)
         #expect(program.title == "午间新闻")
@@ -300,7 +300,7 @@ struct LiveEPGInterfaceTests {
         let recorder = ParseRequestRecorder(response: HTTPResponse(status: 200, body: Data(xmltv(date: "2026-10-07", title: "x").utf8)))
         let channel = try makeChannel(#"{"name":"CCTV-1","tvgId":"cctv1"}"#)
         do {
-            _ = try await LiveEPGRepository(transport: recorder).load(channel: channel, source: try makeSource())
+            _ = try await LiveEPGRepository(transport: recorder).load(channel: channel, source: makeSource())
             Issue.record("没有节目单地址应当明确拒绝")
         } catch let error as CatVodError {
             #expect(error.errorDescription?.contains("节目单地址") == true)
@@ -313,7 +313,7 @@ struct LiveEPGInterfaceTests {
         let recorder = ParseRequestRecorder(response: HTTPResponse(status: 200, body: Data(xmltv(date: "2026-10-07", title: "x").utf8)))
         let channel = try makeChannel(#"{"name":"CCTV-1","tvgId":"cctv1","epg":"epg/{date}.xml"}"#)
         do {
-            _ = try await LiveEPGRepository(transport: recorder).load(channel: channel, source: try makeSource())
+            _ = try await LiveEPGRepository(transport: recorder).load(channel: channel, source: makeSource())
             Issue.record("非 http 地址应当明确拒绝")
         } catch let error as CatVodError {
             #expect(error.errorDescription?.contains("不是 http") == true)
@@ -326,7 +326,7 @@ struct LiveEPGInterfaceTests {
         let date = EPGTimeParser.dateString(dayOffset: 0, timeZone: zone)
         let recorder = ParseRequestRecorder(response: HTTPResponse(status: 200, body: Data(xmltv(date: date, title: "中文台").utf8)))
         let channel = try makeChannel(#"{"name":"CCTV-2 财经","epg":"https://epg.example.com/api?ch={name}&date={date}"}"#)
-        let guide = try await LiveEPGRepository(transport: recorder).load(channel: channel, source: try makeSource())
+        let guide = try await LiveEPGRepository(transport: recorder).load(channel: channel, source: makeSource())
 
         #expect(guide.schedule(key: "CCTV-2 财经", date: date)?.programs.map(\.title) == ["中文台"])
         let request = await recorder.firstRequest()
