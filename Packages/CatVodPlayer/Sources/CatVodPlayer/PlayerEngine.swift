@@ -29,13 +29,16 @@ public enum PlayerEngineKind: String, Sendable, CaseIterable {
     /// 而 `MpvEngine` 还没实装 —— 界面会宣称 MPV 可用却根本播不了。
     /// 依赖侧的事实现在只由 ``MpvAvailability`` 暴露，两者不混用。
     ///
+    /// MPV 另有一条：引擎实装后**还要**等渲染路径就绪（没有画面 = 不能用），
+    /// 所以 `.mpv` 要 `isEngineImplemented && isVideoOutputReady` 两个都真。
+    ///
     /// **策略（M02P3）**：不可用时由 UI 明确提示并引导用户改设置，**不自动退回 `.system`**。
     public var isAvailable: Bool {
         switch self {
         case .system:
             return true
         case .mpv:
-            return MpvAvailability.isEngineImplemented
+            return MpvAvailability.isEngineImplemented && MpvAvailability.isVideoOutputReady
         case .ffmpeg:
             return MpvAvailability.isFFmpegEngineImplemented
         }
@@ -215,6 +218,8 @@ public struct PlayerCoordinator {
     /// 创建内核实例；未接入的内核（`.mpv` / `.ffmpeg`，分别对应 M3/M4）返回 nil。
     ///
     /// 这不是降级：调用方必须把 nil 视为“该内核尚未实现”并提示用户，不得改用其它内核。
+    /// MPV 尤其注意：`MpvEngine` 已经写好了，但**渲染路径没定之前不接这条线** ——
+    /// 建成实例只会得到一个没有画面的播放器，比「不可用」更糟。
     public func makeEngine(kind: PlayerEngineKind, decoderMode: DecoderMode) -> (any PlayerEngine)? {
         switch kind {
         case .system:
@@ -230,7 +235,7 @@ public struct PlayerCoordinator {
         case .system:
             return "系统播放器不可用（异常状态，请反馈）"
         case .mpv:
-            return "MPV 内核尚未接入本构建（计划 M3）"
+            return "MPV 内核已实装（M3 第 4 步），但画面输出路径还没定（第 3 步需在 Mac/真机上做 PoC）—— 现阶段仍不可用"
         case .ffmpeg:
             return "自研 FFmpeg 内核尚未接入本构建（计划 M4）"
         }

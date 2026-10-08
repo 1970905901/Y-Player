@@ -34,12 +34,20 @@ public enum MpvAvailability {
 
     // MARK: - 实装状态（与「依赖是否链接」严格分开）
 
-    /// `MpvEngine` 是否已实装。
+    /// `MpvEngine` 是否已实装（M03P1 第 4 步）。
     ///
-    /// 依赖已接（`canImportLibmpv == true`）**不等于**引擎可用：渲染路径还没定（M03P1 第 3 步）、
-    /// 引擎代码还没写（第 4 步）。因此 `PlayerEngineKind.mpv.isAvailable` 继续为 false，
-    /// 界面就不会宣称一个播不了的内核「可用」。
-    public static let isEngineImplemented = false
+    /// **实装 ≠ 可用**：引擎代码齐了（加载 / 播放 / 暂停 / 跳转 / 倍速 / 轨道选择 / 进度 / 状态，
+    /// 见 `MpvEngine` + `MpvEventMapping`），但**画面输出（渲染路径）还没定** ——
+    /// 第 3 步要在 Mac/真机上做 SW / MoltenVK / GL 的 PoC。没有画面就等于不能用，
+    /// 所以 `PlayerEngineKind.mpv.isAvailable` 仍要看 ``isVideoOutputReady``。
+    public static let isEngineImplemented = true
+
+    /// MPV 渲染路径是否已定并接线（M03P1 第 3 步）。
+    ///
+    /// false 的含义很具体：`MpvEngine` 能把片子加载起来、能播、能报进度，**但没地方显示画面**。
+    /// 第 3 步的 PoC 选出路径后，在 `LibmpvSession` 里补 `vo` 与 render API（`MpvEngine` 与 seam 都不用动），
+    /// 再把这里改 true —— 那一刻 MPV 才真的对用户可用。
+    public static let isVideoOutputReady = false
 
     /// 自研 `FFmpegEngine`（M4）是否已实装。
     public static let isFFmpegEngineImplemented = false

@@ -1,0 +1,239 @@
+import Foundation
+
+/// MPV 内核（libmpv）—— **M03P1 第 4 步**：会话生命周期、命令下发、事件/属性到播放语义的翻译。
+///
+/// **范围与「不做的部分」（重要，别误以为能用了）**：
+/// - 本引擎实装的是「加载 / 播放 / 暂停 / 跳转 / 倍速 / 轨道选择 / 进度 / 状态」这一套；
+///   **画面输出（渲染路径）还没定** —— 第 3 步要在 Mac/真机上先做 SW / MoltenVK / GL 三选一的 PoC。
+///   所以 ``MpvAvailability/isVideoOutputReady`` 仍是 false，`PlayerEngineKind.mpv.isAvailable` 仍是 false：
+///   界面不会宣称一个「能播但没画面」的内核可用（正是 M03P1 修正过的那条语义）。
+/// - 真正的 C 调用在 ``MpvSession`` 的实装（`LibmpvSession`）里；这里只对着 seam 编程，
+///   于是状态机可以用假会话在 CI 上单测（`MpvEngineTests`）—— 真机到时只补渲染那一段。
+///
+/// **并发**：按 `PlayerEngine` 的约定，纯 C-API 内核用 `actor`（无主线程约束）。
+/// 事件循环在 actor 内跑：每轮 `mpv_wait_event` 最多阻塞 ``MpvEventMapping/eventWaitTimeout`` 秒，
+/// 因此 `pause()` / `seek()` 这类命令最坏等这么久（取值理由写在超时常量上）。
+public actor MpvEngine: PlayerEngine {
+    nonisolated public let kind: PlayerEngineKind = .mpv
+    nonisolated public let events: AsyncStream<PlayerEvent>
+    /// 用户选的解码方式：`.hardware` → `hwdec=auto-safe`，`.software` → `hwdec=no`。
+    nonisolated let decoderMode: DecoderMode
+
+    /// 会话工厂（单测注假的；生产走 ``MpvSessionFactory``）。
+    private let makeSession: @Sendable () -> (any MpvSession)?
+    private var session: (any MpvSession)?
+    private var eventLoop: Task<Void, Never>?
+    private var continuation: AsyncStream<PlayerEvent>.Continuation?
+    private var state: PlayerState = .idle
+    private var duration: Double = 0
+    /// 最近一次已知播放位置（`duration` 变化时补发的 `timeChanged` 要用）。
+    private var lastTime: Double = 0
+
+    public init(decoderMode: DecoderMode = .hardware) {
+        self.init(decoderMode: decoderMode, makeSession: { MpvSessionFactory.make() })
+    }
+
+    /// 单测入口：注入会话工厂，不碰真 libmpv。
+    init(decoderMode: DecoderMode, makeSession: @escaping @Sendable () -> (any MpvSession)?) {
+        self.decoderMode = decoderMode
+        self.makeSession = makeSession
+        var captured: AsyncStream<PlayerEvent>.Continuation?
+        events = AsyncStream<PlayerEvent> { captured = $0 }
+        continuation = captured
+    }
+
+    public func currentState() async -> PlayerState {
+        state
+    }
+
+    /// 结束事件流（持有者在销毁内核时调用；`teardown()` 不结束流，便于复用引擎加载下一个视频）。
+    public func finishEvents() {
+        continuation?.finish()
+        continuation = nil
+    }
+
+    // MARK: - 命令
+
+    public func load(_ resource: MediaResource) async throws {
+        guard let url = URL(string: resource.url), url.scheme != nil else {
+            throw PlayerError.invalidURL(resource.url)
+        }
+        await teardown()
+        guard let session = makeSession() else {
+            update(.failed(PlayerError.engineUnavailable(.mpv).message))
+            throw PlayerError.engineUnavailable(.mpv)
+        }
+        self.session = session
+        configure(session, resource: resource)
+
+        if let failure = session.initialize() {
+            session.destroy()
+            self.session = nil
+            update(.failed(failure))
+            throw PlayerError.loadFailed(failure)
+        }
+        for id in MpvEventMapping.observedIDs {
+            guard let name = MpvEventMapping.propertyName(for: id),
+                  let format = MpvEventMapping.propertyFormat(for: id)
+            else { continue }
+            session.observe(property: name, id: id, format: format)
+        }
+
+        update(.loading)
+        if let failure = session.command(["loadfile", url.absoluteString, "replace"]) {
+            update(.failed(failure))
+            throw PlayerError.loadFailed(failure)
+        }
+        startEventLoop()
+    }
+
+    public func play() async {
+        guard let session else { return }
+        _ = session.command(["set", "pause", "no"])
+        update(.playing)
+    }
+
+    public func pause() async {
+        guard let session else { return }
+        _ = session.command(["set", "pause", "yes"])
+        update(.paused)
+    }
+
+    public func seek(to seconds: Double) async {
+        guard let session else { return }
+        let target = max(seconds, 0)
+        _ = session.command(["seek", Self.number(target), "absolute"])
+        lastTime = target
+        emit(.timeChanged(current: target, duration: duration))
+    }
+
+    public func setRate(_ rate: Float) async {
+        guard let session else { return }
+        _ = session.command(["set", "speed", Self.number(Double(rate))])
+        emit(.speedChanged(rate))
+    }
+
+    public func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async {
+        guard let session else { return }
+        let name = switch kind {
+        case .video: "vid"
+        case .audio: "aid"
+        case .subtitle: "sid"
+        }
+        _ = session.command(["set", name, Self.trackValue(selection)])
+    }
+
+    public func teardown() async {
+        eventLoop?.cancel()
+        eventLoop = nil
+        session?.destroy()
+        session = nil
+        state = .idle
+        duration = 0
+        lastTime = 0
+    }
+
+    // MARK: - 内部
+
+    /// 把 `MediaResource` 翻成 mpv 选项。**注意：一项渲染相关的都没有**（`vo` 等第 3 步定路径后加）。
+    ///
+    /// 必须 `initialize()` 之前调用：libmpv 的选项在初始化之后再设基本无效。
+    private func configure(_ session: any MpvSession, resource: MediaResource) {
+        session.setOption(name: "hwdec", value: decoderMode == .hardware ? "auto-safe" : "no")
+        if resource.startPosition > 0 {
+            // mpv 的 `start`（秒）。0 时不设，免得干扰内核默认行为。
+            session.setOption(name: "start", value: Self.number(resource.startPosition))
+        }
+        if !resource.headers.isEmpty {
+            // `--http-header-fields` 是**逗号分隔**的 `名: 值` 串；排序只为输出稳定（便于排查与测试）。
+            let fields = resource.headers
+                .sorted { $0.key < $1.key }
+                .map { "\($0.key): \($0.value)" }
+                .joined(separator: ",")
+            session.setOption(name: "http-header-fields", value: fields)
+        }
+        if !resource.subtitleURLs.isEmpty {
+            session.setOption(name: "sub-files", value: resource.subtitleURLs.joined(separator: ","))
+        }
+    }
+
+    /// 起事件循环。
+    ///
+    /// - 用 `Task.detached`：这是个纯循环，**不继承** actor 隔离（继承了反而会让 `await`
+    ///   变成「同隔离调用」，招来无意义的编译警告）；
+    /// - `[weak self]` + 每轮 `guard let self`：引擎被释放后循环自己退出，不留空转任务；
+    /// - `teardown()` 会 `cancel()` 它，所以正常情况下不用等 `waitEvent` 超时。
+    private func startEventLoop() {
+        eventLoop?.cancel()
+        eventLoop = Task.detached { [weak self] in
+            while !Task.isCancelled {
+                guard let self, let event = await self.nextEvent() else { return }
+                await self.handle(event)
+            }
+        }
+    }
+
+    /// 取下一件事件；拿不到会话或已取消时返回 nil（循环就此结束）。
+    private func nextEvent() -> MpvSessionEvent? {
+        guard let session, !Task.isCancelled else { return nil }
+        return session.waitEvent(timeout: MpvEventMapping.eventWaitTimeout)
+    }
+
+    /// 处理一件会话事件（**内部可见**：单测直接喂事件，与真机的事件循环共用同一套语义）。
+    func handle(_ event: MpvSessionEvent) {
+        switch event {
+        case .none, .other, .shutdown:
+            // 超时 / 不关心的事件；`shutdown` 只在我们 destroy 时出现（teardown 已把状态置回 idle）。
+            break
+        case .fileLoaded:
+            // mpv 加载完即开始播（若用户此前按了暂停，`pause` 属性变化会把状态纠正过来）。
+            update(.playing)
+        case let .endFile(reason):
+            let failure = MpvEventMapping.isFailure(endFileReason: reason)
+            update(failure ? .failed("播放失败（mpv 报告 \(reason)）") : .ended)
+        case let .property(id, value):
+            apply(effect: MpvEventMapping.effect(ofProperty: id, value: value, duration: duration))
+        }
+    }
+
+    private func apply(effect: MpvPropertyEffect) {
+        switch effect {
+        case let .time(current, duration):
+            lastTime = current
+            emit(.timeChanged(current: current, duration: duration))
+        case let .duration(seconds):
+            duration = seconds
+            emit(.timeChanged(current: lastTime, duration: seconds))
+        case let .paused(paused):
+            // 加载途中来的 `pause` 变化先忽略：等 `file-loaded` 再定状态，
+            // 否则会出现「还没加载完就显示播放中」。
+            guard state == .playing || state == .paused else { return }
+            update(paused ? .paused : .playing)
+        case .ignore:
+            break
+        }
+    }
+
+    /// 轨道选择 → mpv 的值（禁用是 `no`，自动是 `auto`，指定轨道是轨道 id）。
+    static func trackValue(_ selection: TrackSelection) -> String {
+        switch selection {
+        case .auto: "auto"
+        case .disabled: "no"
+        case let .index(value): String(value)
+        }
+    }
+
+    /// 数值参数：固定 3 位小数，让命令串稳定（便于排查与测试断言）。
+    static func number(_ value: Double) -> String {
+        String(format: "%.3f", value)
+    }
+
+    private func update(_ newState: PlayerState) {
+        state = newState
+        emit(.stateChanged(newState))
+    }
+
+    private func emit(_ event: PlayerEvent) {
+        continuation?.yield(event)
+    }
+}
