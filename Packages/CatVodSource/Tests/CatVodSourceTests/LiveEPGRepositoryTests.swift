@@ -15,16 +15,20 @@ struct LiveEPGRepositoryTests {
     """
 
     /// 同一份 XML 的 gzip 版本（`Tools/out/make_epg_fixture.py` 生成）：两种头形态都要能解。
-        "H4sIAAAAAAACCl2QsU7DMBCG9zzF6VYUYhcJimS7Q6U+QWG3EpNacuzIOUUtG1vHCiF4CiT28joUeAuStKpavN19",
-        "d7++s5gsKwetiY0NXiK/ZAjG56GwvpR4N5+lY5yoRFALpfEmagoxtf4hpF5XRuKqdnplIqoEQOQL7b1xYAuJeU4t",
-        "H9odKGzTzw07ajqd36ccvrefX5u1yM5Yn5IdYoaijqGMuqoMNKQjSRyx0TVn7Ibfsu7BBRuzTrmhUJ+yqxN2iPun",
-        "RJacAaf7Mx8XqHavH79v25+nl93zu8gGurc5GnS/kFGrkj/o8XlRMwEAAA==",
-    ].joined()
-        "H4sICAAAAAAC/2VwZy54bWwAXZCxTsMwEIb3PMXpVhRiFwmKZLtDpT5BYbcSk1py7Mg5RS0bW8cKIXgKJPbyOhR4",
-        "C5K0qlq83X13v76zmCwrB62JjQ1eIr9kCMbnobC+lHg3n6VjnKhEUAul8SZqCjG1/iGkXldG4qp2emUiqgRA5Avt",
-        "vXFgC4l5Ti0f2h0obNPPDTtqOp3fpxy+t59fm7XIzlifkh1ihqKOoYy6qgw0pCNJHLHRNWfsht+y7sEFG7NOuaFQ",
-        "n7KrE3aI+6dElpwBp/szHxeodq8fv2/bn6eX3fO7yAa6tzkadL+QUauSP+jxeVEzAQAA",
-    ].joined()
+    /// 换行会被 `Data(base64Encoded:options:.ignoreUnknownCharacters)` 忽略，所以直接分行写。
+    private let gzipPlain = """
+    H4sIAAAAAAACCl2QsU7DMBCG9zzF6VYUYhcJimS7Q6U+QWG3EpNacuzIOUUtG1vHCiF4CiT28joUeAuStKpavN19
+    d7++s5gsKwetiY0NXiK/ZAjG56GwvpR4N5+lY5yoRFALpfEmagoxtf4hpF5XRuKqdnplIqoEQOQL7b1xYAuJeU4t
+    H9odKGzTzw07ajqd36ccvrefX5u1yM5Yn5IdYoaijqGMuqoMNKQjSRyx0TVn7Ibfsu7BBRuzTrmhUJ+yqxN2iPun
+    RJacAaf7Mx8XqHavH79v25+nl93zu8gGurc5GnS/kFGrkj/o8XlRMwEAAA==
+    """
+
+    private let gzipNamed = """
+    H4sICAAAAAAC/2VwZy54bWwAXZCxTsMwEIb3PMXpVhRiFwmKZLtDpT5BYbcSk1py7Mg5RS0bW8cKIXgKJPbyOhR4
+    C5K0qlq83X13v76zmCwrB62JjQ1eIr9kCMbnobC+lHg3n6VjnKhEUAul8SZqCjG1/iGkXldG4qp2emUiqgRA5Avt
+    vXFgC4l5Ti0f2h0obNPPDTtqOp3fpxy+t59fm7XIzlifkh1ihqKOoYy6qgw0pCNJHLHRNWfsht+y7sEFG7NOuaFQ
+    n7KrE3aI+6dElpwBp/szHxeodq8fv2/bn6eX3fO7yAa6tzkadL+QUauSP+jxeVEzAQAA
+    """
 
     private func makeSource(_ json: String) throws -> LiveSource {
         try JSONDecoder().decode(LiveSource.self, from: Data(json.utf8))
@@ -56,7 +60,7 @@ struct LiveEPGRepositoryTests {
     @Test("`.xml.gz`：按魔数解压（FLG=0 与带 FNAME 头两种都要能解）")
     func loadsGzip() async throws {
         for (label, base64) in [("FLG=0", gzipPlain), ("FNAME", gzipNamed)] {
-            let body = try #require(Data(base64Encoded: base64.trimmingCharacters(in: .whitespacesAndNewlines)))
+            let body = try #require(Data(base64Encoded: base64, options: .ignoreUnknownCharacters))
             let recorder = ParseRequestRecorder(response: HTTPResponse(status: 200, body: body))
             let guide = try await LiveEPGRepository(transport: recorder).load(makeSource(epg: "epg/cctv.xml.gz"))
             let title = guide.schedule(key: "cctv1", date: "2026-10-07")?.programs.first?.title
@@ -120,7 +124,7 @@ struct LiveEPGRepositoryTests {
         await expectFailure(.parseFailed, from: html, epg: "epg/cctv.xml")
 
         // 有 gzip 魔数但 DEFLATE 数据是垃圾 → 解压失败（不能当成空节目单）。
-        var brokenGzip = Data([0x1f, 0x8b, 0x08, 0x00])
+        var brokenGzip = Data([0x1F, 0x8B, 0x08, 0x00])
         brokenGzip.append(Data(repeating: 0x00, count: 6))
         brokenGzip.append(Data([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09]))
         let gzip = ParseRequestRecorder(response: HTTPResponse(status: 200, body: brokenGzip))
@@ -155,7 +159,7 @@ struct LiveEPGRepositoryTests {
             default:
                 Issue.record("错误类型不对：\(error)")
             }
-        } catch let error {
+        } catch {
             Issue.record("错误类型不对：\(error)")
         }
     }

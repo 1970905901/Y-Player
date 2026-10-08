@@ -16,7 +16,7 @@ import Compression
 public enum GZipDecoder {
     /// 是不是 gzip：按魔数判断，不信地址里的扩展名（很多站点的下载地址是 `?gz=1` 这种形态）。
     public static func looksLikeGzip(_ data: Data) -> Bool {
-        data.count >= 2 && data[data.startIndex] == 0x1f && data[data.startIndex + 1] == 0x8b
+        data.count >= 2 && data[data.startIndex] == 0x1F && data[data.startIndex + 1] == 0x8B
     }
 
     /// 解压 gzip 数据；不是 gzip、头尾不完整、DEFLATE 出错都返回 `nil`。
@@ -39,7 +39,7 @@ public enum GZipDecoder {
             return nil
         }
         let bytes = [UInt8](data)
-        guard bytes[0] == 0x1f, bytes[1] == 0x8b, bytes[2] == 0x08 else {
+        guard bytes[0] == 0x1F, bytes[1] == 0x8B, bytes[2] == 0x08 else {
             return nil
         }
         let flags = bytes[3]

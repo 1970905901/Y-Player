@@ -49,7 +49,9 @@ public struct LiveEPGRepository: Sendable {
                 if firstError == nil {
                     firstError = error
                 }
-            } catch let error {
+            } catch {
+                // 传输层已把底层错误统一包成 `CatVodError`（M6 请求管线），这里兜住漏网的实现：
+                // 格式上必须是裸 `catch`（SwiftFormat `redundantLetError`；与 `URLSessionTransport` 同一写法）。
                 if firstError == nil {
                     firstError = CatVodError.parseFailed(
                         flag: source.name,
