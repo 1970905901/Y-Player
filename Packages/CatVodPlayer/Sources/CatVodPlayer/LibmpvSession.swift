@@ -5,9 +5,11 @@ import Foundation
 /// 单独放一个类型而不是让引擎直接 `#if canImport`：引擎只对着 seam 编程，
 /// 「依赖在不在」这件事只有 ``MpvAvailability`` 与这里知道。
 public enum MpvSessionFactory {
-    public static func make() -> (any MpvSession)? {
+    /// - Parameter videoSurface: 画面层（MoltenVK 路径）。传 nil 只建「能解码、没画面」的会话 ——
+    ///   只有单测这么用；生产必须给（见 `MpvVideoSurface`）。
+    public static func make(videoSurface: MpvVideoSurface? = nil) -> (any MpvSession)? {
         #if canImport(Libmpv)
-        return LibmpvSession()
+        return LibmpvSession(videoSurface: videoSurface)
         #else
         return nil
         #endif
@@ -28,12 +30,15 @@ final class LibmpvSession: MpvSession, @unchecked Sendable {
     private var handle: OpaquePointer?
     /// `destroy()` 必须**幂等**：引擎 teardown 与 `deinit` 都可能调，重复 `mpv_terminate_destroy` 会崩。
     private var destroyed = false
+    /// 渲染路径（M03P1 第 3 步）：MoltenVK 要的那层 `CAMetalLayer`。nil = 只解码不出画（单测路径）。
+    private let videoSurface: MpvVideoSurface?
 
-    init?() {
+    init?(videoSurface: MpvVideoSurface? = nil) {
         guard let handle = mpv_create() else {
             return nil
         }
         self.handle = handle
+        self.videoSurface = videoSurface
     }
 
     deinit {
@@ -48,8 +53,24 @@ final class LibmpvSession: MpvSession, @unchecked Sendable {
 
     func initialize() -> String? {
         guard let handle, !destroyed else { return "libmpv 会话已销毁" }
+        applyVideoOutputOptions()
         let code = mpv_initialize(handle)
         return code < 0 ? Self.message(code) : nil
+    }
+
+    /// 渲染路径的四个选项（M03P1 第 3 步，逐条对齐 MPVKit 官方 Demo 的 `setupMpv`）。
+    ///
+    /// **必须在 `mpv_initialize` 之前设**：这几个都是启动期固定的选项，初始化后再设不生效。
+    /// 这也是这一层唯一与「画面」有关的代码 —— 引擎（`MpvEngine`）与 seam 都不认识渲染。
+    private func applyVideoOutputOptions() {
+        guard let surface = videoSurface else {
+            return
+        }
+        // 字符串形式的 wid 与 Demo 的 int64 形式等价：mpv 的字符串选项会按声明类型解析。
+        setOption(name: "wid", value: String(surface.windowID))
+        setOption(name: "vo", value: "gpu-next")
+        setOption(name: "gpu-api", value: "vulkan")
+        setOption(name: "gpu-context", value: "moltenvk")
     }
 
     func observe(property: String, id: UInt64, format: String) {

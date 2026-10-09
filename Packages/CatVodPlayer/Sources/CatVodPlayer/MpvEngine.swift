@@ -29,8 +29,11 @@ public actor MpvEngine: PlayerEngine {
     /// 最近一次已知播放位置（`duration` 变化时补发的 `timeChanged` 要用）。
     private var lastTime: Double = 0
 
-    public init(decoderMode: DecoderMode = .hardware) {
-        self.init(decoderMode: decoderMode, makeSession: { MpvSessionFactory.make() })
+    public init(decoderMode: DecoderMode = .hardware, videoSurface: MpvVideoSurface? = nil) {
+        self.init(
+            decoderMode: decoderMode,
+            makeSession: { MpvSessionFactory.make(videoSurface: videoSurface) }
+        )
     }
 
     /// 单测入口：注入会话工厂，不碰真 libmpv。

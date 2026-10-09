@@ -215,16 +215,26 @@ public struct PlayerCoordinator {
         return .ready(settings.engine)
     }
 
-    /// 创建内核实例；未接入的内核（`.mpv` / `.ffmpeg`，分别对应 M3/M4）返回 nil。
+    /// 创建内核实例；未接入的内核（`.ffmpeg`，对应 M4）返回 nil。
     ///
-    /// 这不是降级：调用方必须把 nil 视为“该内核尚未实现”并提示用户，不得改用其它内核。
-    /// MPV 尤其注意：`MpvEngine` 已经写好了，但**渲染路径没定之前不接这条线** ——
-    /// 建成实例只会得到一个没有画面的播放器，比「不可用」更糟。
-    public func makeEngine(kind: PlayerEngineKind, decoderMode: DecoderMode) -> (any PlayerEngine)? {
+    /// 这不是降级：调用方必须把 nil 视为“该内核不可用”并提示用户，不得改用其它内核。
+    ///
+    /// MPV 要 `videoSurface`（M03P1 第 3 步的渲染路径：MoltenVK 画进 `CAMetalLayer`）：
+    /// **没给画面层就返回 nil** —— 宁可说「不可用」，也不给一个没有画面的播放器。
+    public func makeEngine(
+        kind: PlayerEngineKind,
+        decoderMode: DecoderMode,
+        videoSurface: MpvVideoSurface? = nil
+    ) -> (any PlayerEngine)? {
         switch kind {
         case .system:
             return AVPlayerEngine(decoderMode: decoderMode)
-        case .mpv, .ffmpeg:
+        case .mpv:
+            guard let videoSurface else {
+                return nil
+            }
+            return MpvEngine(decoderMode: decoderMode, videoSurface: videoSurface)
+        case .ffmpeg:
             return nil
         }
     }
