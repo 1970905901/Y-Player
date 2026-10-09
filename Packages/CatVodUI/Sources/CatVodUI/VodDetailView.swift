@@ -100,6 +100,73 @@ public struct VodDetailView: View {
         }
     }
 
+    /// 该播哪一集：**有观看记录就是那一集**（=「继续播放」），否则第一集。
+    private var playSlot: (index: Int, episode: PlaylistParser.Episode)? {
+        guard let first = episodes.first else {
+            return nil
+        }
+        let index = progress?.episodeIndex ?? 0
+        guard episodes.indices.contains(index) else {
+            return (0, first)
+        }
+        return (index, episodes[index])
+    }
+
+    /// 大播放按钮（M11）：参考视频里它是**上行动作 + 下行信息**两行。
+    ///
+    /// 下行用的是站点给的集名 —— 视频里那一行 `[1.4GB]157.mp4 【X 仙逆】 · 01:51`
+    /// 就是「文件名（自带体积）+ 上次进度」，两个数据站点都已经给了，不用另造。
+    @ViewBuilder
+    private var playButtonRow: some View {
+        if let slot = playSlot {
+            NavigationLink {
+                destination(for: slot.episode, at: slot.index)
+            } label: {
+                VStack(spacing: 2) {
+                    Label(actionTitle, systemImage: "play.fill")
+                        .font(.headline)
+                    if !subtitle(of: slot.episode).isEmpty {
+                        Text(subtitle(of: slot.episode))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    /// 「继续播放」还是「播放」：**有进度且没看完**才叫继续。
+    private var actionTitle: String {
+        guard let progress, progress.position > 0, !progress.isFinished else {
+            return "播放"
+        }
+        return "继续播放"
+    }
+
+    private func subtitle(of episode: PlaylistParser.Episode) -> String {
+        var parts = [episode.displayName]
+        if let progress, progress.position > 0, !progress.isFinished {
+            parts.append(Self.timeText(Int(progress.position)))
+        }
+        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    /// `01:51` / `1:02:03`。自己拼不用 `String(format:)`，省一个 Foundation 依赖。
+    static func timeText(_ seconds: Int) -> String {
+        let total = max(0, seconds)
+        let hour = total / 3600
+        let minute = (total % 3600) / 60
+        let second = total % 60
+        func pad(_ value: Int) -> String {
+            value < 10 ? "0\(value)" : "\(value)"
+        }
+        return hour > 0
+            ? "\(hour):\(pad(minute)):\(pad(second))"
+            : "\(pad(minute)):\(pad(second))"
+    }
+
     public var body: some View {
         content
             .navigationTitle(vod?.vodName.isEmpty == false ? (vod?.vodName ?? "详情") : "详情")
@@ -238,6 +305,7 @@ public struct VodDetailView: View {
     /// 头部：大封面 + 片名与信息列 + 简介。
     private var embyHeader: some View {
         Section("影片") {
+            playButtonRow
             if isLoading, detail.list.isEmpty {
                 Text("加载中…")
                     .font(.footnote)
