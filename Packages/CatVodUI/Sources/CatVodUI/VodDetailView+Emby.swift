@@ -15,28 +15,21 @@ import SwiftUI
 /// `isLastWatched(_:)` / `destination(for:at:)`）随本次拆分从 private 放宽到 internal，
 /// 主文件里各自带一行说明。
 extension VodDetailView {
-    /// 骨架加载态（M11）：和真布局**同一副骨架** —— 封面 + 几行字 + 播放条 + 选集条。
+    /// 全幅骨架加载态（M11）：和真布局**同一副骨架** —— 大图 + 标题行 + 播放条 + 一排卡片。
     ///
     /// 参考视频里加载中就是这个形状，不是一个居中转圈。所以第一次进页面时，
     /// 屏幕上先出现「就是这里将来会有东西」的灰块，内容回来时原地换成真东西、不跳版。
     var embySkeleton: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                skeletonBlock(width: 104, height: 146)
-                VStack(alignment: .leading, spacing: 8) {
-                    skeletonBlock(width: 140, height: 16)
-                    skeletonBlock(width: 96, height: 12)
-                    skeletonBlock(width: 120, height: 12)
-                    skeletonBlock(width: 72, height: 12)
-                }
-            }
+        VStack(alignment: .leading, spacing: 12) {
+            skeletonBlock(width: nil, height: 320)
+            skeletonBlock(width: 140, height: 18)
+            skeletonBlock(width: 96, height: 14)
             // 播放条
-            skeletonBlock(width: nil, height: 34)
-            // 选集：一排占位，形状跟真卡片（顶部缩略图 + 一行集名）对齐
-            HStack(spacing: 8) {
-                skeletonBlock(width: 92, height: 92)
-                skeletonBlock(width: 92, height: 92)
-                skeletonBlock(width: 92, height: 92)
+            skeletonBlock(width: nil, height: 44)
+            // 选集：一排占位，形状跟真卡片（竖幅图 + 文件名）对齐
+            HStack(spacing: 10) {
+                skeletonBlock(width: Self.episodeCardWidth, height: Self.episodeCardImageHeight)
+                skeletonBlock(width: Self.episodeCardWidth, height: Self.episodeCardImageHeight)
             }
         }
     }
@@ -49,23 +42,31 @@ extension VodDetailView {
             .frame(maxWidth: width == nil ? .infinity : nil)
     }
 
-    /// 图标行（M11）。**目前只有「⋯」** —— 参考视频里还有 🔍 聚合搜索与 ♡ 收藏，
-    /// 那两项各自的落地点（海报墙搜索页、收藏落地）是独立的片，**先不放空按钮**：
-    /// 按下去没反应比没有这个按钮更糟。
+    /// 图标行（M11 参考图：🔍 聚合搜索 / ♡ 收藏 / ⋯ 更多）。
     ///
-    /// 菜单里的每一项都真的做事，且都能在别处找到同一套逻辑（不各写一份）。
+    /// 🔍 的落点（多站点聚合搜索海报墙）是独立的一片，**先不放空按钮**：
+    /// 按下去没反应比没有这个按钮更糟。♡ 与 ⋯ 都接真实动作。
     var iconRow: some View {
-        HStack {
-            Spacer()
+        HStack(spacing: 64) {
+            Button {
+                Task { await toggleFavorite() }
+            } label: {
+                Image(systemName: isFavorite ? "heart.fill" : "heart")
+                    .font(.title3)
+                    .foregroundStyle(Color.white)
+            }
+            .buttonStyle(.plain)
+
             Menu {
                 Toggle("元信息刮削", isOn: $model.tmdbScrapeEnabled)
                 Text(model.isTMDBConfigured ? "TMDB 已配置" : "TMDB 未配置（设置 → 播放 → 播放页）")
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .font(.title3)
+                    .foregroundStyle(Color.white)
             }
-            Spacer()
         }
+        .frame(maxWidth: .infinity)
     }
 
     /// 该播哪一集：**有观看记录就是那一集**（=「继续播放」），否则第一集。
@@ -90,18 +91,23 @@ extension VodDetailView {
             NavigationLink {
                 destination(for: slot.episode, at: slot.index)
             } label: {
-                VStack(spacing: 2) {
+                VStack(spacing: 8) {
+                    // 白色大按钮（参考图）：黑字白底、整行宽。
                     Label(actionTitle, systemImage: "play.fill")
                         .font(.headline)
+                        .foregroundStyle(Color.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 10))
                     if !subtitle(of: slot.episode).isEmpty {
                         Text(subtitle(of: slot.episode))
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.white.opacity(0.85))
                             .lineLimit(1)
                     }
                 }
-                .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.plain)
         }
     }
 
@@ -137,171 +143,161 @@ extension VodDetailView {
 
     // MARK: - Emby 视图
 
-    /// Emby 视图（设置 → 播放 → 播放页 → 显示视图）：大封面 + 横向滚动的线路与选集卡片。
+    /// Emby 视图（设置 → 播放 → 播放页 → 显示视图）：**全幅沉浸版** ——
+    /// 海报铺满顶部、渐变压暗，标题与线路名叠在图上；下面依次是播放按钮、图标行、简介与选集。
     ///
     /// 数据与精简视图完全相同（`detail` / `lines` / `episodes` / `progress`），
-    /// 只是把「一行行文字」换成「卡片 + 横向滚动」—— 收藏、换源、续播的行为一致。
+    /// 只是排布不同 —— 收藏、换源、续播的行为一致。
     var embyLayout: some View {
-        List {
-            // 元信息那一层（M11）：顶部背景图 / 标题 / 简介按 TMDB 来。
-            //
-            // 注意仍是**列表里的一行**、不是全幅 —— 参考视频里它是铺满顶部的。
-            // 做全幅要把它挪到 List 外面（整块布局要动），那是这一片之后单独一步，
-            // 不在这里顺手改（改布局和接元信息混一笔，出问题分不清是谁）。
-            TMDBDetailHeader(
-                model: model,
-                title: vod?.vodName ?? "",
-                fallbackPoster: detail.artwork,
-                mode: model.tmdbPosterMode
-            )
-            embyHeader
-            if lines.count > 1 {
-                embyLineSection
-            }
-            embyEpisodeSection
-            if !errorText.isEmpty {
-                Section("错误") {
-                    Text(errorText)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
+        ScrollView {
+            VStack(spacing: 0) {
+                if isLoading, detail.list.isEmpty {
+                    // 第一次进页面才给骨架；内容回来后原地换掉。
+                    embySkeleton
+                        .padding(16)
+                } else {
+                    TMDBDetailHeader(
+                        model: model,
+                        title: vod?.vodName ?? "",
+                        fallbackPoster: detail.artwork,
+                        lineName: currentLine?.name ?? "",
+                        mode: model.tmdbPosterMode
+                    )
+                    VStack(spacing: 16) {
+                        playButtonRow
+                        iconRow
+                        embyOverview
+                        embyEpisodeHeader
+                        embyEpisodeStrip
+                        wholeLineDownloadsRow
+                        if !errorText.isEmpty {
+                            Text(errorText)
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+                    .padding(.bottom, 28)
                 }
             }
         }
-        .adaptiveListStyle()
+        // 沉浸版：整页黑底 + 深色外观（参考图就是深色；标题 / 图标都是白字白图标）。
+        .background(Color.black.ignoresSafeArea())
+        .preferredColorScheme(.dark)
         .background(autoPlayLink)
+        // 页面级拉取：取图集 + 元信息（顶部与卡片共用同一次刮削；键变了才重拉）。
+        .task(id: episodePosterLoadKey) {
+            await loadEpisodePosterSet()
+        }
         .sheet(isPresented: $isEpisodeDrawerPresented) {
             EpisodeListDrawer(
                 episodes: episodes,
                 currentIndex: playSlot?.index
             ) { index in
-                openEpisodeFromDrawer(index)
+                openEpisode(at: index)
             }
         }
     }
 
-    /// 头部：大封面 + 片名与信息列 + 简介。
-    var embyHeader: some View {
-        Section("影片") {
-            playButtonRow
-            iconRow
-            if isLoading, detail.list.isEmpty {
-                // 第一次进页面才给骨架；内容回来后原地换掉。
-                embySkeleton
-            }
-            if let vod {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .top, spacing: 12) {
-                        AsyncImage(url: URL(string: vod.vodPic)) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            Color.secondary.opacity(0.15)
-                        }
-                        .frame(width: 104, height: 146)
-                        .clipShape(RoundedRectangle(cornerRadius: PlatformShims.cardCornerRadius))
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(vod.vodName.isEmpty ? vod.vodID : vod.vodName)
-                                .font(.headline)
-                            if !vod.vodRemarks.isEmpty {
-                                Text(vod.vodRemarks)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if !vod.typeName.isEmpty {
-                                Text(vod.typeName)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if !vod.vodYear.isEmpty || !vod.vodArea.isEmpty {
-                                Text([vod.vodYear, vod.vodArea].filter { !$0.isEmpty }.joined(separator: " · "))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if let summary = progressSummary {
-                                Text(summary)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    if !vod.vodContent.isEmpty {
-                        Text(vod.vodContent)
-                            .font(.footnote)
-                            .lineLimit(6)
-                    }
-                }
-            }
+    /// 简介（参考图里图标行下面那段）：TMDB overview 优先，没刮到回落到站点的 vodContent。
+    /// 原先「影片」分区里那些说明字段（备注 / 类型 / 年份 / 进度文案）不再单列 ——
+    /// 标题、线路名、简介已各就各位；进度在播放按钮下面那行里。
+    @ViewBuilder
+    var embyOverview: some View {
+        let overview = episodeMetadata?.overview ?? ""
+        let text = overview.isEmpty ? (vod?.vodContent ?? "") : overview
+        if !text.isEmpty {
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(.white.opacity(0.9))
+                .lineLimit(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    /// 线路：横向滚动的胶囊按钮（选中项加重底色）。
-    var embyLineSection: some View {
-        Section("线路") {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                        Button {
-                            selectedLineIndex = index
-                        } label: {
-                            Text(line.name)
-                                .font(.footnote)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(
-                                    Capsule().fill(
-                                        index == selectedLineIndex
-                                            ? Color.accentColor.opacity(0.2)
-                                            : Color.secondary.opacity(0.12)
-                                    )
-                                )
-                        }
-                        .buttonStyle(.borderless)
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-        }
-    }
-
-    /// 选集：横向滚动的卡片（缩略图 + 集名 + 不支持角标 + 上次看到标记；缩略图与顶部同一次刮削）。
-    /// 区头一行：「共 N 集」+「更多」→ 剧集列表抽屉（``EpisodeListDrawer``）。
-    var embyEpisodeSection: some View {
-        Section("选集") {
-            // 参考视频的区头「更多」：进剧集列表抽屉。上一集 / 下一集等其余区头控件
-            // 随区头整体对齐时再做，不在这里顺手加。
-            if !episodes.isEmpty {
-                HStack {
-                    Text("共 \(episodes.count) 集")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Spacer()
+    /// 选集区头（参考图）：「线路名 ▾」（点开切线路）+ 上一集 / 下一集 + 更多（剧集列表抽屉）。
+    ///
+    /// 原先单独一个「线路」胶囊区，按参考图收进这里 —— 一屏只留一处线路入口。
+    var embyEpisodeHeader: some View {
+        HStack(spacing: 18) {
+            Menu {
+                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                     Button {
-                        isEpisodeDrawerPresented = true
+                        selectedLineIndex = index
                     } label: {
-                        Label("更多", systemImage: "list.bullet")
-                            .font(.footnote)
+                        Text(index == selectedLineIndex ? "✓ \(line.name)" : line.name)
                     }
                 }
-            }
-            wholeLineDownloadsRow
-            if episodes.isEmpty {
-                if isLoading {
-                    // 选集区的加载态：和卡片同一副骨架（一排灰卡片），不是一行小字 ——
-                    // 参考视频里加载中屏幕上就是这些形状。卡片接图后统一成 92×92 的块。
-                    HStack(spacing: 8) {
-                        skeletonBlock(width: 92, height: 92)
-                        skeletonBlock(width: 92, height: 92)
-                        skeletonBlock(width: 92, height: 92)
-                    }
-                } else {
-                    Text("没有可用线路")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+            } label: {
+                HStack(spacing: 4) {
+                    Text(currentLine?.name ?? "线路")
+                        .font(.headline)
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
                 }
+                .foregroundStyle(Color.white)
             }
+
+            Spacer(minLength: 0)
+
+            Button {
+                if let index = previousEpisodeIndex {
+                    openEpisode(at: index)
+                }
+            } label: {
+                Image(systemName: "backward.end.fill")
+                    .font(.title3)
+                    .foregroundStyle(Color.white)
+            }
+            .buttonStyle(.plain)
+            .disabled(previousEpisodeIndex == nil)
+            .opacity(previousEpisodeIndex == nil ? 0.35 : 1)
+
+            Button {
+                if let index = nextEpisodeIndex {
+                    openEpisode(at: index)
+                }
+            } label: {
+                Image(systemName: "forward.end.fill")
+                    .font(.title3)
+                    .foregroundStyle(Color.white)
+            }
+            .buttonStyle(.plain)
+            .disabled(nextEpisodeIndex == nil)
+            .opacity(nextEpisodeIndex == nil ? 0.35 : 1)
+
+            Button {
+                isEpisodeDrawerPresented = true
+            } label: {
+                Text("更多")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.white)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// 选集横滑（参考图下半）：卡片一屏约两张，当前集滚到正中。
+    @ViewBuilder
+    var embyEpisodeStrip: some View {
+        if episodes.isEmpty {
+            if isLoading {
+                HStack(spacing: 10) {
+                    skeletonBlock(width: Self.episodeCardWidth, height: Self.episodeCardImageHeight)
+                    skeletonBlock(width: Self.episodeCardWidth, height: Self.episodeCardImageHeight)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text("没有可用线路")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
             ScrollView(.horizontal, showsIndicators: false) {
                 ScrollViewReader { proxy in
-                    HStack(spacing: 8) {
+                    HStack(alignment: .top, spacing: 10) {
                         ForEach(Array(episodes.enumerated()), id: \.element.id) { index, episode in
                             NavigationLink {
                                 destination(for: episode, at: index)
@@ -317,30 +313,31 @@ extension VodDetailView {
                     .onChange(of: selectedLineIndex) { _ in centerCurrentEpisode(on: proxy) }
                 }
             }
-            .task(id: episodePosterLoadKey) {
-                await loadEpisodePosterSet()
-            }
         }
     }
 
-    /// 单张选集卡片：顶部缩略图（TMDB 取图集，与顶部同一次刮削）+ 集名 + 角标 / 上次看到。
+    /// 选集卡片尺寸（参考图里一屏约两张）：宽度 / 竖幅图高度。
+    static let episodeCardWidth: CGFloat = 168
+    static let episodeCardImageHeight: CGFloat = 224
+
+    /// 单张选集卡片（参考图：竖幅图 + 文件名两行，图下面不要卡片底）。
     ///
     /// 没有取图集时（未配 key / 没搜到 / 刮削关）退化成纯文字卡 —— 不给「永远灰着」的图块。
     func embyEpisodeCard(_ episode: PlaylistParser.Episode, at index: Int) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             if let imageURL = episodePosterURL(at: index) {
                 AsyncImage(url: imageURL) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
                     Color.secondary.opacity(0.15)
                 }
-                .frame(width: 92, height: 52)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .frame(width: Self.episodeCardWidth, height: Self.episodeCardImageHeight)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
             }
-            HStack(spacing: 4) {
+            HStack(alignment: .top, spacing: 4) {
                 Text(episode.name.isEmpty ? "第 \(index + 1) 集" : episode.name)
-                    .font(.footnote)
-                    .lineLimit(1)
+                    .font(.caption2)
+                    .lineLimit(3)
                 if showsUnsupportedBadge(for: episode) {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.caption2)
@@ -353,21 +350,20 @@ extension VodDetailView {
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(width: 92, alignment: .leading)
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: PlatformShims.cardCornerRadius)
-                .fill(Color.secondary.opacity(0.12))
-        )
+        .frame(width: Self.episodeCardWidth, alignment: .leading)
     }
 
     /// 这张卡片该显示的图：`step` 用下标、`seed` 加下标打散 —— 各卡片各取一张、每次进来一样
     /// （取图规则见 ``PosterPicker``；这里不另立一套）。
+    ///
+    /// 没有 TMDB 取图集（未配 / 没搜到 / 刮削关）时回落**站点海报** ——
+    /// 参考图里每张卡片也是这张海报；总比一排纯文字卡像样。
     func episodePosterURL(at index: Int) -> URL? {
-        guard let picked = episodePosterSet?.image(step: index, seed: episodePosterSeed &+ UInt64(index)) else {
-            return nil
+        if let picked = episodePosterSet?.image(step: index, seed: episodePosterSeed &+ UInt64(index)) {
+            return URL(string: picked)
         }
-        return URL(string: picked)
+        let fallback = detail.artwork
+        return fallback.isEmpty ? nil : URL(string: fallback)
     }
 
     /// 把「该播的那一集」滚到横滑正中 —— 参考视频里当前集在中间，不在左端。
@@ -395,7 +391,8 @@ extension VodDetailView {
         "\(vod?.vodName ?? "")|\(model.tmdbPosterMode.rawValue)"
     }
 
-    /// 拉卡片要用的取图集：与顶部走同一份（同键并发会合流，不会各拉一次）。
+    /// 拉页面要用的取图集 + 元信息：与顶部走同一份（同键并发会合流，不会各拉一次）。
+    /// 简介那一行（``embyOverview``）用的就是这里的 metadata。
     func loadEpisodePosterSet() async {
         let title = vod?.vodName ?? ""
         guard !title.isEmpty else {
@@ -404,14 +401,16 @@ extension VodDetailView {
         let outcome = await model.tmdbBundle(for: title, mode: model.tmdbPosterMode)
         if case let .found(bundle) = outcome {
             episodePosterSet = bundle.posterSet
+            episodeMetadata = bundle.metadata
         }
     }
 
-    /// 抽屉里点了一集：关抽屉 → 走与点卡片**同一条**隐藏导航链进播放页。
+    /// 点一集开播（抽屉里选中的、区头的上一集 / 下一集都走它）：
+    /// 关抽屉 → 走与点卡片**同一条**隐藏导航链进播放页。
     ///
     /// 先等一小会儿再激活：抽屉退场动画没走完就 push，返回时偶发一层空白
     /// （与 `scheduleAutoPlayIfNeeded` 延迟 0.3 秒是同一个理由）。
-    func openEpisodeFromDrawer(_ index: Int) {
+    func openEpisode(at index: Int) {
         guard episodes.indices.contains(index) else {
             return
         }
@@ -421,5 +420,21 @@ extension VodDetailView {
             try? await Task.sleep(nanoseconds: 300_000_000)
             isAutoPlaying = true
         }
+    }
+
+    /// 「上一集」：以「该播的那一集」为基准（与播放按钮同一集）；到头回 nil。
+    var previousEpisodeIndex: Int? {
+        guard let base = playSlot?.index, base > 0 else {
+            return nil
+        }
+        return base - 1
+    }
+
+    /// 「下一集」：同上（末集回 nil）。
+    var nextEpisodeIndex: Int? {
+        guard let base = playSlot?.index, episodes.indices.contains(base + 1) else {
+            return nil
+        }
+        return base + 1
     }
 }

@@ -1,25 +1,31 @@
-import CatVodNet
 import CatVodSource
+import Foundation
 import SwiftUI
 
-/// Emby 视图顶部：**元信息驱动的背景图 + 标题 + 简介**（M11 第一片）。
+/// Emby 视图顶部的**全幅头部**（M11 第一片 + 全幅改造）：背景图铺满顶部、渐变压暗，
+/// 标题与当前线路名叠在图上（参考图的样子）。简介与提示在页面正文里，不在这层。
 ///
 /// 数据经 `AppModel.tmdbBundle(for:mode:)`（会话缓存 + 并发合流，与选集卡片**共用同一次刮削**），
-/// **不把加载状态塞进 `VodDetailView`**：
-/// 那片代码已经很大，而元信息是独立的一层 —— 它拉不到也不该拖垮详情本身。
+/// **不把加载状态塞进 `VodDetailView`**：那片代码已经很大，而元信息是独立的一层 ——
+/// 它拉不到也不该拖垮详情本身。
 ///
 /// 三态都明说，不静默：
-/// - 拉到了 → 背景图（按 ``PosterMode``）+ 标题 + 简介；
-/// - 没配 key → 一行提示 + 站点自带的海报兜底；
-/// - 拉失败 / 没搜到 → 一行原因，图仍用站点海报兜底。
+/// - 拉到了 → 背景图（按 ``PosterMode``）+ 标题 + 线路名；
+/// - 没配 key → 一行提示 + 站点自带的图片兜底；
+/// - 拉失败 / 没搜到 → 一行原因，图仍用站点图片兜底。
 struct TMDBDetailHeader: View {
     let model: AppModel
     /// 用来搜 TMDB 的片名（站点详情里的名字）。
     let title: String
     /// 站点自带的海报：TMDB 没结果时兜底，免得顶部空着。
     let fallbackPoster: String
+    /// 当前线路名（参考图里叠在标题下面那行，如「115 原画」）。
+    let lineName: String
     /// 取图策略（顶部与卡片共用同一套，见 ``PosterPicker``）。
     let mode: PosterMode
+
+    /// 全幅高度：参考图里海报大约铺到屏幕的一半。
+    static let heroHeight: CGFloat = 440
 
     @State private var posterSet: TMDBPosterSet?
     @State private var metadata: TMDBMetadata?
@@ -38,55 +44,69 @@ struct TMDBDetailHeader: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            poster
-            VStack(alignment: .leading, spacing: 4) {
+        ZStack(alignment: .bottom) {
+            heroImage
+            // 底部渐变压暗：图与页面的黑底无缝衔接，标题直接叠在图上。
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .black.opacity(0.65), location: 0.55),
+                    .init(color: .black, location: 1),
+                ],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+            VStack(spacing: 6) {
                 Text(displayTitle)
-                    .font(.title3)
-                    .bold()
-                if let metadata, !metadata.overview.isEmpty {
-                    Text(metadata.overview)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
+                    .font(.title2.bold())
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                if !lineName.isEmpty {
+                    Text(lineName)
+                        .font(.footnote)
+                        .foregroundStyle(.white.opacity(0.85))
                 }
                 if !noticeText.isEmpty {
                     Text(noticeText)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
                 }
             }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 16)
         }
+        .frame(height: Self.heroHeight)
+        .frame(maxWidth: .infinity)
+        .clipped()
         .task(id: loadKey) {
             await load()
             await rotate()
         }
     }
 
+    /// 大图：拿到哪张显示哪张（TMDB 取图集 → 站点海报兜底）；没有就是深灰底。
     @ViewBuilder
-    private var poster: some View {
+    private var heroImage: some View {
         if let url = posterURL, let imageURL = URL(string: url) {
             AsyncImage(url: imageURL) { phase in
                 switch phase {
                 case let .success(image):
-                    image.resizable().aspectRatio(contentMode: .fill)
+                    image.resizable().scaledToFill()
                 default:
-                    // 加载中也给**有形状**的骨架，不是空白（与参考视频的加载态一致）。
                     skeleton
                 }
             }
-            .frame(height: 200)
-            .clipped()
-            .cornerRadius(12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             skeleton
         }
     }
 
+    /// 深灰占位：加载中与「一张图都没有」都用它 —— 形状先立住，不跳版。
     private var skeleton: some View {
-        RoundedRectangle(cornerRadius: 12)
-            .fill(Color.secondary.opacity(0.15))
-            .frame(height: 200)
+        Rectangle()
+            .fill(Color.secondary.opacity(0.2))
     }
 
     /// 现在该显示哪张：TMDB 图集优先，其次站点海报。

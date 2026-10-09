@@ -40,7 +40,9 @@ public struct VodDetailView: View {
     @State var episodePosterSeed = UInt64.random(in: 0 ..< UInt64.max)
     /// 选集卡片共用的取图集（与顶部同一次刮削，经 `AppModel.tmdbBundle(for:mode:)` 缓存与合流）。
     @State var episodePosterSet: TMDBPosterSet?
-    /// 剧集列表抽屉是否展开（M11：选集区头的「更多」；回传的跳转走 `openEpisodeFromDrawer`）。
+    /// 同一次刮削的元信息（简介那一行要用；没刮到时为 nil）。
+    @State var episodeMetadata: TMDBMetadata?
+    /// 剧集列表抽屉是否展开（M11：选集区头的「更多」；回传的跳转走 `openEpisode(at:)`）。
     @State var isEpisodeDrawerPresented = false
 
     public init(model: AppModel, site: Site?, vodID: String) {
