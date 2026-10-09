@@ -172,6 +172,19 @@ struct PlaybackPageSettingsSection: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            // 切到 Emby 视图才要求填（M11）：元信息那一层的三个入口。
+            // 不填也能用 —— 只是那一层不工作、详情页显示占位，不弹错。
+            if model.playbackPageLayout == .emby {
+                TextField("TMDB api key", text: $model.tmdbConfig.apiKey)
+                TextField("api 代理地址（可空）", text: $model.tmdbConfig.apiProxy)
+                TextField("图片代理地址（可空）", text: $model.tmdbConfig.imageProxy)
+                Text(model.isTMDBConfigured
+                    ? "元信息已可用：标题、简介、图集都从 TMDB 取。"
+                    : "没填 api key —— 元信息这一层不工作，界面显示占位。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }
