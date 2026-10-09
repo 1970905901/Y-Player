@@ -32,21 +32,26 @@ struct DiscoverPageTests {
 
     // MARK: - DiscoverContentMerge
 
-    @Test("分类接口不带 class：分类条不能被整页替换抹掉（「显示一下就不见了」的成因）")
+    @Test("分类接口不带 class / filters：分类条与筛选行都不能被整页替换抹掉（「闪一下没了」的成因）")
     func contentMergeKeepsCategories() {
         var home = SpiderResult()
         home.categories = [VodCategory(typeID: "1", typeName: "玩偶电影")]
+        home.filters = ["1": [VodFilter(key: "area", name: "地区", initialValue: "全部")]]
 
         var page = SpiderResult()
         page.pagecount = 9
 
         let merged = DiscoverContentMerge.content(preservingCategories: page, current: home)
         #expect(merged.categories == home.categories)
+        #expect(merged.filters == home.filters)
         #expect(merged.pagecount == 9)
 
         var richer = page
         richer.categories = [VodCategory(typeID: "2", typeName: "剧集")]
-        #expect(DiscoverContentMerge.content(preservingCategories: richer, current: home).categories == richer.categories)
+        richer.filters = ["2": [VodFilter(key: "year", name: "时间", initialValue: "全部")]]
+        let merged2 = DiscoverContentMerge.content(preservingCategories: richer, current: home)
+        #expect(merged2.categories == richer.categories)
+        #expect(merged2.filters == richer.filters)
     }
 
     // MARK: - DiscoverSiteSelection

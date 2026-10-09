@@ -32,18 +32,20 @@ enum DiscoverPaging {
 
 /// 发现页的**内容合并**：分类 / 翻页响应落回 `result` 前的保护规则。
 ///
-/// 为什么要有它：分类条的数据（`class`）由**首页**响应提供，而分类接口**常常不带它**
-/// （实测「玩偶」系接口）。旧写法是整页替换 —— 第一次进分类就把分类条抹掉了，
-/// 表现是「分类显示一下就不见了」。规则与 ``HomeView/appendPage(_:number:)`` 一致：
-/// **上游给了就用上游的（可能改名 / 改序），没给就保持原样**。
+/// 为什么要有它：分类条（`class`）与筛选行（`filters`）的数据都由**首页**响应提供，
+/// 而分类接口**两头都不带**（实测「玩偶」系接口）。旧写法是整页替换 —— 第一次进分类就把
+/// 分类条和筛选行抹掉了，表现是「闪一下就不见了」。规则与 ``HomeView/appendPage(_:number:)``
+/// 一致：**上游给了就用上游的（可能改名 / 改序），没给就保持原样**。
 enum DiscoverContentMerge {
-    /// 用 `incoming` 替换 `current` 的内容，但**保护分类条**：`incoming` 没带分类时沿用 `current` 的。
+    /// 用 `incoming` 替换 `current` 的内容；`incoming` 没带分类 / 筛选时沿用 `current` 的。
     static func content(preservingCategories incoming: SpiderResult, current: SpiderResult) -> SpiderResult {
-        guard !incoming.hasCategories else {
-            return incoming
-        }
         var next = incoming
-        next.categories = current.categories
+        if !incoming.hasCategories {
+            next.categories = current.categories
+        }
+        if incoming.filters.isEmpty {
+            next.filters = current.filters
+        }
         return next
     }
 }
