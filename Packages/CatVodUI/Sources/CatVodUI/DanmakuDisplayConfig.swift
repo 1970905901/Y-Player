@@ -145,7 +145,7 @@ public extension DanmakuDisplayConfig {
     ///
     /// `DanmakuDisplayStyle` 只认数值，不认「档位」这类界面概念；反过来，渲染层也不该知道
     /// 「速度」有慢 / 中 / 快。换算只在这里发生一次。
-    var style: DanmakuDisplayStyle {
+    internal var style: DanmakuDisplayStyle {
         var style = DanmakuDisplayStyle()
         style.fontScale = fontScale
         style.opacity = opacity

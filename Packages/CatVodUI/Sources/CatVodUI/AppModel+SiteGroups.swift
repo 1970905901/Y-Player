@@ -78,7 +78,7 @@ public extension AppModel {
     }
 
     /// 面板抽标签 / 显示名 / 搜索需要的**全部输入**（打包成一个值给面板，见 ``DiscoverSiteRuleInput``）。
-    var siteRuleInput: DiscoverSiteRuleInput {
+    internal var siteRuleInput: DiscoverSiteRuleInput {
         let settings = siteGroupRuleSettingsForCurrentConfig
         return DiscoverSiteRuleInput(
             interfaceRules: siteGroupRules,

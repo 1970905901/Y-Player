@@ -142,7 +142,7 @@ public extension SubtitleDisplayConfig {
     /// 转成上屏参数 —— 设置与渲染之间**唯一**的桥。
     ///
     /// `SubtitleDisplayStyle` 只认数值，不认「低 / 中 / 高」「半透明 / 深色」这类界面概念。
-    var style: SubtitleDisplayStyle {
+    internal var style: SubtitleDisplayStyle {
         var style = SubtitleDisplayStyle()
         style.fontScale = fontScale
         style.bottomInset *= position.insetScale
