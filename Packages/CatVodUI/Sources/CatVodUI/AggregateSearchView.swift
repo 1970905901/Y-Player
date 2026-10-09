@@ -47,7 +47,7 @@ struct AggregateSearchView: View {
                 if !sections.isEmpty {
                     row(name: "全部", count: totalCount, key: nil)
                     ForEach(sections) { section in
-                        row(name: section.siteName, count: section.count, key: section.siteKey)
+                        row(name: section.siteName, count: section.count, key: section.site.key)
                     }
                 }
             }
