@@ -12,17 +12,26 @@ import SwiftUI
 /// MPV / 自研 FFmpeg 内核（M3/M4）接入后会替换中间的渲染视图，状态区与错误提示保持不变。
 @MainActor
 public struct PlaybackView: View {
-    let resource: MediaResource
-    let title: String
+    /// 当前正在播的资源：**换集时会换**（见 `switchEpisode(to:)`），所以是 `@State`。
+    @State private var activeResource: MediaResource
+    /// 当前标题（换集跟着换）。
+    @State private var activeTitle: String
     /// 播放设置（内核 + 解码方式）：来自设置页，**运行时严格遵循，不自动降级**。
     let settings: PlaybackSettings
     /// 进度上下文（键 + 集下标 + 展示元数据）；nil 表示不记录进度（例如从搜索页直接播放的临时场景）。
     ///
     /// 展示元数据（片名/封面/站源/线路/集名）随进度一起落库，「追剧（播放历史）」列表
     /// 就能直接渲染，不必再请求一次详情（见 ``PlaybackEntryMetadata``）。
-    let progressContext: PlaybackProgressContext?
+    @State private var activeProgressContext: PlaybackProgressContext?
     /// 进度存储；nil 表示不记录。
     let progressStore: PlaybackProgressStore?
+    /// 播放列表（M12P1）：给了它，播放页就能自己换集（选集 / 下一集 / 片尾连播）；
+    /// nil = 这页不换集（直播、下载播放、设置页试播这些入口不传）。
+    let playlist: PlaybackPlaylist?
+    /// 当前是第几集（换集时更新，供「选集」抽屉高亮与「下一集」判定）。
+    @State private var currentEpisodeIndex: Int?
+    /// 「选集」抽屉是否展开。
+    @State private var isEpisodeDrawerPresented = false
     /// 「开始一次播放」的回传口（M06l）：换集/换台时上层用它把跨集累计的东西归零（当前用于「跳过广告」统计）。
     ///
     /// 为什么不让播放页直接拿 `AppModel`：这里只需要「播了」这一个信号，
@@ -103,12 +112,15 @@ public struct PlaybackView: View {
         danmakuLines: [DanmakuLine] = [],
         danmakuDisplay: DanmakuDisplayConfig = DanmakuDisplayConfig(),
         onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> Int)? = nil,
+        playlist: PlaybackPlaylist? = nil,
         onStart: (() -> Void)? = nil
     ) {
-        self.resource = resource
-        self.title = title
+        _activeResource = State(initialValue: resource)
+        _activeTitle = State(initialValue: title)
         self.settings = settings
-        self.progressContext = progressContext
+        _activeProgressContext = State(initialValue: progressContext)
+        self.playlist = playlist
+        _currentEpisodeIndex = State(initialValue: playlist?.currentIndex)
         self.progressStore = progressStore
         self.danmaku = danmaku
         self.onDanmaku = onDanmaku
@@ -143,13 +155,25 @@ public struct PlaybackView: View {
                 if !audioTracks.isEmpty || !subtitleTracks.isEmpty {
                     tracksSection
                 }
+                if let playlist {
+                    Section("选集") {
+                        Button("选集（共 \(playlist.episodes.count) 集）") {
+                            isEpisodeDrawerPresented = true
+                        }
+                        if let next = nextEpisodeIndex {
+                            Button("下一集：\(playlist.episodeName(at: next))") {
+                                Task { await switchEpisode(to: next) }
+                            }
+                        }
+                    }
+                }
                 Section("媒体") {
-                    Text(resource.url)
+                    Text(activeResource.url)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
-                    if !resource.headers.isEmpty {
-                        Text("已携带 \(resource.headers.count) 个请求 header")
+                    if !activeResource.headers.isEmpty {
+                        Text("已携带 \(activeResource.headers.count) 个请求 header")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -181,9 +205,19 @@ public struct PlaybackView: View {
         }
         // 外观跟随应用 / 系统（用户口径）：信息区与导航栏回落系统外观。
         // 画面区自己的黑色衬底**不跟随** —— 视频舞台在浅色下也应是黑的（跟随的是页面，不是画面）。
-        .navigationTitle(title)
+        .navigationTitle(activeTitle)
         // 播放页同样登记为沉浸页；详情 → 播放会叠两层，登记簿按计数算（见 Platform/AdaptiveTabBar.swift）。
         .immersiveTabBarPage()
+        .sheet(isPresented: $isEpisodeDrawerPresented) {
+            if let playlist {
+                EpisodeListDrawer(episodes: playlist.episodes, currentIndex: currentEpisodeIndex) { index in
+                    isEpisodeDrawerPresented = false
+                    Task { await switchEpisode(to: index) }
+                }
+                // 与详情页的抽屉同一形态：半屏（iOS 15 回落整页）。
+                .adaptiveHalfSheet()
+            }
+        }
         .task {
             // 「开始一次播放」的回传口（M06l）：换集/换台时上层用它把「跳过广告」的累计统计归零。
             onStart?()
@@ -500,19 +534,19 @@ public struct PlaybackView: View {
         guard let onEnqueueDownloads else {
             return -1
         }
-        return await onEnqueueDownloads(requests, siteKey, title, resource.headers)
+        return await onEnqueueDownloads(requests, siteKey, title, activeResource.headers)
     }
 
     private func enqueueDownload() async {
         let request = DownloadRequest(
-            episode: danmaku?.episode ?? title,
+            episode: danmaku?.episode ?? activeTitle,
             line: "",
-            url: resource.url
+            url: activeResource.url
         )
         let added = await enqueueViaUpperLayer(
             [request],
-            siteKey: progressContext?.key.siteKey ?? "",
-            title: danmaku?.name ?? title
+            siteKey: activeProgressContext?.key.siteKey ?? "",
+            title: danmaku?.name ?? activeTitle
         )
         downloadNotice = added == 0
             ? "这一集已经在下载列表里了（同站点 + 同名 + 同集只下一次）。"
@@ -539,7 +573,7 @@ extension PlaybackView {
             errorText = "\(kind.displayName)：\(reason)\n请到「接口 → 播放设置」更换内核。"
             return
         }
-        guard !resource.url.isEmpty else {
+        guard !activeResource.url.isEmpty else {
             errorText = "播放地址为空"
             return
         }
@@ -590,6 +624,10 @@ extension PlaybackView {
                 if state == .ended {
                     isFinished = true
                     await persist(force: true)
+                    // 片尾自动下一集（M12P1）：有下一集才连播；最后一集停在结束态等人。
+                    if let next = nextEpisodeIndex {
+                        await switchEpisode(to: next)
+                    }
                 } else if state == .paused {
                     await persist(force: true)
                 }
@@ -622,14 +660,16 @@ extension PlaybackView {
 
     /// 续播资源：有进度记录时把 `startPosition` 换成上次位置。
     func resumableResource() async -> MediaResource {
-        guard let progressContext, let progressStore, let saved = await progressStore.progress(for: progressContext.key) else {
-            return resource
+        guard let activeProgressContext, let progressStore,
+              let saved = await progressStore.progress(for: activeProgressContext.key)
+        else {
+            return activeResource
         }
         let resume = saved.resumePosition()
         guard resume > 0 else {
-            return resource
+            return activeResource
         }
-        var copy = resource
+        var copy = activeResource
         copy.startPosition = resume
         resumedFromText = "已从上次位置续播（\(Self.timeText(resume))）"
         return copy
@@ -637,7 +677,7 @@ extension PlaybackView {
 
     /// 落一次进度（节流；`force` 用于暂停 / 播放结束 / 离开页面）。
     func persist(force: Bool) async {
-        guard let progressContext, let progressStore, latestPosition > 0 else {
+        guard let activeProgressContext, let progressStore, latestPosition > 0 else {
             return
         }
         let now = Date()
@@ -647,13 +687,13 @@ extension PlaybackView {
         lastPersistAt = now
         await progressStore.save(
             PlaybackProgress(
-                key: progressContext.key,
+                key: activeProgressContext.key,
                 position: latestPosition,
                 duration: latestDuration,
                 isFinished: isFinished,
-                episodeIndex: progressContext.episodeIndex,
+                episodeIndex: activeProgressContext.episodeIndex,
                 updatedAt: now,
-                metadata: progressContext.metadata
+                metadata: activeProgressContext.metadata
             )
         )
     }
@@ -663,13 +703,71 @@ extension PlaybackView {
         latestPosition = 0
         isFinished = false
         resumedFromText = ""
-        if let progressContext, let progressStore {
-            await progressStore.clear(for: progressContext.key)
+        if let activeProgressContext, let progressStore {
+            await progressStore.clear(for: activeProgressContext.key)
         }
         guard let engine else {
             return
         }
         await engine.seek(to: 0)
+    }
+
+    // MARK: - 换集（M12P1）
+
+    /// 下一集下标；没有播放列表 / 已经是最后一集 → nil。
+    private var nextEpisodeIndex: Int? {
+        playlist?.nextIndex(after: currentEpisodeIndex)
+    }
+
+    /// 换一集：走播放列表给的加载器，然后在**同一个引擎**上重新 load。
+    ///
+    /// 不重建引擎：两种内核的 `load` 都支持复用（系统内核换 `AVPlayerItem`、MPV 每次 load 重建会话）。
+    /// 换集后进度上下文、标题、弹幕一起跟着换 —— 否则「上次看到」会指回旧集、弹幕还是上一集的。
+    func switchEpisode(to index: Int) async {
+        guard let playlist, playlist.episodes.indices.contains(index), index != currentEpisodeIndex else {
+            return
+        }
+        guard let next = await playlist.loadResource(index) else {
+            errorText = "这一集没法在播放页直接换（需要解析链的集请回详情页点它）。"
+            return
+        }
+        currentEpisodeIndex = index
+        playlist.onIndexChanged?(index)
+        activeResource = next.resource
+        activeProgressContext = next.progressContext
+        activeTitle = next.title.isEmpty ? playlist.episodeName(at: index) : next.title
+        // 新一集的界面状态：进度、轨道、提示、错误全部从零开始。
+        latestPosition = 0
+        latestDuration = 0
+        isFinished = false
+        resumedFromText = ""
+        errorText = ""
+        audioTracks = []
+        subtitleTracks = []
+        audioSelection = .auto
+        subtitleSelection = .auto
+        isScrubbing = false
+        // 弹幕要按新集重新搜（搜索用的是集名）；没搜到就当这集没有弹幕。
+        if let danmaku {
+            onDanmaku?(DanmakuRequest(name: danmaku.name, episode: playlist.episodeName(at: index)))
+        }
+        await loadActiveResource()
+    }
+
+    /// 让当前引擎加载 `activeResource`（换集走这里；首播走 `start()`）。
+    private func loadActiveResource() async {
+        guard let engine else {
+            return
+        }
+        do {
+            try await engine.load(resumableResource())
+            await engine.play()
+            await engine.setRate(speed)
+        } catch let error as PlayerError {
+            errorText = error.message
+        } catch {
+            errorText = error.localizedDescription
+        }
     }
 
     /// 音轨 / 字幕轨选择。

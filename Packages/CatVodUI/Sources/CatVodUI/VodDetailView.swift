@@ -340,16 +340,91 @@ public struct VodDetailView: View {
         return progress.episodeIndex == index && progress.position > 0
     }
 
+    /// 播放页自己的换集能力（M12P1）：把「第 i 集怎么变成资源」包成闭包交给播放页
+    /// —— 播放页不认识站点，换集的路子由详情页决定。
+    ///
+    /// 三种集走三条路（与 ``destination(for:at:)`` 的分派一一对应）：
+    /// - 直链（type 0/1/2）：同步造资源；
+    /// - 要向站点 / 宿主换地址（type 3/4）：异步换（与 `SitePlayEpisodeView` 同一条路）；
+    /// - 需要解析链的集：返回 nil —— 那条路播放页不自己走，界面会提示回详情页点。
+    func episodePlaylist(currentIndex: Int) -> PlaybackPlaylist {
+        PlaybackPlaylist(
+            episodes: episodes,
+            currentIndex: currentIndex,
+            loadResource: { index in
+                guard episodes.indices.contains(index) else {
+                    return nil
+                }
+                let target = episodes[index]
+                let context = progressContext(for: target, at: index)
+                if let resource = makeResource(for: target) {
+                    return PlaybackEpisodeResource(
+                        resource: resource,
+                        progressContext: context,
+                        title: target.displayName
+                    )
+                }
+                guard let site, isSpiderPlayable(site) || requiresSitePlay(site, episode: target) else {
+                    return nil
+                }
+                guard let resource = await siteResource(site: site, episode: target) else {
+                    return nil
+                }
+                return PlaybackEpisodeResource(
+                    resource: resource,
+                    progressContext: context,
+                    title: target.displayName
+                )
+            }
+        )
+    }
+
+    /// 向站点 / 宿主换一集的播放地址（与 ``SitePlayEpisodeView`` 同一条路）。
+    ///
+    /// 与那条路的**唯一区别**：这里不处理「站点说还要再解析一次」—— 那种集播放页不自己换，
+    /// 返回 nil 让界面提示回详情页（解析链要换页面、要等 Web 嗅探，不适合在播放页里悄悄切）。
+    func siteResource(site: Site, episode: PlaylistParser.Episode) async -> MediaResource? {
+        guard let result = try? await model.makeSiteClient().play(
+            site: site,
+            flag: currentLine?.name ?? "",
+            id: episode.url
+        ) else {
+            return nil
+        }
+        model.notePlaybackInfo(from: result)
+        await model.loadSubtitles(SubtitleRequest(
+            sources: result.subs,
+            headers: HTTPHeaderMerger.merge([site.header, result.header])
+        ))
+        guard let playURL = result.primaryPlaybackURL,
+              !playURL.isEmpty,
+              !result.requiresParsing
+        else {
+            return nil
+        }
+        return model.playbackResource(MediaResource(
+            url: playURL,
+            headers: HTTPHeaderMerger.merge([site.header, result.header]),
+            startPosition: 0,
+            format: result.format,
+            title: episode.displayName,
+            artwork: result.artwork
+        ))
+    }
+
     @ViewBuilder
     // （internal：拆分出的 `VodDetailView+Emby.swift` 也要用，不能是 private。）
     func destination(for episode: PlaylistParser.Episode, at index: Int) -> some View {
+        // 播放页自己的换集能力（M12P1）：详情页知道「集列表 + 线路 + 站点」，包成闭包交给它。
+        let playlist = episodePlaylist(currentIndex: index)
         if let resource = makeResource(for: episode) {
             PlaybackView(
                 resource: resource,
                 title: episode.displayName,
                 settings: model.playbackSettings,
                 progressContext: progressContext(for: episode, at: index),
-                progressStore: model.progressStore
+                progressStore: model.progressStore,
+                playlist: playlist
             )
         } else if let site, isSpiderPlayable(site) {
             // js2p / CatSpider 站点：播放地址要用 `POST /play` 换，因此走异步入口。
@@ -360,7 +435,8 @@ public struct VodDetailView: View {
                 title: vod?.vodName ?? "",
                 lineName: currentLine?.name ?? "",
                 episodeIndex: index,
-                progressKey: progressKey
+                progressKey: progressKey,
+                playlist: playlist
             )
         } else if let site, requiresSitePlay(site, episode: episode) {
             // type=4：播放地址要用站点的 `play` 接口换（`play` + `flag`），同样是异步入口（M06n）。
@@ -371,7 +447,8 @@ public struct VodDetailView: View {
                 title: vod?.vodName ?? "",
                 lineName: currentLine?.name ?? "",
                 episodeIndex: index,
-                progressKey: progressKey
+                progressKey: progressKey,
+                playlist: playlist
             )
         } else if let site, canParse(episode) {
             // 需要解析（`parse/jx = 1`）的集：走解析链（M5b 已支持 type=1 JSON；type=0/4 会给出 M5c 的原因）。
