@@ -1,3 +1,5 @@
+import CatVodCore
+import CatVodPlayer
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -88,6 +90,19 @@ struct SettingsDownloadView: View {
                 }
             }
             HStack(spacing: 16) {
+                if task.status == .finished, let file = model.localDownloadedFile(forRemoteURL: task.url) {
+                    // 已下好的本地文件直接交给播放页：地址是 `file://`、不需要 header，
+                    // 也不带弹幕/字幕（那是从站点结果来的，本地文件没有对应的搜索上下文）。
+                    NavigationLink {
+                        PlaybackView(
+                            resource: MediaResource(url: file.absoluteString),
+                            title: title(of: task),
+                            settings: model.playbackSettings
+                        )
+                    } label: {
+                        Text("播放")
+                    }
+                }
                 if task.status != .finished {
                     Button(primaryActionTitle(task)) {
                         Task {
