@@ -16,6 +16,12 @@ struct AggregateSearchTests {
         )
     }
 
+    @Test("可搜站点：永久禁搜与平台不可用的都不算，临时禁搜（2）仍算")
+    func searchableSitesFilters() {
+        let sites = [site(key: "a"), site(key: "b", searchable: 0), site(key: "c", searchable: 2)]
+        #expect(AggregateSearchRules.searchableSites(sites: sites).map(\.key) == ["a", "c"])
+    }
+
     @Test("有索引站点就只搜「索引站点」——上游 indexs 的语义就是参与聚合搜索")
     func prefersIndexSites() {
         let sites = [site(key: "a"), site(key: "b", indexs: 1), site(key: "c", indexs: 1)]

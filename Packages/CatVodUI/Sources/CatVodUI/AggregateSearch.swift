@@ -21,13 +21,23 @@ struct AggregateSearchSection: Identifiable {
 /// 为什么单拎出来：这两条决定「墙画出来是什么」；而且并发回来的顺序是乱的，
 /// 归位规则钉住才好测（与 `DiscoverPaging` / `SiteSelection` 同一个做法）。
 enum AggregateSearchRules {
-    /// 参与聚合搜索的站点，保持站点清单的顺序：
+    /// **能搜**的站点（保持站点清单的顺序）：可运行 + 允许搜索。
     ///
-    /// 1. 先只留下**能搜**的站点（`availability` + `searchAvailability.isUsable`）；
-    /// 2. 其中有站点标了 `indexs == 1`（上游语义：**索引站点，参与聚合搜索**）就只搜这些；
-    /// 3. 一个都没标就回落「全部可搜站点」—— 新配置常常没人标 `indexs`，回落总比空墙好。
+    /// `searchable` 的三态口径与换源一致（`0` 永久关、`1` 开、`2` 临时关但仍可用）。
+    static func searchableSites(sites: [Site]) -> [Site] {
+        sites.filter { $0.availability.isAvailable && $0.searchAvailability.isUsable }
+    }
+
+    /// **首轮**搜哪些站点，保持站点清单的顺序：
+    ///
+    /// 1. 先取 ``searchableSites(sites:)``；
+    /// 2. 其中有站点标了 `indexs == 1`（上游语义：**索引站点，参与聚合搜索**）就先只搜这些；
+    /// 3. 一个都没标就用全部可搜站点 —— 新配置常常没人标 `indexs`，回落总比空墙好。
+    ///
+    /// 索引站点**一条都没搜到**时还要补搜其余可搜站点 —— 那一层在
+    /// `AppModel.searchAcrossSites(keyword:)` 里（它要拿请求结果才决定），不在这条纯规则里。
     static func targets(sites: [Site]) -> [Site] {
-        let searchable = sites.filter { $0.availability.isAvailable && $0.searchAvailability.isUsable }
+        let searchable = searchableSites(sites: sites)
         let indexed = searchable.filter { $0.indexs == 1 }
         return indexed.isEmpty ? searchable : indexed
     }

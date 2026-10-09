@@ -26,6 +26,8 @@ struct AggregateSearchView: View {
     @State private var searchedCount = 0
     /// 失败站点的可读原因（`站点名：原因`）。
     @State private var failures: [String] = []
+    /// 首轮（索引站点）零命中后是否补搜了其余可搜站点（空态据此把话说全）。
+    @State private var didFallBackToAllSites = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -184,6 +186,11 @@ struct AggregateSearchView: View {
         if failures.count >= searchedCount {
             return "\(searchedCount) 个站点都没搜成功：\n" + failures.prefix(3).joined(separator: "\n")
         }
+        if didFallBackToAllSites {
+            return failures.isEmpty
+                ? "索引站点没搜到，「\(keyword)」在其余可搜站点里也没有。"
+                : "索引站点没搜到，其余可搜站点也没有；其中 \(failures.count) 个站点搜索失败。"
+        }
         if !failures.isEmpty {
             return "各站点都没有搜到「\(keyword)」。\n另有 \(failures.count) 个站点搜索失败。"
         }
@@ -197,6 +204,7 @@ struct AggregateSearchView: View {
         sections = outcome.sections
         searchedCount = outcome.searchedCount
         failures = outcome.failures
+        didFallBackToAllSites = outcome.didFallBackToAllSites
         // 选中的站点这一轮没命中（或站点清单变过）：回落「全部」，别停在一张空网格上。
         if let key = selectedSiteKey, !sections.contains(where: { $0.id == key }) {
             selectedSiteKey = nil
