@@ -67,6 +67,13 @@ struct ParsePlaybackView: View {
             }
         }
         .task {
+            // 结果体里的字段在这里落地（与 `SitePlayEpisodeView` 同一套）：
+            // 解析来源与描述给播放页显示，字幕交给取用链。
+            model.notePlaybackInfo(from: detail)
+            await model.loadSubtitles(SubtitleRequest(
+                sources: detail.subs,
+                headers: HTTPHeaderMerger.merge([site.header, detail.header])
+            ))
             await resolve()
         }
     }

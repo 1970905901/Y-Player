@@ -39,6 +39,11 @@ public enum SubtitleStatus: Equatable {
     /// 失败（网络、格式…）。
     case failed(reason: String)
 
+    /// 是否该显示这一行（`idle` 不显示 —— 还没请求过，不该占位）。
+    public var isVisible: Bool {
+        !text.isEmpty
+    }
+
     /// 状态行文案。
     public var text: String {
         switch self {

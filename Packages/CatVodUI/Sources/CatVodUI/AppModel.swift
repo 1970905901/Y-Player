@@ -434,6 +434,17 @@ public final class AppModel: ObservableObject {
     /// 播放页显示的「字幕：源 · N 条」状态行。
     @Published public internal(set) var subtitleStatus: SubtitleStatus = .idle
 
+    // MARK: - 播放信息（解析来源 / 描述）
+
+    /// 这次播放是谁解的（上游 `Result.jxFrom`）。
+    ///
+    /// 为什么值得单独显示：解析来源是**排障信息** —— 「这集为什么播不出来」十次里有九次是
+    /// 「哪个解析器解的、解成了什么」。显示出来，用户报问题时能一句话说清。
+    @Published public internal(set) var parsedBy: String = ""
+
+    /// 站点给的播放描述（上游 `Result.desc`）。
+    @Published public internal(set) var playbackDesc: String = ""
+
     /// 跳过广告的统计（M06k）：本机服务的 `/m3u8` 在后台线程记账，这里持有同一个盒子。
     let adSkipRecorder = AdSkipRecorder()
 

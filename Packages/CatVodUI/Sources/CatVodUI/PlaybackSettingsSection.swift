@@ -64,6 +64,16 @@ struct PlaybackSettingsSection: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            if model.subtitleStatus.isVisible {
+                Label(model.subtitleStatus.text, systemImage: "captions.bubble")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(model.playbackInfoRows, id: \.self) { row in
+                Label(row, systemImage: "info.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

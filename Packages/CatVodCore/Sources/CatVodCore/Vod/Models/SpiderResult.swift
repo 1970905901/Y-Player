@@ -34,6 +34,11 @@ public struct SpiderResult: Codable, Sendable, Hashable {
     /// 播放描述。
     public var desc: String = ""
     /// 歌词。
+    /// 歌词（LRC）。
+    ///
+    /// ⚠️ **本平台还没用**：LRC 解析与歌词显示都未做（弹幕/字幕那种「解析核心 + 取用链 + 渲染」
+    /// 三段都没开始）。留着字段是因为它属于站点返回的既有形状，解析进来比丢掉强；
+    /// 要接的时候按字幕那套（M09）走一遍即可。
     public var lrc: String = ""
     /// 媒体 MIME。
     public var format: String = ""

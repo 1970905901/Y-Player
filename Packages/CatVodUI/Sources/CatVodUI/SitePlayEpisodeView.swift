@@ -110,6 +110,13 @@ struct SitePlayEpisodeView: View {
                 flag: lineName,
                 id: episode.url
             )
+            // 结果体里的三个字段在这里落地（`desc` / `jxFrom` / `subs`）：
+            // 前两个直接显示（M09d），字幕交给取用链（M09c）。
+            model.notePlaybackInfo(from: result)
+            await model.loadSubtitles(SubtitleRequest(
+                sources: result.subs,
+                headers: HTTPHeaderMerger.merge([site.header, result.header])
+            ))
             guard let playURL = result.primaryPlaybackURL, !playURL.isEmpty else {
                 errorText = "站点 play 接口没有返回播放地址（flag=\"\(lineName)\"）。"
                 return
