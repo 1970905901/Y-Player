@@ -131,7 +131,7 @@ struct SubtitleServiceTests {
         let service = SubtitleService(transport: transport(srt))
 
         do {
-            _ = try await service.load(from: [source("不是 URL")])
+            _ = try await service.load(from: source("不是 URL"))
             Issue.record("非法地址不该成功")
         } catch let error as CatVodError {
             guard case let .decoding(path, _) = error else {
