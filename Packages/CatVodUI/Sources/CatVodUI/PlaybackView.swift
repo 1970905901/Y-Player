@@ -156,7 +156,12 @@ public struct PlaybackView: View {
                 }
             }
             .adaptiveListStyle()
+            // 信息区限高：屏幕的大头留给画面（沉浸版），列表不够高时自己在内部滚动。
+            .frame(maxHeight: 320)
         }
+        // 沉浸版：整页黑底 + 深色外观 —— 画面四周、信息区、导航栏都不再出现白底。
+        .background(Color.black.ignoresSafeArea())
+        .preferredColorScheme(.dark)
         .navigationTitle(title)
         .task {
             // 「开始一次播放」的回传口（M06l）：换集/换台时上层用它把「跳过广告」的累计统计归零。
@@ -184,6 +189,8 @@ public struct PlaybackView: View {
         if let player {
             GeometryReader { proxy in
                 ZStack {
+                    // 纯黑衬底：视频按 aspect-fit 居中，留边永远是黑（不是页面底色）。
+                    Color.black
                     VideoPlayer(player: player)
                     // 弹幕层（M08h）：只在有计划时挂上去 —— 没开弹幕 / 这集没搜到时
                     // 连这一层都不存在，不占渲染开销。
@@ -217,10 +224,13 @@ public struct PlaybackView: View {
                     subtitleTimeline = makeSubtitleTimeline()
                 }
             }
-            .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            // 沉浸版：画面区吃掉信息区之外的全部高度 —— 竖屏视频因此能铺满大半屏，
+            // 不再是顶部一条 16:9 的横带（那正是「白底边」的来源）。
+            // 下限 280：横屏（可用高约 350）时把信息区压到内部滚动，画面不被挤出屏幕。
+            .frame(maxWidth: .infinity, minHeight: 280, maxHeight: .infinity)
         } else {
             ProgressView()
-                .frame(maxWidth: .infinity, minHeight: 200)
+                .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
         }
     }
 
