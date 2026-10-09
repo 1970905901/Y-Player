@@ -10,13 +10,20 @@ struct PlayerSettingsTests {
     @Test("选中的内核不可用时不降级，只返回原因")
     func strictNoFallback() {
         let coordinator = PlayerCoordinator()
-        let resolution = coordinator.resolve(settings: PlaybackSettings(engine: .mpv, decoderMode: .hardware))
+        // MPV 在 M3 第 3/4 步之后已就绪；现在「未接入」的样本是 FFmpeg（M4）。
+        let resolution = coordinator.resolve(settings: PlaybackSettings(engine: .ffmpeg, decoderMode: .hardware))
         guard case let .unavailable(kind, reason) = resolution else {
-            Issue.record("MPV 未接入时应返回 unavailable，而不是悄悄换成别的内核")
+            Issue.record("FFmpeg 未接入时应返回 unavailable，而不是悄悄换成别的内核")
             return
         }
-        #expect(kind == .mpv)
-        #expect(reason.contains("M3"))
+        #expect(kind == .ffmpeg)
+        #expect(reason.contains("M4"))
+    }
+
+    @Test("MPV 就绪：引擎 + 渲染路径都齐，解析为 ready")
+    func mpvReady() {
+        let coordinator = PlayerCoordinator()
+        #expect(coordinator.resolve(settings: PlaybackSettings(engine: .mpv, decoderMode: .hardware)) == .ready(.mpv))
     }
 
     @Test("系统内核可用：严格按用户选择执行")

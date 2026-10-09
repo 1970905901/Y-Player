@@ -245,7 +245,7 @@ public struct PlayerCoordinator {
         case .system:
             return "系统播放器不可用（异常状态，请反馈）"
         case .mpv:
-            return "MPV 内核已实装（M3 第 4 步），但画面输出路径还没定（第 3 步需在 Mac/真机上做 PoC）—— 现阶段仍不可用"
+            return "MPV 内核不可用：libmpv 依赖缺失，或建引擎时没有给它画面层（渲染路径见 M03P1 第 3 步）"
         case .ffmpeg:
             return "自研 FFmpeg 内核尚未接入本构建（计划 M4）"
         }

@@ -73,3 +73,9 @@ PoC 产出：同一段流的三条路径截图/帧耗时对照 + 结论（写进
 
 > 关于最后一行：SwiftPM 的二进制产物由 Xcode 负责嵌入，构建通过**不代表**运行时能找到 dylib。
 > 第 3 步在模拟器/真机上第一件事就是确认 App 能启动（而不是 `dyld` 报错）。
+## 四、续记（2026-10-09）
+
+- 第 3 步的**代码这一半**已完成（画面本身仍要真机确认）：渲染路径选 **B：MoltenVK**，
+  逐条对齐 MPVKit 官方 Demo —— `MpvVideoSurface`（CAMetalLayer）+ `LibmpvSession` 的四个渲染选项
+  + `MpvVideoView` 宿主视图 + 播放页自绘控制条；`MpvAvailability.isVideoOutputReady` 已翻 true。
+  细节、故意没做的事与验证清单见 `M03P4-渲染路径接线.md`。

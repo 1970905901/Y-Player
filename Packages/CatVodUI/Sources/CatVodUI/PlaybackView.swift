@@ -43,8 +43,12 @@ public struct PlaybackView: View {
     /// 批量下载：把要下载的集交回上层（只有上层知道站点与 `AppModel`）。
     let onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> Int)?
 
-    @State private var engine: AVPlayerEngine?
+    @State private var engine: (any PlayerEngine)?
     @State private var player: AVPlayer?
+    /// MPV 的画面层（只有选了 MPV 才有）：引擎拿它当 `wid`，`MpvVideoView` 把它挂进画面区。
+    @State private var mpvSurface: MpvVideoSurface?
+    /// 正在拖进度条：拖动期间不采纳内核报回的位置，否则滑杆会被顶回去。
+    @State private var isScrubbing = false
     @State private var stateText = "准备中…"
     @State private var engineText = ""
     @State private var errorText = ""
@@ -187,12 +191,12 @@ public struct PlaybackView: View {
 
     @ViewBuilder
     private var playerArea: some View {
-        if let player {
+        if player != nil || mpvSurface != nil {
             GeometryReader { proxy in
                 ZStack {
                     // 纯黑衬底：视频按 aspect-fit 居中，留边永远是黑（不是页面底色）。
                     Color.black
-                    VideoPlayer(player: player)
+                    videoLayer
                     // 弹幕层（M08h）：只在有计划时挂上去 —— 没开弹幕 / 这集没搜到时
                     // 连这一层都不存在，不占渲染开销。
                     if let danmakuRender {
@@ -215,6 +219,10 @@ public struct PlaybackView: View {
                         )
                         .clipped()
                     }
+                    // MPV 没有系统播放器控件（画面就是一层 metal）：补一条最小控制条。
+                    if mpvSurface != nil {
+                        mpvControls
+                    }
                 }
                 // 键里带尺寸：旋转屏幕 / 改窗口后，轨道数与字号要按新尺寸重排。
                 .task(id: danmakuPlanKey(size: proxy.size)) {
@@ -232,6 +240,80 @@ public struct PlaybackView: View {
         } else {
             ProgressView()
                 .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
+        }
+    }
+
+    /// 画面本体：系统内核走系统播放器控件；MPV 走自绘的 metal 层（``MpvVideoView``）。
+    @ViewBuilder
+    private var videoLayer: some View {
+        if let player {
+            VideoPlayer(player: player)
+        } else if let mpvSurface {
+            MpvVideoView(surface: mpvSurface)
+        }
+    }
+
+    /// MPV 的最小控制条：播放 / 暂停 + 进度 + 时间。
+    ///
+    /// 为什么必须自绘：系统内核的控件是 `VideoPlayer` 自带的，MPV 这边只有一层 metal ——
+    /// 没有这条，用户就只能看，不能停、不能拖。变速不在这里（在信息区的「播放速度」）。
+    private var mpvControls: some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 12) {
+                Button {
+                    Task { await togglePlayback() }
+                } label: {
+                    Image(systemName: playerState.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.title3)
+                        .foregroundStyle(.white)
+                        .frame(width: 28)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(playerState.isPlaying ? "暂停" : "播放")
+
+                Text(Self.timeText(latestPosition))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.white)
+                Slider(
+                    value: mpvSeekBinding,
+                    in: 0 ... max(latestDuration, 1),
+                    onEditingChanged: { editing in
+                        isScrubbing = editing
+                        guard !editing else { return }
+                        // 松手才 seek：一次拖动会产生几十个中间值，逐个 seek 会把内核打爆。
+                        let target = latestPosition
+                        Task { await engine?.seek(to: target) }
+                    }
+                )
+                .tint(.white)
+                Text(Self.timeText(latestDuration))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Color.black.opacity(0.45))
+        }
+    }
+
+    /// 进度条绑定：拖动只改界面上的位置（松手才真 seek，见 ``mpvControls`` 的 `onEditingChanged`）。
+    private var mpvSeekBinding: Binding<Double> {
+        Binding(
+            get: { latestPosition },
+            set: { newValue in latestPosition = newValue }
+        )
+    }
+
+    /// 播放 / 暂停（MPV 控制条）。
+    private func togglePlayback() async {
+        guard let engine else {
+            return
+        }
+        if playerState.isPlaying {
+            await engine.pause()
+        } else {
+            await engine.play()
         }
     }
 
@@ -376,26 +458,35 @@ extension PlaybackView {
             errorText = "播放地址为空"
             return
         }
-        guard let created = coordinator.makeEngine(kind: settings.engine, decoderMode: settings.decoderMode) else {
-            errorText = "\(settings.engine.displayName) 内核尚未实现，无法播放（不会自动切换其他内核）。"
-            return
+        // MPV 的画面层要在建引擎**之前**准备好：`wid` 是启动期选项，会话一建就固定了（见 `LibmpvSession`）。
+        var videoSurface: MpvVideoSurface?
+        if settings.engine == .mpv {
+            let surface = MpvVideoSurface()
+            videoSurface = surface
+            mpvSurface = surface
         }
-        guard let systemEngine = created as? AVPlayerEngine else {
-            errorText = "当前播放页仅接入了系统播放内核。"
+        guard let created = coordinator.makeEngine(
+            kind: settings.engine,
+            decoderMode: settings.decoderMode,
+            videoSurface: videoSurface
+        ) else {
+            errorText = "\(settings.engine.displayName) 内核当前不可用，无法播放（不会自动切换其他内核）。"
             return
         }
 
-        engine = systemEngine
-        player = systemEngine.systemPlayer()
-        eventTask = Task { await consume(systemEngine) }
+        engine = created
+        if let systemEngine = created as? AVPlayerEngine {
+            player = systemEngine.systemPlayer()
+        }
+        eventTask = Task { await consume(created) }
 
         do {
             // 续播：有进度记录就从上次位置起播（已看完或过短会从头，规则在 PlaybackProgress.resumePosition）。
-            try await systemEngine.load(resumableResource())
-            await systemEngine.play()
+            try await created.load(resumableResource())
+            await created.play()
             // 套用存档里的倍速：必须在加载**之后**设 —— 引擎在 `load` 时会回到正常速度
             // （倍速属「本次播放的偏好」，引擎不跨资源记忆，见 `AVPlayerEngine.requestedRate`）。
-            await systemEngine.setRate(speed)
+            await created.setRate(speed)
         } catch let error as PlayerError {
             errorText = error.message
         } catch {
@@ -403,7 +494,7 @@ extension PlaybackView {
         }
     }
 
-    func consume(_ engine: AVPlayerEngine) async {
+    func consume(_ engine: any PlayerEngine) async {
         for await event in engine.events {
             switch event {
             case let .stateChanged(state):
@@ -420,8 +511,11 @@ extension PlaybackView {
             case let .error(message):
                 errorText = message
             case let .timeChanged(current, duration):
-                latestPosition = current
                 latestDuration = duration
+                // 拖动进度条时不要采纳内核报回的位置：否则滑杆会被顶回去（松手才 seek）。
+                if !isScrubbing {
+                    latestPosition = current
+                }
                 // 覆盖层：把「这一刻的位置 + 倍速」一起采下来，下一次上报之前靠外推补足。
                 playbackClock.sample(position: current, rate: clockRate(), at: Date())
                 await persist(force: false)

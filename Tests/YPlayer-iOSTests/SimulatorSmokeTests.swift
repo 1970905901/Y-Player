@@ -8,7 +8,7 @@ import XCTest
 ///
 /// 覆盖三件 CI 只编译时验不到的事：
 /// 1. App 能否**启动**（动态库嵌入失败会在这里以 `dyld: Library not loaded` 暴露）；
-/// 2. MPVKit 依赖已接、引擎已实装但**画面输出路径未定**时，内核可用性是否**如实**为不可用；
+/// 2. MPVKit 依赖已接、引擎已实装、渲染路径（MoltenVK）已接线之后，内核可用性是否**如实**为可用；
 /// 3. 内嵌 Node（libnode）能否真的起来、打印就绪行、并返回站点清单 —— 即 M16P4 的第 1、2、5 项。
 final class SimulatorSmokeTests: XCTestCase {
     /// 能执行到测试体，就意味着 App 完成启动、所有动态库都加载成功。
@@ -16,12 +16,12 @@ final class SimulatorSmokeTests: XCTestCase {
         XCTAssertTrue(true, "能跑到这里说明 App 启动成功（没有 dyld 缺库）")
     }
 
-    /// 实装 ≠ 可用：M3 第 4 步把 `MpvEngine` 写完了，但渲染路径（第 3 步）还没定 —— 仍不得宣称可用。
-    func testMpvEngineImplementedButVideoOutputPending() {
+    /// 可用性要如实：M3 第 3 步（渲染路径 = MoltenVK → CAMetalLayer）与第 4 步（引擎）都齐了才为可用。
+    func testMpvEngineReadyWithMoltenVKRendering() {
         XCTAssertTrue(MpvAvailability.canImportLibmpv, "MPVKit 应已随包链接")
         XCTAssertTrue(MpvAvailability.isEngineImplemented, "MpvEngine 应已实装（M03P1 第 4 步）")
-        XCTAssertFalse(MpvAvailability.isVideoOutputReady, "渲染路径属第 3 步，需要 Mac/真机 PoC")
-        XCTAssertFalse(PlayerEngineKind.mpv.isAvailable, "没有画面就等于不能用：不得对外宣称可用")
+        XCTAssertTrue(MpvAvailability.isVideoOutputReady, "渲染路径已接线（M03P1 第 3 步）")
+        XCTAssertTrue(PlayerEngineKind.mpv.isAvailable, "引擎 + 画面都齐，才算可用")
         XCTAssertFalse(PlayerEngineKind.ffmpeg.isAvailable, "FFmpegEngine 属 M4")
         XCTAssertTrue(PlayerEngineKind.system.isAvailable)
     }
