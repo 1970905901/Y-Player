@@ -9,7 +9,7 @@ import Foundation
 ///
 /// **与上游的差别，写清楚免得被当成遗漏**：上游把**全部**字幕源都塞进 `MediaItem`，
 /// 由 ExoPlayer 按语言列出让用户选；本项目暂时只取**第一条有地址的**（多语言切换属于渲染层的事，
-/// 而渲染还没做）。所以这里返回的是「挑中的那条 + 它的 cue」，而不是一组。
+/// 而渲染由 UI 侧自己的覆盖层画，见 M09f）。所以这里返回的是「挑中的那条 + 它的 cue」，而不是一组。
 public struct SubtitleService: Sendable {
     private let transport: any HTTPTransport
 

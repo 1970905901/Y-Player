@@ -3,68 +3,8 @@ import CatVodCore
 import SwiftUI
 import Testing
 
-@Suite("弹幕上屏：时间外推与几何")
+@Suite("弹幕上屏：几何与显示参数")
 struct DanmakuOverlayTests {
-    /// 采样时刻的基准（固定值，别用 `Date()` —— 测试要能重复跑出同一结果）。
-    private let t0 = Date(timeIntervalSince1970: 1_000_000)
-
-    // MARK: - DanmakuClock
-
-    @Test("还没采样时不走：位置就是 0，也不驱动逐帧刷新")
-    func clockBeforeFirstSample() {
-        let clock = DanmakuClock()
-        #expect(clock.time(at: t0) == 0)
-        #expect(!clock.isRunning)
-    }
-
-    @Test("采样之后按速率外推：1 倍速过 1 秒，位置 +1")
-    func clockExtrapolates() {
-        var clock = DanmakuClock()
-        clock.sample(position: 10, rate: 1, at: t0)
-        #expect(clock.time(at: t0) == 10)
-        #expect(abs(clock.time(at: t0.addingTimeInterval(1)) - 11) < 0.0001)
-        #expect(clock.isRunning)
-    }
-
-    @Test("倍速外推：1.5 倍速过 2 秒，位置 +3")
-    func clockExtrapolatesAtFasterRate() {
-        var clock = DanmakuClock()
-        clock.sample(position: 0, rate: 1.5, at: t0)
-        #expect(abs(clock.time(at: t0.addingTimeInterval(2)) - 3) < 0.0001)
-    }
-
-    @Test("暂停 / 缓冲（速率 0）时时间不动，也不驱动刷新")
-    func clockStopsWhenPaused() {
-        var clock = DanmakuClock()
-        clock.sample(position: 20, rate: 0, at: t0)
-        #expect(clock.time(at: t0.addingTimeInterval(5)) == 20)
-        #expect(!clock.isRunning)
-    }
-
-    @Test("改速率前先把旧速率外推到此刻：暂停不丢掉两次上报之间走过的距离")
-    func clockCarriesPositionWhenRateChanges() {
-        var clock = DanmakuClock()
-        clock.sample(position: 10, rate: 1, at: t0)
-        clock.setRate(0, at: t0.addingTimeInterval(0.5))
-        #expect(abs(clock.time(at: t0.addingTimeInterval(0.5)) - 10.5) < 0.0001)
-        #expect(abs(clock.time(at: t0.addingTimeInterval(3)) - 10.5) < 0.0001)
-    }
-
-    @Test("时刻倒退（系统时间被改）时位置不退：宁可停住也不往回跳")
-    func clockNeverGoesBackwards() {
-        var clock = DanmakuClock()
-        clock.sample(position: 30, rate: 1, at: t0)
-        #expect(clock.time(at: t0.addingTimeInterval(-5)) == 30)
-    }
-
-    @Test("负速率当 0：不支持的倒放不会把弹幕往回拖")
-    func clockClampsNegativeRate() {
-        var clock = DanmakuClock()
-        clock.sample(position: 5, rate: -1, at: t0)
-        #expect(clock.rate == 0)
-        #expect(clock.time(at: t0.addingTimeInterval(2)) == 5)
-    }
-
     // MARK: - 造数据
 
     private func makeLayout(
@@ -210,7 +150,7 @@ struct DanmakuOverlayTests {
         let layout = makeLayout()
         let plan = try makePlan([makeLine("1.0,1,20,16777215")], layout: layout)
         let style = makeStyle(layout)
-        _ = DanmakuOverlay(plan: plan, style: style, clock: DanmakuClock())
+        _ = DanmakuOverlay(plan: plan, style: style, clock: PlaybackClock())
         _ = DanmakuRenderPlan(plan: plan, style: style)
     }
 }

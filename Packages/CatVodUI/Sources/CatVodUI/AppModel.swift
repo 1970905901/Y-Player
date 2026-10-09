@@ -441,7 +441,7 @@ public final class AppModel: ObservableObject {
 
     // MARK: - 字幕（M09c）
 
-    /// 已载入的字幕 cue（**渲染还没做**，见 `AppModel+Subtitle.swift`）。
+    /// 已载入的字幕 cue（上屏见 `SubtitleOverlay`，M09f）。
     @Published public internal(set) var subtitleCues: [SubtitleCue] = []
 
     /// 播放页显示的「字幕：源 · N 条」状态行。

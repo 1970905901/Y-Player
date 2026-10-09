@@ -48,8 +48,11 @@ public struct PlaybackView: View {
     @State private var lastPersistAt = Date.distantPast
     /// 弹幕上屏的数据（M08h）：计划 + 它用的版面。
     @State private var danmakuRender: DanmakuRenderPlan?
-    /// 播放时间的外推：引擎每秒才报一次位置，直接喂给弹幕会一秒跳一格（见 ``DanmakuClock``）。
-    @State private var danmakuClock = DanmakuClock()
+    /// 字幕的时间轴（M09f）：把 cue 排一次序（查询是二分），别每帧重排。
+    @State private var subtitleTimeline: SubtitleTimeline?
+    /// 播放时间的外推：引擎每秒才报一次位置，直接喂给弹幕会一秒跳一格（见 ``PlaybackClock``）。
+    /// 弹幕与字幕**共用**这一个时钟 —— 两者都必须按同一刻的时间取内容，各自推一份只会互相错开。
+    @State private var playbackClock = PlaybackClock()
     /// 当前引擎状态（弹幕靠它决定时间走不走：暂停 / 缓冲都该停表）。
     @State private var playerState: PlayerState = .idle
     /// 当前倍速（`speedChanged` 事件给的真值）。
@@ -156,7 +159,17 @@ public struct PlaybackView: View {
                         DanmakuOverlay(
                             plan: danmakuRender.plan,
                             style: danmakuRender.style,
-                            clock: danmakuClock
+                            clock: playbackClock
+                        )
+                        .clipped()
+                    }
+                    // 字幕层（M09f）：与弹幕同一套 —— 没有 cue 时整层不存在。
+                    // 放在弹幕**之后**（= 画在弹幕上层）：字幕是要读的，不该被弹幕盖住。
+                    if let subtitleTimeline, !subtitleTimeline.isEmpty {
+                        SubtitleOverlay(
+                            timeline: subtitleTimeline,
+                            style: Self.subtitleStyle.resolved(height: Double(proxy.size.height)),
+                            clock: playbackClock
                         )
                         .clipped()
                     }
@@ -164,6 +177,10 @@ public struct PlaybackView: View {
                 // 键里带尺寸：旋转屏幕 / 改窗口后，轨道数与字号要按新尺寸重排。
                 .task(id: danmakuPlanKey(size: proxy.size)) {
                     danmakuRender = makeDanmakuRender(size: proxy.size)
+                }
+                // 字幕的时间轴不依赖尺寸（没有几何烘进去），键只看 cue 本身。
+                .task(id: subtitleTimelineKey) {
+                    subtitleTimeline = makeSubtitleTimeline()
                 }
             }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
@@ -173,7 +190,35 @@ public struct PlaybackView: View {
         }
     }
 
-    // MARK: - 弹幕上屏（M08h）
+    // MARK: - 覆盖层（弹幕 M08h / 字幕 M09f）
+
+    /// 字幕显示参数。M09f 用默认值；设置页（字号 / 位置 / 背景）是下一步。
+    private static let subtitleStyle = SubtitleDisplayStyle()
+
+    /// 字幕时间轴的重排键：**只看 cue 本身**（不像弹幕还要带尺寸 —— 字幕没有几何烘进时间轴）。
+    ///
+    /// 与 `danmakuPlanKey` 同一套理由：用「条数 + 首末开始时间」代表整份数组，
+    /// 每帧都要算的键不该是 O(n)。
+    private var subtitleTimelineKey: String {
+        let cues = model.subtitleCues
+        return [
+            String(cues.count),
+            String(cues.first?.start ?? -1),
+            String(cues.last?.start ?? -1),
+        ].joined(separator: "|")
+    }
+
+    /// 建一次字幕时间轴。
+    ///
+    /// 比弹幕的计划便宜得多（排序 + 算最长时长），但仍是 O(n log n)：放进 `.task(id:)` 而不是
+    /// 每次 body 都算 —— 播放中 body 会因时钟、状态、进度反复重建。
+    private func makeSubtitleTimeline() -> SubtitleTimeline? {
+        let cues = model.subtitleCues
+        guard !cues.isEmpty else {
+            return nil
+        }
+        return SubtitleTimeline(cues: cues)
+    }
 
     /// 计划重排的触发键：**行内容 / 画面尺寸 / 显示设置**任一变化都要重排。
     ///
@@ -216,7 +261,9 @@ public struct PlaybackView: View {
 
     /// 现在该不该走表：只认 `playing` —— 暂停、缓冲、结束、失败都必须停住，
     /// 否则「缓冲时弹幕还在划」这种假象会让人以为卡的是弹幕而不是网。
-    private func danmakuRate() -> Double {
+    ///
+    /// 弹幕与字幕共用它：两者都必须跟画面同一刻。
+    private func clockRate() -> Double {
         playerState == .playing ? playbackRate : 0
     }
 }
@@ -277,8 +324,8 @@ extension PlaybackView {
             case let .stateChanged(state):
                 stateText = describe(state)
                 playerState = state
-                // 弹幕：暂停 / 缓冲 / 结束都停表，继续播放再走（先外推再改速率，见 ``DanmakuClock``）。
-                danmakuClock.setRate(danmakuRate(), at: Date())
+                // 覆盖层：暂停 / 缓冲 / 结束都停表，继续播放再走（先外推再改速率，见 ``PlaybackClock``）。
+                playbackClock.setRate(clockRate(), at: Date())
                 if state == .ended {
                     isFinished = true
                     await persist(force: true)
@@ -290,13 +337,13 @@ extension PlaybackView {
             case let .timeChanged(current, duration):
                 latestPosition = current
                 latestDuration = duration
-                // 弹幕：把「这一刻的位置 + 倍速」一起采下来，下一次上报之前靠外推补足。
-                danmakuClock.sample(position: current, rate: danmakuRate(), at: Date())
+                // 覆盖层：把「这一刻的位置 + 倍速」一起采下来，下一次上报之前靠外推补足。
+                playbackClock.sample(position: current, rate: clockRate(), at: Date())
                 await persist(force: false)
             case let .speedChanged(rate):
                 // 变速：**先外推再换速率** —— 直接改会把这一次上报之前已经走过的距离丢掉，弹幕往回跳。
                 playbackRate = Double(rate)
-                danmakuClock.setRate(danmakuRate(), at: Date())
+                playbackClock.setRate(clockRate(), at: Date())
             case .bufferedChanged, .tracksChanged:
                 break
             }
