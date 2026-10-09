@@ -41,7 +41,7 @@ public struct PlaybackView: View {
     /// 弹幕显示设置。
     let danmakuDisplay: DanmakuDisplayConfig
     /// 批量下载：把要下载的集交回上层（只有上层知道站点与 `AppModel`）。
-    let onEnqueueDownloads: (@Sendable ([DownloadRequest]) async -> Int)?
+    let onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> Int)?
 
     @State private var engine: AVPlayerEngine?
     @State private var player: AVPlayer?
@@ -85,7 +85,7 @@ public struct PlaybackView: View {
         subtitleCues: [SubtitleCue] = [],
         danmakuLines: [DanmakuLine] = [],
         danmakuDisplay: DanmakuDisplayConfig = DanmakuDisplayConfig(),
-        onEnqueueDownloads: (@Sendable ([DownloadRequest]) async -> Int)? = nil,
+        onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> Int)? = nil,
         onStart: (() -> Void)? = nil
     ) {
         self.resource = resource
@@ -310,19 +310,33 @@ public struct PlaybackView: View {
     ///   比播放页标题准（标题常带「 · 线路」这类后缀，写进文件名会很难看）；
     /// - **请求头** 直接用 `resource.headers`：与播放本身同一套（站点鉴权都在里面），
     ///   下载时缺一个 header 就会 403。
+    /// 交给上层下载。
+    ///
+    /// 播放页不认识 `AppModel`（见文件顶部的设计说明），下载队列只有上层知道；
+    /// `onEnqueueDownloads` 为 nil 表示当前上下文不支持下载，返回 -1 让调用方给提示。
+    private func enqueueViaUpperLayer(
+        _ requests: [DownloadRequest],
+        siteKey: String,
+        title: String
+    ) async -> Int {
+        guard let onEnqueueDownloads else {
+            return -1
+        }
+        return await onEnqueueDownloads(requests, siteKey, title, resource.headers)
+    }
+
     private func enqueueDownload() async {
         let request = DownloadRequest(
             episode: danmaku?.episode ?? title,
             line: "",
             url: resource.url
         )
-        let added = await model.enqueueDownloads(
+        let added = await enqueueViaUpperLayer(
             [request],
             siteKey: progressContext?.key.siteKey ?? "",
-            title: danmaku?.name ?? title,
-            headers: resource.headers
+            title: danmaku?.name ?? title
         )
-        downloadNotice = added.isEmpty
+        downloadNotice = added == 0
             ? "这一集已经在下载列表里了（同站点 + 同名 + 同集只下一次）。"
             : "已加入下载队列 —— 去「设置 → 数据 → 下载管理」看进度。"
     }
