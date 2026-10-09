@@ -46,11 +46,16 @@ struct DanmakuPlanTests {
     @Test("出现与退出窗口：开始前不显示、窗口内显示、结束后不显示")
     func timeWindow() throws {
         let value = try plan([line(10)])
+        // 用 `end` 说话而不是写死一个数字：可见条件是 `end >= time`（**含**结束那一刻），
+        // 所以查「结束后」要取 `end + 0.1`。写死 19 的话，默认时长一改测试就会误红 ——
+        // 而且会让人误以为实现错了（CI 上就是这么红了一次）。
+        let end = try #require(value.scheduled.first).end
 
         #expect(value.items(at: 9.9).isEmpty)
         #expect(value.items(at: 10).count == 1)
         #expect(value.items(at: 14).count == 1)
-        #expect(value.items(at: 19).isEmpty)
+        #expect(value.items(at: end).count == 1)
+        #expect(value.items(at: end + 0.1).isEmpty)
     }
 
     @Test("横向位置：出现时在右边缘，退出时整条已滑出左侧")
