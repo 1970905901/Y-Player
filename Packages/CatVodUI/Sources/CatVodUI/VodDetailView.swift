@@ -207,6 +207,17 @@ public struct VodDetailView: View {
     /// 只是把「一行行文字」换成「卡片 + 横向滚动」—— 收藏、换源、续播的行为一致。
     private var embyLayout: some View {
         List {
+            // 元信息那一层（M11）：顶部背景图 / 标题 / 简介按 TMDB 来。
+            //
+            // 注意仍是**列表里的一行**、不是全幅 —— 参考视频里它是铺满顶部的。
+            // 做全幅要把它挪到 List 外面（整块布局要动），那是这一片之后单独一步，
+            // 不在这里顺手改（改布局和接元信息混一笔，出问题分不清是谁）。
+            TMDBDetailHeader(
+                model: model,
+                title: vod?.vodName ?? "",
+                fallbackPoster: detail.artwork,
+                mode: .fixed
+            )
             embyHeader
             if lines.count > 1 {
                 embyLineSection
