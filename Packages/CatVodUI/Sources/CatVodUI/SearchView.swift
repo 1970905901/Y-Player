@@ -59,21 +59,28 @@ public struct SearchView: View {
             Task { await startSearch() }
         }
         .task {
-            if selectedSiteKey.isEmpty {
-                selectedSiteKey = browsableSites.first?.key ?? ""
-            }
+            // 选择还原：当前（还在）> 上次保存的（还在）> 首个。搜索页每次 push 都是新实例，
+            // 不还原的话「切站点 → 返回 → 再进搜索」就丢了选择（规则与发现页共用 `SiteSelection`）。
+            selectedSiteKey = SiteSelection.resolvedKey(
+                current: selectedSiteKey,
+                saved: model.searchSiteKey,
+                available: browsableSites.map(\.key)
+            )
         }
         .onChange(of: selectedSiteKey) { _ in
-            // 换站点后清空上次结果：不能把别的站点的结果显示成本站点的结果。
+            // 换站点后落盘 + 清空上次结果：不能把别的站点的结果显示成本站点的结果。
+            model.searchSiteKey = selectedSiteKey
             clearResults()
         }
         .onChange(of: model.siteCatalogRevision) { _ in
             // 接口换了（搜索页常驻在首页 Tab 的导航栈里，`.task` 不会重跑）：旧站点与旧结果全部作废，
             // 否则搜索会继续对着上一个接口的站点发请求。
             clearResults()
-            if !browsableSites.contains(where: { $0.key == selectedSiteKey }) {
-                selectedSiteKey = browsableSites.first?.key ?? ""
-            }
+            selectedSiteKey = SiteSelection.resolvedKey(
+                current: selectedSiteKey,
+                saved: model.searchSiteKey,
+                available: browsableSites.map(\.key)
+            )
         }
     }
 

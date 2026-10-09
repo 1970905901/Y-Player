@@ -149,6 +149,8 @@ struct AppModelIntegrationTests {
         fixture.model.danmakuDisplay = DanmakuDisplayConfig(fontScale: 1.3, opacity: 0.6, speed: .fast, area: .half)
         fixture.model.subtitleDisplay = SubtitleDisplayConfig(isVisible: false, fontScale: 1.3, position: .high, background: .solid)
         fixture.model.rememberSearch("关键字")
+        fixture.model.discoverSiteKey = "b"
+        fixture.model.searchSiteKey = "a"
 
         // 同一份存档、另一个模型：值都该还在。
         // 这条能成立，靠的是「所有读写都走注入的 defaults」（M08f 之前写入写死在 UserDefaults.standard，
@@ -163,6 +165,8 @@ struct AppModelIntegrationTests {
         #expect(reopened.subtitleDisplay
             == SubtitleDisplayConfig(isVisible: false, fontScale: 1.3, position: .high, background: .solid))
         #expect(reopened.searchHistory == ["关键字"])
+        #expect(reopened.discoverSiteKey == "b")
+        #expect(reopened.searchSiteKey == "a")
     }
 
     @Test("广告清理规则（M06d/M06h）：配置载入后规则进了 store，关掉开关后 store 也空")

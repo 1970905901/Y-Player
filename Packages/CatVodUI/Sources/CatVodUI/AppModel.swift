@@ -47,6 +47,7 @@ public final class AppModel: ObservableObject {
         static let siteNames = "yplayer.siteNames"
         static let siteGroupRules = "yplayer.siteGroupRules"
         static let discoverSiteKey = "yplayer.discoverSiteKey"
+        static let searchSiteKey = "yplayer.searchSiteKey"
         static let hlsAdRuleOverrides = "yplayer.hlsAdRuleOverrides"
     }
 
@@ -409,6 +410,13 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    /// 搜索页**上次选中的站点** key：与发现页**各自独立**（两页可以对着不同站点；还原规则共用 `SiteSelection`）。
+    @Published public internal(set) var searchSiteKey: String {
+        didSet {
+            defaults.set(searchSiteKey, forKey: StorageKey.searchSiteKey)
+        }
+    }
+
     /// 站点面板**分组条**的顺序：**接口地址 → 分组名数组**（上游 `SiteGroupOrderStore`，键 `site_group_order_<cid>`）。
     ///
     /// 按接口分桶的理由同直播那些书：换接口时分组名整套换掉，混在一起会互相污染。
@@ -591,6 +599,8 @@ public final class AppModel: ObservableObject {
         siteNames = SiteNameBook.decode(defaults.string(forKey: StorageKey.siteNames))
         // 发现页上次选中的站点：默认空（= 回落站点清单里的第一个）。
         discoverSiteKey = defaults.string(forKey: StorageKey.discoverSiteKey) ?? ""
+        // 搜索页上次选中的站点：与发现页各自独立（还原规则共用 `SiteSelection`）。
+        searchSiteKey = defaults.string(forKey: StorageKey.searchSiteKey) ?? ""
 
         // 站点分组规则的本地设置：默认空（= 四条内置全开、没有自建规则）。
         siteGroupRuleSettings = SiteGroupRuleBook.decode(defaults.string(forKey: StorageKey.siteGroupRules))

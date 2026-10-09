@@ -5,6 +5,7 @@ import CatVodCore
 import Foundation
 
 // 发现页（`HomeView`）的纯逻辑：翻页判定、筛选行模型、站点切换面板的行模型、底部 Tab 栏的收放、内容合并（分类条保护）。
+// 搜索页也复用这里的 `SiteSelection`（站点选择还原）与 `DiscoverSiteList`（站点面板的行模型）。
 //
 // 刻意与视图分开：参考录屏里有几处「看不见的分支」——
 // 上游不给 `pagecount` 时要靠「返回空列表」停下上拉加载、上游没给筛选名时不出左侧标签列、
@@ -127,12 +128,12 @@ struct DiscoverSiteRuleInput: Hashable {
     var names: [String: String] = [:]
 }
 
-/// 发现页选站点的**还原规则**（修「切去别的 Tab 再回来，站点丢了」）。
+/// 站点选择的**还原规则**（发现页 / 搜索页共用：切走再回来、冷启动，选择都不能丢）。
 ///
 /// 优先级：当前视图的选择（还在清单里）> 上次保存的选择（还在清单里）> 首个可用站点。
-/// 之前的实现每次都回落首个站点 —— 只要 `syncHomeWithInterface` 再跑一遍（切 Tab 回来 /
-/// 接口刷新），用户的切换就没了。
-enum DiscoverSiteSelection {
+/// 发现页原来每次都回落首个站点 —— 只要 `syncHomeWithInterface` 再跑一遍（切 Tab 回来 /
+/// 接口刷新），用户的切换就没了；搜索页每次 push 都是新实例，同一条规则负责把选择捡回来。
+enum SiteSelection {
     /// 解决「这次同步该选中哪个站点」。
     static func resolvedKey(current: String, saved: String, available: [String]) -> String {
         if !current.isEmpty, available.contains(current) {

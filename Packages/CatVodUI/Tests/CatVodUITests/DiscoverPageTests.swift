@@ -54,17 +54,17 @@ struct DiscoverPageTests {
         #expect(merged2.filters == richer.filters)
     }
 
-    // MARK: - DiscoverSiteSelection
+    // MARK: - SiteSelection
 
     @Test("选站点还原：当前选择优先；没了用上次保存的；都没有才回落首个")
     func siteSelectionRestore() {
         let available = ["a", "b", "c"]
-        #expect(DiscoverSiteSelection.resolvedKey(current: "b", saved: "c", available: available) == "b")
-        #expect(DiscoverSiteSelection.resolvedKey(current: "", saved: "c", available: available) == "c")
-        #expect(DiscoverSiteSelection.resolvedKey(current: "gone", saved: "c", available: available) == "c")
-        #expect(DiscoverSiteSelection.resolvedKey(current: "gone", saved: "alsoGone", available: available) == "a")
-        #expect(DiscoverSiteSelection.resolvedKey(current: "b", saved: "gone", available: available) == "b")
-        #expect(DiscoverSiteSelection.resolvedKey(current: "", saved: "", available: []).isEmpty)
+        #expect(SiteSelection.resolvedKey(current: "b", saved: "c", available: available) == "b")
+        #expect(SiteSelection.resolvedKey(current: "", saved: "c", available: available) == "c")
+        #expect(SiteSelection.resolvedKey(current: "gone", saved: "c", available: available) == "c")
+        #expect(SiteSelection.resolvedKey(current: "gone", saved: "alsoGone", available: available) == "a")
+        #expect(SiteSelection.resolvedKey(current: "b", saved: "gone", available: available) == "b")
+        #expect(SiteSelection.resolvedKey(current: "", saved: "", available: []).isEmpty)
     }
 
     // MARK: - DiscoverFilterRow

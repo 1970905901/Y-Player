@@ -63,7 +63,7 @@ extension HomeView {
         let catalogChanged = loadedCatalogRevision != model.siteCatalogRevision
         loadedCatalogRevision = model.siteCatalogRevision
 
-        let targetKey = DiscoverSiteSelection.resolvedKey(
+        let targetKey = SiteSelection.resolvedKey(
             current: selectedSiteKey,
             saved: model.discoverSiteKey,
             available: browsableSites.map(\.key)
