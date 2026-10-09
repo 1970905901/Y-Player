@@ -7,7 +7,7 @@ import SwiftUI
 ///
 /// 播放能力边界：
 /// - 直链且无需解析的集（`parse = 0`）可直接用系统播放器播放；
-/// - js2p / CatSpider HTTP 站点（`type=3` 且 `api` 含 `/spider/`）走 ``SpiderEpisodePlaybackView``：
+/// - js2p / CatSpider HTTP 站点（`type=3` 且 `api` 含 `/spider/`）与 `type=4` 站点走 ``SitePlayEpisodeView``：
 ///   先用 `POST /play` 换取地址（需要宿主就绪，见 `docs/任务记录/M16P3-macOS宿主接通.md`）；
 /// - 需要解析的集（`parse/jx = 1`）依赖 M5 的解析链；JAR / Python Spider 在 Apple 平台不支持。
 /// 以上不可播放的情况都会进入 ``UnsupportedPlaybackView`` 并说明原因，不静默失败。
@@ -458,7 +458,18 @@ public struct VodDetailView: View {
             )
         } else if let site, isSpiderPlayable(site) {
             // js2p / CatSpider 站点：播放地址要用 `POST /play` 换，因此走异步入口。
-            SpiderEpisodePlaybackView(
+            SitePlayEpisodeView(
+                model: model,
+                site: site,
+                episode: episode,
+                title: vod?.vodName ?? "",
+                lineName: currentLine?.name ?? "",
+                episodeIndex: index,
+                progressKey: progressKey
+            )
+        } else if let site, requiresSitePlay(site, episode: episode) {
+            // type=4：播放地址要用站点的 `play` 接口换（`play` + `flag`），同样是异步入口（M06n）。
+            SitePlayEpisodeView(
                 model: model,
                 site: site,
                 episode: episode,

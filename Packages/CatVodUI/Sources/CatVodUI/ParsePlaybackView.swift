@@ -7,7 +7,7 @@ import SwiftUI
 
 /// 「需要解析」的集的播放入口：先按解析链换出真实地址，再进播放页。
 ///
-/// 与 ``SpiderEpisodePlaybackView``（`type=3` 的 `POST /play`）同一形态：解析是**异步**的，
+/// 与 ``SitePlayEpisodeView``（`type=3` 的 `POST /play`、`type=4` 的 `play` 接口）同一形态：解析是**异步**的，
 /// 塞不进 `@ViewBuilder` 的同步 `destination(for:at:)`，因此单开一层。
 ///
 /// 三条通道（对齐上游 `ParseJob.doInBackground` 的 `type` 分派）：
@@ -245,7 +245,10 @@ struct ParsePlaybackView: View {
         return ParseContext(
             resultPlayURL: detail.playUrl,
             sitePlayURL: site.playUrl,
-            webURL: episode.url,
+            // 待解析地址：优先取「结果里的 url」。`type=4` 的 play 接口就是靠这一点接上解析链的
+            // （`SitePlayEpisodeView` 把 play 的结果当作 detail 传进来）；
+            // 详情页那条路径的 detail 不带 url，于是回退到选集地址。
+            webURL: detail.url.selected?.url ?? episode.url,
             flag: lineName,
             siteClick: site.click,
             resultClick: detail.click,

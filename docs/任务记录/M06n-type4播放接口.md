@@ -1,6 +1,6 @@
 # M06n `type=4` 站点的 play 接口（Source 层已通，UI 未接）
 
-- 状态：**Source 层完成 + 11 条单测**；**详情页还没接**（UI 上仍显示「尚未实现」，见遗留）
+- 状态：**已闭环**（Source 层 + 详情页接线）；11 条单测钉住 play 请求与响应，视图层那三处靠调用点审查（见第五节）
 - 时间：2026-10-09
 - 依赖：`PlayRequestBuilder`（请求构造，早已就位）
 
@@ -64,12 +64,27 @@
 `parse` 缺省、`flag` 回填与保留、`url` 三形态、响应 header 保留、
 **类型不对时一颗请求都不发**、非 2xx、畸形 JSON。
 
-## 五、遗留（下一步，明确）
+## 五、详情页接线（同一笔的后半）
 
-1. **详情页还没接**：`canParse` 现在把 `.http` 直接排除（`guard case .direct`），
-   `unsupportedReason` 仍会显示「尚未实现」——**用户视角目前没有变化**。
-   接的时候要处理「先请求、再决定直链播还是走解析链」的中间态（加载中），
-   这属于播放页结构改动，单独一笔；
-2. 多值 `url` 目前只取 `position` 指向的那条（与上游 `v()` 一致）；
+三处改动，把上面的 Source 层接进播放流程：
+
+1. **`ParsePlaybackView.parseContext()` 的 `webURL` 改成 `detail.url.selected?.url ?? episode.url`** ——
+   这是整条链能一次闭环的关键。解析链的待解析地址本来就取「结果里的 url」，改成优先取它之后：
+   详情页那条路径的 detail 不带 url，自动回退到选集地址（**行为不变**）；
+   而 play 场景把 **play 的结果**当 detail 传进来，解析链就直接用 play 换来的地址 ——
+   等价于上游「把 `result` 一路往下传」，不需要另造通道；
+2. **`SpiderEpisodePlaybackView` 改名 `SitePlayEpisodeView`**：它本来就是「先异步换地址再播」，
+   `type=3` 与 `type=4` 共用，名字不该只写 Spider。顺带补上 `parse/jx = 1` 的出路
+   （以前会直接拿那个「还需要解析」的地址去播）；
+3. **`VodDetailView.destination` 加 `type=4` 分支** + `requiresSitePlay(_:episode:)` 判定
+   （与 `canParse` / `makeResource` 同一种写法：都拿 `PlayRequestBuilder` 的结果说话，
+   不按站点类型猜）。`unsupportedReason` 里那句「尚未实现」随之变成不可达分支的兜底文案。
+
+⚠️ 视图层这三处**没有自动化测试**（项目里视图逻辑一贯如此），但它们依赖的两块都有：
+`CMSClient.play` 十一条单测、`ParseJobResolver` 自己的测试。
+
+## 六、遗留
+
+1. 多值 `url` 目前只取 `position` 指向的那条（与上游 `v()` 一致）；
    上游还有多线路切换（`Url.isMulti()`），没做；
 3. 上游 `Source.get().fetch(result)` 那一层（迅雷 / YouTube / 电视猫等特殊 extractor）没对齐，我们只取 url。

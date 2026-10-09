@@ -196,6 +196,25 @@ extension VodDetailView {
         site.isCatSpiderHTTP
     }
 
+    /// 该集是否要走站点的 play 接口换地址（`type=4`）。
+    ///
+    /// 与 ``canParse(_:)`` / ``makeResource(for:)`` 同一套判定：都拿 ``PlayRequestBuilder`` 的结果说话，
+    /// 而不是自己按站点类型猜。返回 true 时由 ``SitePlayEpisodeView`` 负责异步换地址。
+    func requiresSitePlay(_ site: Site, episode: PlaylistParser.Episode) -> Bool {
+        guard !episode.url.isEmpty else {
+            return false
+        }
+        let request = try? PlayRequestBuilder.makeRequest(
+            site: site,
+            flag: currentLine?.name ?? "",
+            playID: episode.url
+        )
+        guard let request, case .http = request.source else {
+            return false
+        }
+        return true
+    }
+
     /// 该集是否应该交给解析链（M5b/M5c）。
     ///
     /// 判定条件与 ``PlayRequestBuilder`` 一致：`type 0/1/2/4` 的站点、地址非空、且 `parse/jx = 1`
@@ -249,7 +268,9 @@ extension VodDetailView {
             }
             return "该集地址无效"
         case .http:
-            return "该集需要经 `type=4` 的 `play` 接口中转（尚未实现）。"
+            // type=4 会走 `SitePlayEpisodeView` 的 play 接口（M06n），正常不会落在这里；
+            // 真落到这里说明路由与站点类型判定不一致。
+            return "该集需要由站点的 `play` 接口换取播放地址，当前没能取到。"
         case .spider:
             // 走到这里说明不是可用的 CatSpider HTTP 站点（JAR / Python / api 形态不对）。
             let reason = site.availability.reason ?? "当前平台不支持该 Spider 运行方式"
