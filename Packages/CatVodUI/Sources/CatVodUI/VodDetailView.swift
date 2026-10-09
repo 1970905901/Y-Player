@@ -450,17 +450,22 @@ public struct VodDetailView: View {
                     .foregroundStyle(.secondary)
             }
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(Array(episodes.enumerated()), id: \.element.id) { index, episode in
-                        NavigationLink {
-                            destination(for: episode, at: index)
-                        } label: {
-                            embyEpisodeCard(episode, at: index)
+                ScrollViewReader { proxy in
+                    HStack(spacing: 8) {
+                        ForEach(Array(episodes.enumerated()), id: \.element.id) { index, episode in
+                            NavigationLink {
+                                destination(for: episode, at: index)
+                            } label: {
+                                embyEpisodeCard(episode, at: index)
+                            }
+                            .buttonStyle(.borderless)
+                            .id(index)
                         }
-                        .buttonStyle(.borderless)
                     }
+                    .padding(.vertical, 2)
+                    .onAppear { centerCurrentEpisode(on: proxy) }
+                    .onChange(of: selectedLineIndex) { _ in centerCurrentEpisode(on: proxy) }
                 }
-                .padding(.vertical, 2)
             }
         }
     }
@@ -490,6 +495,26 @@ public struct VodDetailView: View {
             RoundedRectangle(cornerRadius: PlatformShims.cardCornerRadius)
                 .fill(Color.secondary.opacity(0.12))
         )
+    }
+
+    /// 把「该播的那一集」滚到横滑正中 —— 参考视频里当前集在中间，不在左端。
+    ///
+    /// 两处刻意的写法：
+    /// 1. 先 `Task.sleep` 一小会儿再滚：进页面时卡片还没布局完，立刻滚会滚不动
+    ///    （`ScrollViewReader` 的常见坑）；
+    /// 2. 换线路也滚一次（`selectedLineIndex`）：集数变了，位置不该留在上一条线路的地方。
+    ///
+    /// `onChange` 用的是单参数闭包版本 —— 双参数版要 iOS 17，本目标的底线是 iOS 15。
+    private func centerCurrentEpisode(on proxy: ScrollViewProxy) {
+        guard let slot = playSlot else {
+            return
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            withAnimation(.easeInOut(duration: 0.25)) {
+                proxy.scrollTo(slot.index, anchor: .center)
+            }
+        }
     }
 
     // MARK: - 区块
