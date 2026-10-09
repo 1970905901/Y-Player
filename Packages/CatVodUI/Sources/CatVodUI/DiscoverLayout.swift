@@ -1,10 +1,16 @@
 import CatVodCore
 
-// 发现页（`HomeView`）的纯逻辑：翻页判定、筛选行模型、站点切换面板的行模型。
+// 本文件从 M02P16 起用到 `CGFloat`（Tab 栏收放的手势位移）。Swift 不会传递依赖的 import，
+// 所以这里显式带上 Foundation（Darwin 上它 re-export CoreGraphics，`CGFloat` 出于此）。
+import Foundation
+
+// 发现页（`HomeView`）的纯逻辑：翻页判定、筛选行模型、站点切换面板的行模型、底部 Tab 栏的收放。
 //
 // 刻意与视图分开：参考录屏里有几处「看不见的分支」——
 // 上游不给 `pagecount` 时要靠「返回空列表」停下上拉加载、上游没给筛选名时不出左侧标签列、
 // 站点名为空时面板与按钮都要回落 `key`。这类分支在真机上很难手工造出来，只有纯函数才方便单测覆盖。
+// 底部 Tab 栏的收放（M02P16）同样如此：它由**触摸**驱动，而「手指还在不在屏幕上」这件事
+// 在真机上没法手工造出稳定序列，只能把状态机抽出来跑。
 
 /// 发现页的翻页判定。
 ///
@@ -184,5 +190,82 @@ enum DiscoverSiteList {
             }
         }
         return SiteGroupOrder.order(all, savedOrder: savedOrder)
+    }
+}
+
+/// 发现页底部 Tab 栏的收放状态机（`HomeView` 上的旁听手势驱动它）。
+///
+/// YG 给的规格（原话，当规格用）：
+/// - 向上滑列表 → 收起；
+/// - 手指**没离开屏幕** → 保持收起；松手 → 也保持收起；
+/// - **再次触碰屏幕** → 展开；再滑 → 再收起。
+///
+/// 由此得出四条规则，每条都有单测：
+/// 1. **只有「触碰」能展开**，往下滑不展开 —— 所以收起是单向动作，松手不回弹；
+/// 2. **同一次触摸内不再展开**：手指没离开就一直收起（中途反向滑回来也一样）；
+/// 3. 「收起」要有阈值：触屏瞬间先展开，滑过一段才收 —— 不然手指一碰就收，想点顶部工具栏会闪；
+/// 4. 判定要**以竖直为主**：横向展示里每段轮播都是内层横滑，横着划会有几 pt 竖直漂移，
+///    不排除掉就会「滑轮播把 Tab 栏也收起来」。
+///
+/// 为什么不读滚动偏移：偏移只能回答「滚到哪了」，回答不了「手指还在不在屏幕上」，
+/// 而规则 1、2 恰恰只能由触摸本身判定（能直接给 `isDragging` 的 `onScrollPhaseChange` 要 iOS 18）。
+struct DiscoverTabBarVisibility: Equatable {
+    /// 收起需要滑过的距离（pt）。
+    ///
+    /// 取小值是**故意的**（要跟手），但零不行 —— 太小会顺手指出一点抖动就收，太大则有明显滞后。
+    static let hideThreshold: CGFloat = 8
+
+    /// 是否收起（`true` = Tab 栏隐藏）。
+    private(set) var isHidden = false
+    /// 手指是否在屏幕上。
+    private(set) var isTouching = false
+
+    /// 手指碰到屏幕：展开。
+    ///
+    /// 幂等：一次触摸里被反复调用，不会把「已经滑出来的收起」又展开（规则 2）。
+    mutating func touchDown() {
+        isTouching = true
+        isHidden = false
+    }
+
+    /// 手指拖动。
+    ///
+    /// 位移为零的那次事件当作「触屏」处理 —— 零距离拖动手势在触屏瞬间就会发一次零位移
+    /// （`HomeView` 上的两个旁听手势之一，用来兜住另一路信号）。已经记录过触摸就忽略，
+    /// 免得手指恰好移回原点时把收起的栏又弹出来（规则 2）。
+    mutating func dragChanged(translationX: CGFloat, translationY: CGFloat) {
+        if translationX == .zero, translationY == .zero {
+            if !isTouching {
+                touchDown()
+            }
+            return
+        }
+        guard isTouching, Self.isUpwardScroll(translationX: translationX, translationY: translationY) else {
+            return
+        }
+        isHidden = true
+    }
+
+    /// 手指离开屏幕：**刻意什么都不做** —— 收起状态原样留着（「离开后也隐藏」）。
+    ///
+    /// 惯性滑动期间没有触摸事件，也就没有状态变化，Tab 栏自然一直是收起的，不必额外处理。
+    mutating func touchEnded() {
+        isTouching = false
+    }
+
+    /// 强制展开：离开发现页时用。
+    ///
+    /// Tab 栏是「从发现页导航出去的路」，不能带着收起状态离开（否则切回来时人会被困在页面上）。
+    mutating func reveal() {
+        isHidden = false
+        isTouching = false
+    }
+
+    /// 这次算不算「向上滑列表」。
+    ///
+    /// - `translationY < -hideThreshold`：手指向上移（`y` 向下为正）＝ 在往下翻内容；
+    /// - `|translationY| > |translationX|`：以竖直为主，横滑轮播不算（规则 4）。
+    static func isUpwardScroll(translationX: CGFloat, translationY: CGFloat) -> Bool {
+        translationY < -hideThreshold && abs(translationY) > abs(translationX)
     }
 }

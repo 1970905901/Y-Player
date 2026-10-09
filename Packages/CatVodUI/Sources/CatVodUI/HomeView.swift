@@ -39,6 +39,8 @@ public struct HomeView: View {
     /// 横向展示的分区数据（每个分类一页）。只在这个模式下加载，见 `posterSections`。
     @State var sections: [DiscoverSection] = []
     @State var isLoadingSections = false
+    /// 底部 Tab 栏的收放（规格与判定见 ``DiscoverTabBarVisibility``）。
+    @State private var tabBar = DiscoverTabBarVisibility()
 
     public init(model: AppModel) {
         self.model = model
@@ -110,6 +112,11 @@ public struct HomeView: View {
             invalidateContent()
             Task { await loadHome(force: true) }
         }
+        .adaptiveTabBarHidden(tabBar.isHidden)
+        .onDisappear {
+            // 离开发现页把 Tab 栏放回来：它是导航出去的路，不能带着收起状态离开。
+            tabBar.reveal()
+        }
     }
 
     // MARK: - 主体
@@ -145,6 +152,27 @@ public struct HomeView: View {
         ScrollView {
             contentBody
         }
+        // 「手指碰到屏幕」和「向上滑」是两个不同信号，各挂一个**旁听**手势：
+        // 前者用零时长长按（成功即触屏），后者用零距离拖动（读位移方向）。
+        // 都走 `simultaneousGesture`：滚动本身一行没改，它们只旁听 —— 换成 `.gesture` 会抢走滚动。
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0, maximumDistance: .infinity)
+                .onEnded { _ in
+                    tabBar.touchDown()
+                }
+        )
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    tabBar.dragChanged(
+                        translationX: value.translation.width,
+                        translationY: value.translation.height
+                    )
+                }
+                .onEnded { _ in
+                    tabBar.touchEnded()
+                }
+        )
     }
 
     @ViewBuilder private var contentBody: some View {
