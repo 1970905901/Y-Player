@@ -40,7 +40,7 @@ struct SettingsPreferencesTests {
     @Test("越界读写不崩：读空串、写忽略")
     func danmakuOutOfRange() {
         var config = DanmakuAPIConfig(addresses: ["a"])
-        #expect(config.address(at: 9) == "")
+        #expect(config.address(at: 9).isEmpty)
         config.setAddress("x", at: 9)
         #expect(config.addresses == ["a", "", "", ""])
         config.setAddress("x", at: 2)

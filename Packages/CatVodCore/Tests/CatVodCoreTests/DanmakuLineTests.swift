@@ -123,7 +123,7 @@ struct DanmakuLineTests {
         #expect(lines.map(\.time) == [1.0, 2.0, 3.0])
 
         // 末尾被截断：前面的照收
-        let truncated = DanmakuDocument.parse("""<i><d p="1.0, 1, 25, 0">好的</d><d p="2.0, 1, 25, 0">截断""")
+        let truncated = DanmakuDocument.parse(#"<i><d p="1.0, 1, 25, 0">好的</d><d p="2.0, 1, 25, 0">截断"#)
         #expect(truncated.map(\.text) == ["好的"])
     }
 

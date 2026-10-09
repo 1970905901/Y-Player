@@ -55,7 +55,7 @@ public enum DanmakuAPI {
         if segments.last?.lowercased() == "danmaku" || segments.count > 1 {
             return components.url
         }
-        components.path = components.path + "/danmaku"
+        components.path += "/danmaku"
         return components.url
     }
 

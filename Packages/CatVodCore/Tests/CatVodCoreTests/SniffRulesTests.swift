@@ -22,7 +22,7 @@ struct SniffRulesTests {
         #expect(SniffRules.hostMatchText(for: "https://cdn.example.com/a.m3u8") == "cdn.example.com")
         let wrapped = "https://jx.example.com/go?url=https%3A%2F%2Fcdn.example.com%2Fa.m3u8"
         #expect(SniffRules.hostMatchText(for: wrapped) == "jx.example.com,cdn.example.com")
-        #expect(SniffRules.hostMatchText(for: "not a url") == "")
+        #expect(SniffRules.hostMatchText(for: "not a url").isEmpty)
     }
 
     @Test("规则命中：hosts 按 containOrMatch 匹配，取第一条")

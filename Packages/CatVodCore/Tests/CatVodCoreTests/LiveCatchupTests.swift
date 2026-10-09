@@ -66,6 +66,6 @@ struct LiveCatchupTests {
         #expect(channel.playbackURL(index: 0) == "http://x/a.m3u8")
         #expect(channel.lineName(index: 0) == "备用")
         #expect(channel.lineName(index: 1) == nil)
-        #expect(channel.playbackURL(index: 9) == "")
+        #expect(channel.playbackURL(index: 9).isEmpty)
     }
 }
