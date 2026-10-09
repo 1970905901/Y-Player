@@ -12,7 +12,7 @@
 | --- | --- |
 | 源协议 | `type 0/1/2/4`（XML/JSON CMS、HTTP+base64 ext）完整；`type 3` 支持 CatSpider HTTP 与 JS Spider |
 | **js2p 主接口** | 支持 `index.js` + `index.js.md5` 形态的 JS 源：下载 → MD5 增量校验 → 在 JS 运行时执行 → 本机 HTTP 服务 → 按 CatSpider 路由调用 |
-| 播放内核 | 自研 `PlayerEngine` 抽象：`system`（AVPlayer，M2 可用）→ `mpv`（M3）→ `ffmpeg`（M4）；**设置里手动选择内核与硬解/软解，运行时严格遵循，不自动降级** |
+| 播放内核 | 自研 `PlayerEngine` 抽象：`system`（AVPlayer，M2 可用）→ `mpv`（M3，已可用）→ `ffmpeg`（M4）；**设置里手动选择内核与硬解/软解，运行时严格遵循，不自动降级**。M4 的目标口径（2026-10-09）：**主做 HDR 与流畅度**，不是「再补一批格式」——格式与多音轨/字幕那部分 MPV 已经覆盖 |
 | 网络 | `headers`/`hosts`/`doh`/`proxy`/`ads`/`hlsRules`/`rules` 嗅探规则与本地代理服务 |
 | 不支持的形态 | `csp_*.jar`（需 JVM）、`.py`（需 CPython）、Widevine/PlayReady；UI 会明确给出原因 |
 
