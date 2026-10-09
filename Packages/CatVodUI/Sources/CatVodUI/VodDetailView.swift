@@ -100,6 +100,25 @@ public struct VodDetailView: View {
         }
     }
 
+    /// 图标行（M11）。**目前只有「⋯」** —— 参考视频里还有 🔍 聚合搜索与 ♡ 收藏，
+    /// 那两项各自的落地点（海报墙搜索页、收藏落地）是独立的片，**先不放空按钮**：
+    /// 按下去没反应比没有这个按钮更糟。
+    ///
+    /// 菜单里的每一项都真的做事，且都能在别处找到同一套逻辑（不各写一份）。
+    private var iconRow: some View {
+        HStack {
+            Spacer()
+            Menu {
+                Toggle("元信息刮削", isOn: $model.tmdbScrapeEnabled)
+                Text(model.isTMDBConfigured ? "TMDB 已配置" : "TMDB 未配置（设置 → 播放 → 播放页）")
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.title3)
+            }
+            Spacer()
+        }
+    }
+
     /// 该播哪一集：**有观看记录就是那一集**（=「继续播放」），否则第一集。
     private var playSlot: (index: Int, episode: PlaylistParser.Episode)? {
         guard let first = episodes.first else {
@@ -306,6 +325,7 @@ public struct VodDetailView: View {
     private var embyHeader: some View {
         Section("影片") {
             playButtonRow
+            iconRow
             if isLoading, detail.list.isEmpty {
                 Text("加载中…")
                     .font(.footnote)

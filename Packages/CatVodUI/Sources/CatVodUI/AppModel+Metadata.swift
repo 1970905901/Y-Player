@@ -43,4 +43,14 @@ extension AppModel {
 
     private static let tmdbConfigDefaultsKey = "tmdb.config"
     private static let tmdbPosterModeDefaultsKey = "tmdb.posterMode"
+    private static let tmdbScrapeDefaultsKey = "tmdb.scrape"
+
+    /// 元信息刮削总开关（详情页「⋯」菜单里那一项）。
+    ///
+    /// **默认开**（参考视频里就是「元信息刮削：开」）；关掉整层不工作、用站点数据 ——
+    /// 除了省流量，也是给「刮错了、我不想要」留的一条退路。
+    var tmdbScrapeEnabled: Bool {
+        get { defaults.object(forKey: Self.tmdbScrapeDefaultsKey) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Self.tmdbScrapeDefaultsKey) }
+    }
 }

@@ -99,6 +99,10 @@ struct TMDBDetailHeader: View {
     }
 
     private func load() async {
+        guard model.tmdbScrapeEnabled else {
+            noticeText = "元信息刮削已关（详情页「⋯」里可以打开）。"
+            return
+        }
         guard model.isTMDBConfigured else {
             noticeText = "没填 TMDB api key —— 这一层不工作（设置 → 播放 → 播放页）。"
             return
