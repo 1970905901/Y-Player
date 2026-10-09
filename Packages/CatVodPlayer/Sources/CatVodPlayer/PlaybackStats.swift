@@ -34,6 +34,12 @@ public struct PlaybackStats: Sendable, Equatable {
     /// `decoder-frame-drop-count`（解码侧丢帧）。
     public var decoderDroppedFrames: Int
 
+    /// **是不是真读到过**丢帧计数。
+    ///
+    /// 为什么单独记一笔：两个计数都读不到时它们都是 0，而 0 的文案是「无丢帧」——
+    /// 那是句假话（我们根本没读到，不是读到 0）。没读到就**不显示这一行**。
+    private let hasDropCounters: Bool
+
     /// 从内核报的原始字符串建一份。**所有字段都可缺**（属性不存在、还没起播都给不了），
     /// 缺了就是 0 / 空串 —— 由界面按"空就不显示那一行"处理，不在这一层编默认值。
     public init(rawValues: [String: String] = [:]) {
@@ -49,8 +55,11 @@ public struct PlaybackStats: Sendable, Equatable {
         gamma = text("video-params/gamma")
         hardwareDecoder = text("hwdec-current")
         videoBitrate = Int(text("video-bitrate")) ?? 0
-        droppedFrames = Int(text("frame-drop-count")) ?? 0
-        decoderDroppedFrames = Int(text("decoder-frame-drop-count")) ?? 0
+        let dropped = text("frame-drop-count")
+        let decoderDropped = text("decoder-frame-drop-count")
+        droppedFrames = Int(dropped) ?? 0
+        decoderDroppedFrames = Int(decoderDropped) ?? 0
+        hasDropCounters = !dropped.isEmpty || !decoderDropped.isEmpty
     }
 
     /// 一条都没读到：界面据此**整块不显示**，而不是显示一排"未知"。
@@ -59,7 +68,7 @@ public struct PlaybackStats: Sendable, Equatable {
             && videoFormat.isEmpty && pixelFormat.isEmpty
             && fps == 0 && primaries.isEmpty && gamma.isEmpty
             && hardwareDecoder.isEmpty && videoBitrate == 0
-            && droppedFrames == 0 && decoderDroppedFrames == 0
+            && !hasDropCounters
     }
 
     /// `3840×2160`；没读到给空串。
@@ -128,8 +137,12 @@ public struct PlaybackStats: Sendable, Equatable {
         return String(format: "%.0f kbps", Double(videoBitrate) / 1000)
     }
 
-    /// `无丢帧` / `显示 3 · 解码 1`。丢帧是"流畅度"唯一的硬证据，所以 0 也明说。
+    /// `无丢帧` / `显示 3 · 解码 1`。丢帧是「流畅度」唯一的硬证据，所以读到 0 也明说；
+    /// **没读到就给空串**（那说明这两个属性还没填上，说「无丢帧」是假话）。
     public var dropText: String {
+        guard hasDropCounters else {
+            return ""
+        }
         if droppedFrames == 0, decoderDroppedFrames == 0 {
             return "无丢帧"
         }
