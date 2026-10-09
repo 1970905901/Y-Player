@@ -14,7 +14,8 @@ public extension SourceRepository {
     /// - Parameter maxAge: 有效期秒数；`nil` 表示永不失效（只要求缓存存在）。
     ///
     /// 与 `load(configURL:forceRefresh:)` 的区别：**这里一次网络请求都不发**
-    /// （JSON 源不请求配置地址，JS 源也不请求 `.md5` 摘要）。
+    /// （JSON 源不请求配置地址）。**JS 源不给结论**：`.md5` 增量校验不能省，
+    /// 这里一律返回 nil，交给上面那条带校验的路（理由写在下面的 `.javaScript` 分支里）。
     func loadCached(configURL raw: String, maxAge: TimeInterval?) async throws -> LoadedSource? {
         guard let source = ConfigLocator.locate(raw) else {
             return nil
@@ -41,25 +42,17 @@ public extension SourceRepository {
                 warnings: config.validationWarnings
             )
         case .javaScript:
-            guard let url = source.url else {
-                return nil
-            }
-            let directory = cacheDirectory.appendingPathComponent(ConfigLocator.scriptCacheDirectoryName(for: url))
-            let cachedURL = directory.appendingPathComponent(ConfigLocator.scriptFileName)
-            guard isFresh(cachedURL, maxAge: maxAge) else {
-                return nil
-            }
-            // `.md5` 加在**完整文件名**之后：index.js → index.js.md5（与 JS 分支同一规则）。
-            let stampURL = URL(fileURLWithPath: cachedURL.path + ConfigLocator.digestSuffix)
-            return LoadedSource(
-                kind: .javaScript,
-                config: SourceConfig(),
-                originURL: url,
-                cachedURL: cachedURL,
-                digest: readStamp(stampURL)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                usedCache: true,
-                warnings: ["按「源缓存时间」直接使用本地缓存配置，本次未联网校验"]
-            )
+            // JS 源**故意不走这里的「纯本地」短路**。
+            //
+            // 上游给 js2p 接口配 `.md5` 就是为了增量更新：拉几十字节的摘要、变了才重下
+            // 6 MB 的 bundle（参考实现每次都拉，超时 3 秒）。跳过这一步等于把「源缓存时间」
+            // 变成「永不更新」—— 设成「永不」时用户会永远停在旧版本上（真踩过：
+            // 8 月 1 日的 bundle 一直不换，见 docs/任务记录/M16P9）。
+            //
+            // 返回 nil 表示「这里给不了结论」：让上层走 `load(configURL:forceRefresh:)` 那条
+            // 带 `.md5` 校验的路 —— 摘要一致仍然直接命中本地（**不重下 bundle**），
+            // 拿不到摘要（离线 / 上游挂了）才退回已校验过的缓存。
+            return nil
         }
     }
 

@@ -22,6 +22,13 @@ public extension AppModel {
             return
         }
 
+        // 换了 JS 源：宿主跑的还是上一个 bundle（内嵌 node 每进程只起得了一个实例），
+        // 停掉再换一个 —— 否则站点清单永远来自上一个接口。
+        if let existing = js2pHost, existing.runtimeConfiguration.scriptURL != scriptURL {
+            await existing.stop()
+            js2pHost = nil
+        }
+
         hostStatus = .starting
         let service = js2pHost ?? JS2PHostService(
             transport: sessionTransport,
@@ -32,7 +39,11 @@ public extension AppModel {
         // 开关可能在宿主启动之后被改过（设置 → 数据 → 日志管理）：每次刷新都对一次。
         await service.setLogPersistence(isEngineLogEnabled)
         do {
-            let snapshot = try await service.sites(forceRestartHost: forceRestart)
+            // bundle 刚被换过（本次加载真的重下了，`usedCache == false`）就必须重启宿主：
+            // 运行中的 node 已经把旧代码执行过，站点清单在内存里 —— 只换磁盘上的文件它不会自己重读。
+            // 这是「明明下载了新版本、界面还是旧的」那一类现象的根因（见 M16P9）。
+            let bundleReplaced = !source.usedCache
+            let snapshot = try await service.sites(forceRestartHost: forceRestart || bundleReplaced)
             hostSites = snapshot.sites
             let baseURL = await service.currentBaseURL()
             hostStatus = .running(

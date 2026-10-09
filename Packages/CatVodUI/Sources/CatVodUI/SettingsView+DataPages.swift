@@ -319,7 +319,8 @@ struct SettingsCacheView: View {
             .map { "源缓存 \($0.entryCount) 个文件、\($0.formattedTotalSize)" } ?? "源缓存目录不可读"
         let homePart = model.homeCacheSummary()
             .map { "首页缓存 \($0.entryCount) 个文件、\($0.formattedSize)" } ?? "首页缓存目录不可读"
-        return "源缓存时间：接口配置在有效期内**直接读本地、不联网**，过期或手动「刷新接口」才重新下载；"
+        return "源缓存时间：接口配置在有效期内**直接读本地、不联网**，过期或手动「刷新接口」才重新下载"
+            + "（js2p 接口例外：每次加载只拉几十字节的 `.md5` 摘要，变了才重下 bundle —— 上游给的就是增量更新）；"
             + "首页缓存时间：首页与分类列表在有效期内直接读本地缓存。"
             + "当前 \(sourcePart)；\(homePart)。详情缓存仍是内存缓存（M02P5），不在这里管理。"
     }
