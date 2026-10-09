@@ -120,7 +120,7 @@ struct SiteGroupRulesView: View {
     // MARK: - 新增弹窗
 
     private var addSheet: some View {
-        NavigationStack {
+        AdaptiveNavigationContainer {
             Form {
                 Section("规则") {
                     TextField("名字（只用于这里显示）", text: $draftName)
