@@ -178,11 +178,153 @@ struct PlaybackPageSettingsSection: View {
 
 // MARK: - 弹幕 API（解析器）
 
+/// 弹幕显示：字号 / 透明度 / 速度 / 显示区域（M08i）。
+///
+/// 四项都**即时生效**：改一次写一次 `UserDefaults`，播放页重排计划时读到 ——
+/// 播放中把字号调大，下一帧就变大，不用退出重进。
+///
+/// 为什么给一行「预览」：字号和透明度光看数字判断不了合不合适。预览用的是**同一份**
+/// `DanmakuDisplayStyle`（只差「画面尺寸」这一项），所以预览什么样、屏上就什么样。
+@MainActor
+struct SettingsDanmakuDisplayView: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        List {
+            Section {
+                Text("这里只管**本机的显示**：弹幕从哪儿取见「弹幕 API」。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Text("这是一条弹幕预览")
+                    .font(.system(size: previewFontSize))
+                    .opacity(model.danmakuDisplay.opacity)
+                    .lineLimit(1)
+            } header: {
+                Text("预览")
+            } footer: {
+                Text("视频上的弹幕会与此同步（实际字号还会按视频区的高度再缩放一次，"
+                    + "以免大屏上显得太小）。")
+            }
+
+            Section {
+                HStack {
+                    Text("倍率")
+                    Spacer()
+                    Text(String(format: "%.1f×", model.danmakuDisplay.fontScale))
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: fontScaleBinding, in: DanmakuDisplayConfig.fontScaleRange, step: 0.1) {
+                    Text("字号")
+                }
+            } header: {
+                Text("字号")
+            } footer: {
+                Text("按弹幕自带的字号（常见 25）缩放。\(rangeText(DanmakuDisplayConfig.fontScaleRange))")
+            }
+
+            Section {
+                HStack {
+                    Text("不透明度")
+                    Spacer()
+                    Text(String(format: "%.0f%%", model.danmakuDisplay.opacity * 100))
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: opacityBinding, in: DanmakuDisplayConfig.opacityRange, step: 0.05) {
+                    Text("透明度")
+                }
+            } header: {
+                Text("透明度")
+            } footer: {
+                Text("弹幕太亮会盖住画面，压低一点更耐看。")
+            }
+
+            Section {
+                Picker("速度", selection: speedBinding) {
+                    ForEach(DanmakuSpeed.allCases, id: \.self) { speed in
+                        Text(speed.title).tag(speed)
+                    }
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("速度")
+            } footer: {
+                Text("一条弹幕划过整屏的秒数：慢 \(seconds(DanmakuSpeed.slow)) / 中 "
+                    + "\(seconds(DanmakuSpeed.normal)) / 快 \(seconds(DanmakuSpeed.fast))。"
+                    + "越慢，同一时刻屏上的弹幕越多。")
+            }
+
+            Section {
+                Picker("显示区域", selection: areaBinding) {
+                    ForEach(DanmakuArea.allCases, id: \.self) { area in
+                        Text(area.title).tag(area)
+                    }
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("显示区域")
+            } footer: {
+                Text("弹幕占屏幕高度多少（从顶部算）。压到半屏以内，能少糊住画面下方与字幕。")
+            }
+        }
+        .adaptiveListStyle()
+        .navigationTitle("弹幕显示")
+    }
+
+    /// 预览字号：按典型字号（25）× 当前倍率，**不**按画面尺寸缩放 ——
+    /// 预览里没有「视频区尺寸」这个概念，用基准比例最接近手机上的实际观感。
+    private var previewFontSize: CGFloat {
+        CGFloat(DanmakuDisplayStyle.typicalFontSize * model.danmakuDisplay.fontScale)
+    }
+
+    private func seconds(_ speed: DanmakuSpeed) -> String {
+        String(format: "%.0f 秒", speed.scrollDuration)
+    }
+
+    private func rangeText(_ range: ClosedRange<Double>) -> String {
+        String(format: "%.1f× … %.1f×", range.lowerBound, range.upperBound)
+    }
+
+    /// 字号绑定：写入时再夹一次范围。
+    ///
+    /// `Slider` 的 `in:` 已经保证了范围，但**写进配置**这一步不该依赖界面控件守规矩 ——
+    /// 与 `DanmakuAPIConfig.setAddress` 越界忽略是同一个道理。
+    private var fontScaleBinding: Binding<Double> {
+        Binding(
+            get: { model.danmakuDisplay.fontScale },
+            set: { model.danmakuDisplay.fontScale = DanmakuDisplayConfig.clamp($0, to: DanmakuDisplayConfig.fontScaleRange) }
+        )
+    }
+
+    private var opacityBinding: Binding<Double> {
+        Binding(
+            get: { model.danmakuDisplay.opacity },
+            set: { model.danmakuDisplay.opacity = DanmakuDisplayConfig.clamp($0, to: DanmakuDisplayConfig.opacityRange) }
+        )
+    }
+
+    private var speedBinding: Binding<DanmakuSpeed> {
+        Binding(
+            get: { model.danmakuDisplay.speed },
+            set: { model.danmakuDisplay.speed = $0 }
+        )
+    }
+
+    private var areaBinding: Binding<DanmakuArea> {
+        Binding(
+            get: { model.danmakuDisplay.area },
+            set: { model.danmakuDisplay.area = $0 }
+        )
+    }
+}
+
 /// 弹幕 API：启用开关 + 四个地址槽位（结构对齐参考图）。
 ///
 /// 参考图的做法是「用户自己填 1…4 个弹幕接口地址」，副标题写明「开启后将禁用视频源的弹幕功能」。
-/// 我们这里把地址**真实保存**（`UserDefaults`，重启后仍在），并如实说明：
-/// 弹幕的取回与渲染属于 M8，现在填好地址还不会立刻生效 —— 不做「看起来已经生效」的假开关。
+/// 我们这里把地址**真实保存**（`UserDefaults`，重启后仍在）：取回见 M08c、上屏见 M08h，
+/// 填好地址进播放页就会有弹幕。显示参数（字号 / 透明度 / 速度 / 区域）在「弹幕显示」页。
 ///
 /// 配置里声明的解析器（`parses`）另列一组：那是「这个源能解析什么」，
 /// 与「用户自选弹幕 API」是两件事，不该混在一处展示。
@@ -214,8 +356,8 @@ struct SettingsDanmakuAPIView: View {
             }
 
             Section("说明") {
-                Text("四个地址保存在本机（重启后仍在）。弹幕的取回、对齐与渲染属于 M8，"
-                    + "现在填好地址还不会立刻生效 —— 这里只做「把地址可靠地存下来」这一件事。")
+                Text("四个地址保存在本机（重启后仍在）。填好地址并启用后，进播放页就会去搜索并上屏"
+                    + "（取回见 M08c、上屏见 M08h）；显示参数在「弹幕显示」。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

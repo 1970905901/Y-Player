@@ -159,11 +159,22 @@ public struct SettingsView: View {
                 InfoRow(title: "弹幕 API", value: parserSummary)
             }
             NavigationLink {
+                SettingsDanmakuDisplayView(model: model)
+            } label: {
+                InfoRow(title: "弹幕显示", value: danmakuDisplaySummary)
+            }
+            NavigationLink {
                 HLSAdRulesView(model: model)
             } label: {
                 InfoRow(title: "广告清理规则", value: adRuleSummary)
             }
         }
+    }
+
+    /// 弹幕显示那一行的摘要：字号 / 速度 / 区域各取当前档位（一眼看出改过没有）。
+    private var danmakuDisplaySummary: String {
+        let display = model.danmakuDisplay
+        return "\(String(format: "%.1f×", display.fontScale)) · \(display.speed.title) · \(display.area.title)"
     }
 
     /// 广告清理那一行的摘要：内置 + 接口各几条、当前几条生效。

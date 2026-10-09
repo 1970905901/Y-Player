@@ -145,6 +145,7 @@ struct AppModelIntegrationTests {
         fixture.model.renameSite(site, to: "我的甲站")
         fixture.model.toggleSiteGroupRule(GroupRuleConfig.builtinPipe)
         fixture.model.danmakuAPI = DanmakuAPIConfig(isEnabled: true, addresses: ["https://d.example.com"])
+        fixture.model.danmakuDisplay = DanmakuDisplayConfig(fontScale: 1.3, opacity: 0.6, speed: .fast, area: .half)
         fixture.model.rememberSearch("关键字")
 
         // 同一份存档、另一个模型：值都该还在。
@@ -156,6 +157,7 @@ struct AppModelIntegrationTests {
         #expect(reopened.siteNamesForCurrentConfig["a"] == "我的甲站")
         #expect(reopened.disabledSiteGroupRuleIDs == [GroupRuleConfig.builtinPipe])
         #expect(reopened.danmakuAPI.filledAddresses == ["https://d.example.com"])
+        #expect(reopened.danmakuDisplay == DanmakuDisplayConfig(fontScale: 1.3, opacity: 0.6, speed: .fast, area: .half))
         #expect(reopened.searchHistory == ["关键字"])
     }
 

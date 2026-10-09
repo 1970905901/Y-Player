@@ -175,12 +175,9 @@ public struct PlaybackView: View {
 
     // MARK: - 弹幕上屏（M08h）
 
-    /// 上屏参数。M08h 用默认值；设置页那组「字号 / 透明度 / 显示区域 / 速度」落地后从 `AppModel` 读。
-    private static let danmakuStyle = DanmakuDisplayStyle()
-
-    /// 计划重排的触发键：**行内容 / 画面尺寸**任一变化都要重排。
+    /// 计划重排的触发键：**行内容 / 画面尺寸 / 显示设置**任一变化都要重排。
     ///
-    /// 行内容用「条数 + 首末时间」代表，而不是整份数组：比较几万条是 O(n)，而且这个键每帧都要算；
+    /// 行内容用「条数 + 首末时间」代表，而不是整份数组：比较几万条是 O(n)，而这个键每帧都要算；
     /// 换集时三者几乎必然一起变，够用（同一集重复加载同一份弹幕时结果也一样，不必重排）。
     private func danmakuPlanKey(size: CGSize) -> String {
         let lines = model.danmakuLines
@@ -190,6 +187,8 @@ public struct PlaybackView: View {
             String(lines.last?.time ?? -1),
             String(Int(size.width.rounded())),
             String(Int(size.height.rounded())),
+            // 显示设置也要进键：字号影响宽度度量、区域影响轨道数，两者都已经烘进计划本身了。
+            model.danmakuDisplay.persistenceValue,
         ].joined(separator: "|")
     }
 
@@ -205,7 +204,7 @@ public struct PlaybackView: View {
         guard !lines.isEmpty, size.width > 1, size.height > 1 else {
             return nil
         }
-        let style = Self.danmakuStyle.resolved(
+        let style = model.danmakuDisplay.style.resolved(
             width: Double(size.width),
             height: Double(size.height)
         )

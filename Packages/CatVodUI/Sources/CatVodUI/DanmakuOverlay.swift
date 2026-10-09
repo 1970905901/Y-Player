@@ -84,6 +84,11 @@ struct DanmakuDisplayStyle: Equatable {
     var fixedDuration: Double = 5
     /// 顶部 / 底部各保留几条轨道。
     var fixedLaneCount: Int = 3
+    /// 弹幕占画面高度的比例（1 = 全屏）。见 ``DanmakuDisplayConfig/area``。
+    ///
+    /// 实现方式是**排版时就按这个高度算轨道**（不是画好了再裁）：轨道数、底部弹幕的位置
+    /// 都跟着区域走，`DanmakuOverlayGeometry` 一行都不用改（它本来就以「版面高度」为准）。
+    var areaFraction: Double = 1
     /// 字号缩放的参考画面高度（pt）。
     var referenceHeight: Double = 220
     /// 缩放后的字号比例上下限。
@@ -95,6 +100,9 @@ struct DanmakuDisplayStyle: Equatable {
     static let typicalFontSize: Double = 25
     /// 坏行保护：单条弹幕字号再离谱也不超出这个范围。
     static let fontSizeLimits: ClosedRange<Double> = 1 ... 60
+    /// 显示区域的下限比例：region 再小也要留得下一条轨道，不至于算出 0 条轨道（计划里那层
+    /// 还有一道 `max(1, …)` 兜底，这里是更早的一道）。
+    static let minAreaFraction: Double = 0.25
 
     /// 解出某个画面尺寸下的实际参数（版面 + 不透明度 + 字号换算）。
     func resolved(width: Double, height: Double) -> DanmakuResolvedStyle {
@@ -102,10 +110,13 @@ struct DanmakuDisplayStyle: Equatable {
             max(fontScale * (height / max(referenceHeight, 1)), minFontScale),
             maxFontScale
         )
+        // 字号按**整块画面**的高度缩放（区域是「裁出多少地方放弹幕」，不该顺手把字也缩小），
+        // 轨道与底部弹幕则按区域高度算。
+        let regionHeight = max(height * min(max(areaFraction, Self.minAreaFraction), 1), 1)
         return DanmakuResolvedStyle(
             layout: DanmakuPlan.Layout(
                 screenWidth: width,
-                screenHeight: height,
+                screenHeight: regionHeight,
                 laneHeight: Self.typicalFontSize * scale * laneHeightRatio,
                 fixedLaneCount: fixedLaneCount,
                 scrollDuration: scrollDuration,

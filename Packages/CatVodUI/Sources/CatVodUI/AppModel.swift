@@ -33,6 +33,7 @@ public final class AppModel: ObservableObject {
         static let playbackPageLayout = "yplayer.playbackPageLayout"
         static let autoPlayFirstEpisode = "yplayer.autoPlayFirstEpisode"
         static let danmakuAPI = "yplayer.danmakuAPI"
+        static let danmakuDisplay = "yplayer.danmakuDisplay"
         static let engineLogEnabled = "yplayer.engineLogEnabled"
         static let searchHistory = "yplayer.searchHistory"
         static let liveSource = "yplayer.liveSource"
@@ -141,6 +142,18 @@ public final class AppModel: ObservableObject {
             if !danmakuAPI.isEnabled {
                 clearDanmaku()
             }
+        }
+    }
+
+    // MARK: - 弹幕显示（设置 → 播放 → 弹幕显示）
+
+    /// 弹幕显示设置：字号 / 透明度 / 速度 / 显示区域（M08i）。
+    ///
+    /// 与弹幕 API 分成两个类型、两把键：前者是「弹幕从哪儿取」，后者是「取到的弹幕怎么显示」，
+    /// 用户改其一不该动到另一个。
+    @Published public var danmakuDisplay: DanmakuDisplayConfig {
+        didSet {
+            defaults.set(danmakuDisplay.persistenceValue, forKey: StorageKey.danmakuDisplay)
         }
     }
 
@@ -497,6 +510,8 @@ public final class AppModel: ObservableObject {
 
         // 弹幕 API：默认未启用、四个槽位为空。
         danmakuAPI = DanmakuAPIConfig.decode(defaults.string(forKey: StorageKey.danmakuAPI))
+        // 弹幕显示：默认值 = M08h 的行为（字号 0.8 / 不透明 / 中速 / 全屏）。
+        danmakuDisplay = DanmakuDisplayConfig.decode(defaults.string(forKey: StorageKey.danmakuDisplay))
 
         // 搜索历史：默认空（搜索页据此决定显示历史胶囊还是「还没有搜索记录」）。
         searchHistory = SearchHistory.decode(defaults.string(forKey: StorageKey.searchHistory) ?? "")
