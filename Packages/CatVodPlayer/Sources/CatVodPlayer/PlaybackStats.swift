@@ -9,6 +9,10 @@ import Foundation
 /// 数据来源是内核报的属性（mpv 的属性名收在 ``MpvEngine`` 那一侧，见 ``PlaybackStatsProviding``），
 /// 这里只管**把字符串拼成人话** —— 纯逻辑，不碰 C API，因此能单测。
 public struct PlaybackStats: Sendable, Equatable {
+    /// `file-format`：解复用器/容器名（mpv 原样给的，如 `matroska,webm` / `mov,mp4,m4a,3gp,3g2,mj2`）。
+    ///
+    /// 不"美化"它：这一行是给人排查用的，mpv 报什么就写什么（裁剪成 `mp4` 反而会误导）。
+    public var fileFormat: String
     /// `video-params/w`。
     public var videoWidth: Int
     /// `video-params/h`。
@@ -43,6 +47,12 @@ public struct PlaybackStats: Sendable, Equatable {
     public var outputGamma: String
     /// `video-out-params/pixelformat`。
     public var outputPixelFormat: String
+    /// `audio-codec`：`aac` / `ac3` / `opus`…
+    public var audioCodec: String
+    /// `audio-params/channel-count`（读不到给 0）。
+    public var audioChannels: Int
+    /// `audio-params/samplerate`（Hz；读不到给 0）。
+    public var audioSampleRate: Int
 
     /// **是不是真读到过**丢帧计数。
     ///
@@ -56,6 +66,7 @@ public struct PlaybackStats: Sendable, Equatable {
         func text(_ key: String) -> String {
             (rawValues[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         }
+        fileFormat = text("file-format")
         videoWidth = Int(text("video-params/w")) ?? 0
         videoHeight = Int(text("video-params/h")) ?? 0
         videoFormat = text("video-format")
@@ -68,6 +79,9 @@ public struct PlaybackStats: Sendable, Equatable {
         outputPrimaries = text("video-out-params/primaries")
         outputGamma = text("video-out-params/gamma")
         outputPixelFormat = text("video-out-params/pixelformat")
+        audioCodec = text("audio-codec")
+        audioChannels = Int(text("audio-params/channel-count")) ?? 0
+        audioSampleRate = Int(text("audio-params/samplerate")) ?? 0
         let dropped = text("frame-drop-count")
         let decoderDropped = text("decoder-frame-drop-count")
         droppedFrames = Int(dropped) ?? 0
@@ -77,17 +91,41 @@ public struct PlaybackStats: Sendable, Equatable {
 
     /// 一条都没读到：界面据此**整块不显示**，而不是显示一排"未知"。
     public var isEmpty: Bool {
-        videoWidth == 0 && videoHeight == 0
+        fileFormat.isEmpty
+            && videoWidth == 0 && videoHeight == 0
             && videoFormat.isEmpty && pixelFormat.isEmpty
             && fps == 0 && primaries.isEmpty && gamma.isEmpty
             && hardwareDecoder.isEmpty && videoBitrate == 0
             && outputPrimaries.isEmpty && outputGamma.isEmpty && outputPixelFormat.isEmpty
+            && audioCodec.isEmpty && audioChannels == 0 && audioSampleRate == 0
             && !hasDropCounters
     }
 
     /// `3840×2160`；没读到给空串。
     public var resolutionText: String {
         videoWidth > 0 && videoHeight > 0 ? "\(videoWidth)×\(videoHeight)" : ""
+    }
+
+    /// `aac · 48 kHz · 2 声道`；什么都没读到给空串。
+    ///
+    /// 三样分开写，缺哪样不显示哪样 —— 「没声音」时先看这一行（编码 / 采样率 / 声道数）。
+    public var audioText: String {
+        var parts: [String] = []
+        if !audioCodec.isEmpty {
+            parts.append(audioCodec)
+        }
+        if audioSampleRate > 0 {
+            parts.append(Self.sampleRateText(audioSampleRate))
+        }
+        if audioChannels > 0 {
+            parts.append("\(audioChannels) 声道")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// `48000` → `48 kHz`；不是整千就照实写 `44100 Hz`。
+    private static func sampleRateText(_ hertz: Int) -> String {
+        hertz % 1000 == 0 ? "\(hertz / 1000) kHz" : "\(hertz) Hz"
     }
 
     /// `hevc · yuv420p10`。

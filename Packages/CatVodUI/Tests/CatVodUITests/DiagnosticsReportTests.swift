@@ -127,6 +127,15 @@ struct DiagnosticsReportTests {
         #expect(rows.first == DiagnosticsReport.PlaybackRow(title: "画面", value: "3840×2160"))
         #expect(rows.last == DiagnosticsReport.PlaybackRow(title: "丢帧", value: "无丢帧"))
 
+        // 容器与音频也进报告（M04P3）：只数数、不美化
+        let withAudio = PlaybackStats(rawValues: [
+            "file-format": "matroska,webm",
+            "audio-codec": "aac",
+            "audio-params/channel-count": "2",
+        ])
+        #expect(DiagnosticsReport.playbackRows(from: withAudio).map(\.title) == ["容器", "音频"])
+        #expect(DiagnosticsReport.playbackRows(from: withAudio).last?.value == "aac · 2 声道")
+
         // 片源 HDR + 输出 SDR：两行都得在（M04P2 要回答的就是「HDR 有没有送到屏幕」）
         let withOutput = PlaybackStats(rawValues: [
             "video-params/primaries": "bt.2020",

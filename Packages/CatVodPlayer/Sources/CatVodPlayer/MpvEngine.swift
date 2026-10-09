@@ -267,8 +267,12 @@ public actor MpvEngine: PlayerEngine, PlaybackStatsProviding {
     private static let statsPropertyNames = [
         "video-params/w",
         "video-params/h",
+        "file-format",
         "video-format",
         "video-params/pixelformat",
+        "audio-codec",
+        "audio-params/channel-count",
+        "audio-params/samplerate",
         "container-fps",
         "video-params/primaries",
         "video-params/gamma",

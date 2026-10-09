@@ -101,11 +101,13 @@ struct DiagnosticsReport: Sendable, Equatable {
         }
         let candidates: [(title: String, value: String)] = [
             ("画面", stats.resolutionText),
+            ("容器", stats.fileFormat),
             ("编码", stats.codecText),
             ("帧率", stats.fpsText),
             ("色彩", stats.dynamicRangeText),
             ("输出", stats.outputText),
             ("解码", stats.decodeText),
+            ("音频", stats.audioText),
             ("码率", stats.bitrateText),
             ("丢帧", stats.dropText),
         ]

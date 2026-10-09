@@ -818,11 +818,13 @@ extension PlaybackView {
         Section("播放信息") {
             if let stats = playbackStats, !stats.isEmpty {
                 statsRow("画面", stats.resolutionText)
+                statsRow("容器", stats.fileFormat)
                 statsRow("编码", stats.codecText)
                 statsRow("帧率", stats.fpsText)
                 statsRow("色彩", stats.dynamicRangeText)
                 statsRow("输出", stats.outputText)
                 statsRow("解码", stats.decodeText)
+                statsRow("音频", stats.audioText)
                 statsRow("码率", stats.bitrateText)
                 statsRow("丢帧", stats.dropText)
             } else {

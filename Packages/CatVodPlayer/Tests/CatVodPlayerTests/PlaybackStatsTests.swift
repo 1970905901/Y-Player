@@ -55,6 +55,32 @@ struct PlaybackStatsTests {
         #expect(stats.isHDR)
     }
 
+    @Test("容器与音频：读到的才拼出来（没声音时先看这一行）")
+    func containerAndAudio() {
+        let full = PlaybackStats(rawValues: [
+            "file-format": "matroska,webm",
+            "audio-codec": "aac",
+            "audio-params/samplerate": "48000",
+            "audio-params/channel-count": "2",
+        ])
+        #expect(full.fileFormat == "matroska,webm")
+        #expect(full.audioText == "aac · 48 kHz · 2 声道")
+        #expect(!full.isEmpty)
+
+        // 只读到编码：采样率与声道不显示，不编默认值
+        let partial = PlaybackStats(rawValues: ["audio-codec": "ac3"])
+        #expect(partial.audioText == "ac3")
+
+        // 44100 不是整千：照实写 Hz
+        let odd = PlaybackStats(rawValues: ["audio-params/samplerate": "44100"])
+        #expect(odd.audioText == "44100 Hz")
+
+        // 只读到视频侧：音频那行为空、也不占 isEmpty 的便宜
+        let none = PlaybackStats(rawValues: ["video-params/w": "1920", "video-params/h": "1080"])
+        #expect(none.audioText.isEmpty)
+        #expect(none.fileFormat.isEmpty)
+    }
+
     @Test("输出侧没读到：不许猜（`isOutputHDR` 给 nil、那一行给空串）")
     func missingOutputStaysUnknown() {
         let stats = PlaybackStats(rawValues: ["video-params/gamma": "pq", "video-params/primaries": "bt.2020"])
