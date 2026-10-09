@@ -100,6 +100,41 @@ public struct VodDetailView: View {
         }
     }
 
+    /// 骨架加载态（M11）：和真布局**同一副骨架** —— 封面 + 几行字 + 播放条 + 选集条。
+    ///
+    /// 参考视频里加载中就是这个形状，不是一个居中转圈。所以第一次进页面时，
+    /// 屏幕上先出现「就是这里将来会有东西」的灰块，内容回来时原地换成真东西、不跳版。
+    private var embySkeleton: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                skeletonBlock(width: 104, height: 146)
+                VStack(alignment: .leading, spacing: 8) {
+                    skeletonBlock(width: 140, height: 16)
+                    skeletonBlock(width: 96, height: 12)
+                    skeletonBlock(width: 120, height: 12)
+                    skeletonBlock(width: 72, height: 12)
+                }
+            }
+            // 播放条
+            skeletonBlock(width: nil, height: 34)
+            // 选集：参考视频是两张一行，这里先铺一排占位
+            HStack(spacing: 8) {
+                skeletonBlock(width: 56, height: 76)
+                skeletonBlock(width: 56, height: 76)
+                skeletonBlock(width: 56, height: 76)
+                skeletonBlock(width: 56, height: 76)
+            }
+        }
+    }
+
+    /// 灰块：`width: nil` 表示占满可用宽度。
+    private func skeletonBlock(width: CGFloat?, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: PlatformShims.cardCornerRadius)
+            .fill(Color.secondary.opacity(0.15))
+            .frame(width: width, height: height)
+            .frame(maxWidth: width == nil ? .infinity : nil)
+    }
+
     /// 图标行（M11）。**目前只有「⋯」** —— 参考视频里还有 🔍 聚合搜索与 ♡ 收藏，
     /// 那两项各自的落地点（海报墙搜索页、收藏落地）是独立的片，**先不放空按钮**：
     /// 按下去没反应比没有这个按钮更糟。
@@ -327,9 +362,8 @@ public struct VodDetailView: View {
             playButtonRow
             iconRow
             if isLoading, detail.list.isEmpty {
-                Text("加载中…")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                // 第一次进页面才给骨架；内容回来后原地换掉。
+                embySkeleton
             }
             if let vod {
                 VStack(alignment: .leading, spacing: 10) {
