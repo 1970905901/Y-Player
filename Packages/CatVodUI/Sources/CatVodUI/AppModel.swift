@@ -383,7 +383,7 @@ public final class AppModel: ObservableObject {
     /// 站点分组规则的**本地设置**：**接口摘要 → {关掉的规则 id, 用户自建规则}**（上游 `GroupRuleStore`）。
     ///
     /// 桶键同 ``siteNames``（接口地址摘要）：这是要落盘的东西，不存明文地址。
-    @Published internal var siteGroupRuleSettings: [String: SiteGroupRuleSettings] {
+    @Published var siteGroupRuleSettings: [String: SiteGroupRuleSettings] {
         didSet {
             defaults.set(
                 SiteGroupRuleBook.encode(siteGroupRuleSettings),
