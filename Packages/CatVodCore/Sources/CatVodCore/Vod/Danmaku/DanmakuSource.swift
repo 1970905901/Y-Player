@@ -14,16 +14,39 @@ import Foundation
 /// - 字符串里以 `[` / `{` 开头 → 再当 JSON 解一次。
 ///
 /// 全部为空 / 认不出来 → 空数组（上游 `filter` 会丢掉没有 `url` 的项）。
-public struct DanmakuSource: Sendable, Hashable {
+/// ⚠️ 这里曾经有**两份**同名建模：本文件一份（解析弹幕搜索接口的候选来源），
+/// `Vod/Models/MediaExtras.swift` 另一份（只被 `SpiderResult.danmaku` 的声明引用，
+/// 没有任何生产消费方，字段还少了 `source`）。同一个模块里出现两个顶层同名类型是**编译错误**
+/// （`'DanmakuSource' is ambiguous for type lookup in this context`，CI 抓到、本地语法检查看不到）。
+/// 已合并为这一个：`Codable` / `Identifiable` 从那一份搬来，字段以本文件为准。
+///
+/// 那一份还有个 `extras: [String: String]`，但它的 `init(from:)` 里是**硬写空数组** ——
+/// 从来没有被真正解析出来过，所以合并时没有搬（不搬一个僵尸字段）。
+public struct DanmakuSource: Codable, Sendable, Hashable, Identifiable {
     public var name: String
     public var url: String
     /// 接口自己声明的来源名（`source` / `from` / `site` / `provider` / `platform` 任一）。
     public var source: String
 
+    public var id: String { "\(name)|\(url)" }
+
     public init(name: String = "", url: String = "", source: String = "") {
         self.name = name
         self.url = url
         self.source = source
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = container.lenientString(.name)
+        url = container.lenientString(.url)
+        source = container.lenientString(.source)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case url
+        case source
     }
 
     /// 展示名：没有 `name` 就回落 `url`（上游 `getName`）。

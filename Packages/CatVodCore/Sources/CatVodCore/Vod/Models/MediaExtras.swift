@@ -59,34 +59,6 @@ public struct DrmConfig: Codable, Sendable, Hashable {
     }
 }
 
-/// 弹幕源。
-public struct DanmakuSource: Codable, Sendable, Hashable, Identifiable {
-    public var name: String
-    public var url: String
-    /// 部分源会给出额外参数（如集数、平台标识）。
-    public var extras: [String: String]
-
-    public var id: String { "\(name)|\(url)" }
-
-    public init(name: String = "", url: String = "", extras: [String: String] = [:]) {
-        self.name = name
-        self.url = url
-        self.extras = extras
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        name = container.lenientString(.name)
-        url = container.lenientString(.url)
-        extras = [:]
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case name
-        case url
-    }
-}
-
 /// 字幕源。
 public struct SubtitleSource: Codable, Sendable, Hashable, Identifiable {
     public var name: String
