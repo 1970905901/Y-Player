@@ -126,6 +126,9 @@ struct HLSManifestSegmentsTests {
             "https://cdn.example/v/movie/seg-1.m4s",
             "https://cdn.example/v/movie/seg-2.m4s",
         ])
+        // 落盘后缀靠它决定（有 init 片 = MP4 分段流）
+        #expect(manifest.hasInitializationSegment)
+        #expect(!media("#EXTINF:4,\nseg.ts").hasInitializationSegment)
     }
 
     @Test("不是清单（比如直接的 mp4 文本/响应体）→ 空结果，调用方当普通文件直下")

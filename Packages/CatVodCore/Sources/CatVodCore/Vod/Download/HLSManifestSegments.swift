@@ -29,6 +29,11 @@ public struct HLSManifest: Sendable, Equatable {
     /// 不认它会下出「同一个文件下 N 遍」，还看不出哪里错。调用方据此如实拒绝（沿用本平台
     /// 对加密片段的那套：不支持的就说清楚，不猜）。
     public var isRangeBased: Bool
+    /// 清单里有 `#EXT-X-MAP`（fMP4 的初始化片，已作为第一个元素放进 `segments`）。
+    ///
+    /// 下载侧靠它决定落盘的**后缀**：有 init 片 = 拼接出来是 MP4 分段流（`.mp4`），
+    /// 否则是 TS 流（`.ts`）—— 后缀错了，下一环（本地播放）就会拒开这个文件。
+    public var hasInitializationSegment: Bool
     /// 片段时长之和（秒）；解析不出来是 0 —— 只用于展示，不参与任何判定。
     public var totalDuration: Double
 
@@ -38,6 +43,7 @@ public struct HLSManifest: Sendable, Equatable {
         segments: [String] = [],
         isEncrypted: Bool = false,
         isRangeBased: Bool = false,
+        hasInitializationSegment: Bool = false,
         totalDuration: Double = 0
     ) {
         self.isMaster = isMaster
@@ -45,6 +51,7 @@ public struct HLSManifest: Sendable, Equatable {
         self.segments = segments
         self.isEncrypted = isEncrypted
         self.isRangeBased = isRangeBased
+        self.hasInitializationSegment = hasInitializationSegment
         self.totalDuration = totalDuration
     }
 
@@ -124,6 +131,7 @@ public enum HLSManifestParser {
             } else if pendingIsSegment {
                 // fMP4 的 init 片必须**排在最前**：没有它，后面的片段是解不出来的裸流。
                 if manifest.segments.isEmpty, !mapURI.isEmpty {
+                    manifest.hasInitializationSegment = true
                     manifest.segments.append(absolute(mapURI, base: baseURL))
                 }
                 manifest.segments.append(resolved)
