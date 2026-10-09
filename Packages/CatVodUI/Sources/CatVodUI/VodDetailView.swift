@@ -36,6 +36,11 @@ public struct VodDetailView: View {
     /// （`private` 只对声明所在文件开放）。
     @State var isAutoPlaying = false
 
+    /// 选集卡片取图的随机种子：进页面定一次（`.random` 模式下卡片用它 + 下标打散，见 ``PosterPicker``）。
+    @State var episodePosterSeed = UInt64.random(in: 0 ..< UInt64.max)
+    /// 选集卡片共用的取图集（与顶部同一次刮削，经 `AppModel.tmdbBundle(for:mode:)` 缓存与合流）。
+    @State var episodePosterSet: TMDBPosterSet?
+
     public init(model: AppModel, site: Site?, vodID: String) {
         self.model = model
         _site = State(initialValue: site)

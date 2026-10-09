@@ -4,7 +4,8 @@ import SwiftUI
 
 /// Emby 视图顶部：**元信息驱动的背景图 + 标题 + 简介**（M11 第一片）。
 ///
-/// 自己拉数据（按片名搜 TMDB），**不把加载状态塞进 `VodDetailView`**：
+/// 数据经 `AppModel.tmdbBundle(for:mode:)`（会话缓存 + 并发合流，与选集卡片**共用同一次刮削**），
+/// **不把加载状态塞进 `VodDetailView`**：
 /// 那片代码已经很大，而元信息是独立的一层 —— 它拉不到也不该拖垮详情本身。
 ///
 /// 三态都明说，不静默：
@@ -31,6 +32,11 @@ struct TMDBDetailHeader: View {
     /// 轮播间隔（秒）。
     private let rotateInterval: TimeInterval = 6
 
+    /// 重新拉取的触发键：片名或取图模式变了才重来（换源 / 设置里换模式都会变）。
+    private var loadKey: String {
+        "\(title)|\(mode.rawValue)"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             poster
@@ -51,7 +57,7 @@ struct TMDBDetailHeader: View {
                 }
             }
         }
-        .task {
+        .task(id: loadKey) {
             await load()
             await rotate()
         }
@@ -99,38 +105,26 @@ struct TMDBDetailHeader: View {
     }
 
     private func load() async {
-        guard model.tmdbScrapeEnabled else {
-            noticeText = "元信息刮削已关（详情页「⋯」里可以打开）。"
-            return
-        }
-        guard model.isTMDBConfigured else {
-            noticeText = "没填 TMDB api key —— 这一层不工作（设置 → 播放 → 播放页）。"
-            return
-        }
         guard !title.isEmpty else {
             return
         }
-        do {
-            let client = TMDBClient(config: model.tmdbConfig, transport: URLSessionTransport())
-            let results = try await client.search(title)
-            guard let found = results.first else {
-                noticeText = "TMDB 里没搜到「\(title)」，暂用站点的海报。"
-                return
-            }
-            metadata = found
-            // 拆成两句：SwiftFormat 的 `hoistAwait` 不接受 `await` 嵌在括号里
-            // （`(try? await f()) ?? []` 正是它要改的形态）。分成两句后 `await` 落在调用表达式开头，
-            // 与上一行 `try await client.search(...)` 同一形态。
-            let fetched = try? await client.backdrops(kind: found.kind, id: found.id)
-            let backdrops = fetched ?? []
-            posterSet = TMDBPosterSet(
-                metadata: found,
-                backdrops: backdrops,
-                config: model.tmdbConfig,
-                mode: mode
-            )
-        } catch {
-            noticeText = "元信息没取到：\(userFacingMessage(error))"
+        // 重拉之前先清旧值：换源（片名变了）时旧元信息不能留在屏上。
+        metadata = nil
+        posterSet = nil
+        noticeText = ""
+        let outcome = await model.tmdbBundle(for: title, mode: mode)
+        switch outcome {
+        case let .found(bundle):
+            metadata = bundle.metadata
+            posterSet = bundle.posterSet
+        case .disabled:
+            noticeText = "元信息刮削已关（详情页「⋯」里可以打开）。"
+        case .notConfigured:
+            noticeText = "没填 TMDB api key —— 这一层不工作（设置 → 播放 → 播放页）。"
+        case .notFound:
+            noticeText = "TMDB 里没搜到「\(title)」，暂用站点的海报。"
+        case let .failed(reason):
+            noticeText = "元信息没取到：\(reason)"
         }
     }
 

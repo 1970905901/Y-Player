@@ -32,12 +32,11 @@ extension VodDetailView {
             }
             // 播放条
             skeletonBlock(width: nil, height: 34)
-            // 选集：参考视频是两张一行，这里先铺一排占位
+            // 选集：一排占位，形状跟真卡片（顶部缩略图 + 一行集名）对齐
             HStack(spacing: 8) {
-                skeletonBlock(width: 56, height: 76)
-                skeletonBlock(width: 56, height: 76)
-                skeletonBlock(width: 56, height: 76)
-                skeletonBlock(width: 56, height: 76)
+                skeletonBlock(width: 92, height: 92)
+                skeletonBlock(width: 92, height: 92)
+                skeletonBlock(width: 92, height: 92)
             }
         }
     }
@@ -256,18 +255,18 @@ extension VodDetailView {
         }
     }
 
-    /// 选集：横向滚动的卡片（集名 + 不支持角标 + 上次看到标记）。
+    /// 选集：横向滚动的卡片（缩略图 + 集名 + 不支持角标 + 上次看到标记；缩略图与顶部同一次刮削）。
     var embyEpisodeSection: some View {
         Section("选集") {
             wholeLineDownloadsRow
             if episodes.isEmpty {
                 if isLoading {
                     // 选集区的加载态：和卡片同一副骨架（一排灰卡片），不是一行小字 ——
-                    // 参考视频里加载中屏幕上就是这些形状。卡片接图后高度跟着改。
+                    // 参考视频里加载中屏幕上就是这些形状。卡片接图后统一成 92×92 的块。
                     HStack(spacing: 8) {
-                        skeletonBlock(width: 92, height: 48)
-                        skeletonBlock(width: 92, height: 48)
-                        skeletonBlock(width: 92, height: 48)
+                        skeletonBlock(width: 92, height: 92)
+                        skeletonBlock(width: 92, height: 92)
+                        skeletonBlock(width: 92, height: 92)
                     }
                 } else {
                     Text("没有可用线路")
@@ -293,12 +292,26 @@ extension VodDetailView {
                     .onChange(of: selectedLineIndex) { _ in centerCurrentEpisode(on: proxy) }
                 }
             }
+            .task(id: episodePosterLoadKey) {
+                await loadEpisodePosterSet()
+            }
         }
     }
 
-    /// 单张选集卡片。
+    /// 单张选集卡片：顶部缩略图（TMDB 取图集，与顶部同一次刮削）+ 集名 + 角标 / 上次看到。
+    ///
+    /// 没有取图集时（未配 key / 没搜到 / 刮削关）退化成纯文字卡 —— 不给「永远灰着」的图块。
     func embyEpisodeCard(_ episode: PlaylistParser.Episode, at index: Int) -> some View {
         VStack(alignment: .leading, spacing: 4) {
+            if let imageURL = episodePosterURL(at: index) {
+                AsyncImage(url: imageURL) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Color.secondary.opacity(0.15)
+                }
+                .frame(width: 92, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
             HStack(spacing: 4) {
                 Text(episode.name.isEmpty ? "第 \(index + 1) 集" : episode.name)
                     .font(.footnote)
@@ -323,6 +336,15 @@ extension VodDetailView {
         )
     }
 
+    /// 这张卡片该显示的图：`step` 用下标、`seed` 加下标打散 —— 各卡片各取一张、每次进来一样
+    /// （取图规则见 ``PosterPicker``；这里不另立一套）。
+    func episodePosterURL(at index: Int) -> URL? {
+        guard let picked = episodePosterSet?.image(step: index, seed: episodePosterSeed &+ UInt64(index)) else {
+            return nil
+        }
+        return URL(string: picked)
+    }
+
     /// 把「该播的那一集」滚到横滑正中 —— 参考视频里当前集在中间，不在左端。
     ///
     /// 两处刻意的写法：
@@ -340,6 +362,23 @@ extension VodDetailView {
             withAnimation(.easeInOut(duration: 0.25)) {
                 proxy.scrollTo(slot.index, anchor: .center)
             }
+        }
+    }
+
+    /// 卡片取图集的加载键：片名 / 取图模式变了才重拉（缓存与合流在 `AppModel` 那层）。
+    var episodePosterLoadKey: String {
+        "\(vod?.vodName ?? "")|\(model.tmdbPosterMode.rawValue)"
+    }
+
+    /// 拉卡片要用的取图集：与顶部走同一份（同键并发会合流，不会各拉一次）。
+    func loadEpisodePosterSet() async {
+        let title = vod?.vodName ?? ""
+        guard !title.isEmpty else {
+            return
+        }
+        let outcome = await model.tmdbBundle(for: title, mode: model.tmdbPosterMode)
+        if case let .found(bundle) = outcome {
+            episodePosterSet = bundle.posterSet
         }
     }
 }

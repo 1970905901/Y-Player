@@ -459,6 +459,13 @@ public final class AppModel: ObservableObject {
     let sessionTransport: URLSessionTransport
     /// 详情缓存（进程内共享）。
     let detailCache = DetailCache()
+
+    /// TMDB 元信息的**会话缓存**（键 = 片名；只活进程内，不落盘）：详情页顶部与选集卡片共用同一次刮削。
+    ///
+    /// 缓存的是**建好的** ``TMDBBundle``（含取图模式）—— 模式对不上就当未命中（见 `tmdbBundle(for:mode:)`）。
+    var tmdbBundleCache: [String: TMDBBundle] = [:]
+    /// 正在飞的刮削（键 = 模式 + 片名）：同屏多处同时要同一片时只发一轮请求。
+    var tmdbBundleInflight: [String: Task<TMDBMetadataOutcome, Never>] = [:]
     /// 站点传输的缓存（接口换过才重建，见 ``AppModel/transportForConfiguration()``）。
     var cachedTransport: HTTPTransport?
 
@@ -467,6 +474,9 @@ public final class AppModel: ObservableObject {
     let downloadDirectory: URL
     /// 测试注入的下载传输（`nil` = 用 ``AppModel/transportForConfiguration()``）。
     let downloadTransportOverride: HTTPTransport?
+
+    /// 测试注入的 TMDB 传输（`nil` = 按需新建 `URLSessionTransport`）：给「缓存 / 合流」的测试用。
+    let tmdbTransportOverride: HTTPTransport?
 
     /// 已载入的弹幕行（M08c）：渲染层要用的原始数据（搜索与下载在 `CatVodSource.DanmakuService`）。
     @Published public internal(set) var danmakuLines: [DanmakuLine] = []
@@ -524,12 +534,14 @@ public final class AppModel: ObservableObject {
         defaults: UserDefaults = .standard,
         downloadDirectory: URL? = nil,
         downloadTransport: HTTPTransport? = nil,
-        storageURL: URL? = nil
+        storageURL: URL? = nil,
+        tmdbTransport: HTTPTransport? = nil
     ) {
         let base = cacheDirectory ?? Self.defaultCacheDirectory()
         self.cacheDirectory = base
         self.downloadDirectory = downloadDirectory ?? Self.downloadDirectory
         downloadTransportOverride = downloadTransport
+        tmdbTransportOverride = tmdbTransport
         self.defaults = defaults
         sessionTransport = URLSessionTransport()
         // 存储：优先 GRDB 落库（M08b）；打开失败退回内存实现并如实说明（不许静默）。
