@@ -159,9 +159,8 @@ public struct PlaybackView: View {
             // 信息区限高：屏幕的大头留给画面（沉浸版），列表不够高时自己在内部滚动。
             .frame(maxHeight: 320)
         }
-        // 沉浸版：整页黑底 + 深色外观 —— 画面四周、信息区、导航栏都不再出现白底。
-        .background(Color.black.ignoresSafeArea())
-        .preferredColorScheme(.dark)
+        // 外观跟随应用 / 系统（用户口径）：信息区与导航栏回落系统外观。
+        // 画面区自己的黑色衬底**不跟随** —— 视频舞台在浅色下也应是黑的（跟随的是页面，不是画面）。
         .navigationTitle(title)
         .task {
             // 「开始一次播放」的回传口（M06l）：换集/换台时上层用它把「跳过广告」的累计统计归零。
