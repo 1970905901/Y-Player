@@ -30,6 +30,25 @@ struct DiscoverPageTests {
         #expect(!DiscoverPaging.canLoadMore(page: 8, pageCount: 9, itemCount: 20, reachedEnd: true))
     }
 
+    // MARK: - DiscoverContentMerge
+
+    @Test("分类接口不带 class：分类条不能被整页替换抹掉（「显示一下就不见了」的成因）")
+    func contentMergeKeepsCategories() {
+        var home = SpiderResult()
+        home.categories = [VodCategory(typeID: "1", typeName: "玩偶电影")]
+
+        var page = SpiderResult()
+        page.pagecount = 9
+
+        let merged = DiscoverContentMerge.content(preservingCategories: page, current: home)
+        #expect(merged.categories == home.categories)
+        #expect(merged.pagecount == 9)
+
+        var richer = page
+        richer.categories = [VodCategory(typeID: "2", typeName: "剧集")]
+        #expect(DiscoverContentMerge.content(preservingCategories: richer, current: home).categories == richer.categories)
+    }
+
     // MARK: - DiscoverFilterRow
 
     private func makeFilter(name: String = "地区") -> VodFilter {

@@ -212,7 +212,7 @@ extension HomeView {
             extend: extend
         )
         if !force, let cached = model.cachedHomeResult(cacheKey) {
-            result = cached
+            result = DiscoverContentMerge.content(preservingCategories: cached, current: result)
             if selectedCategoryID != targetCategory {
                 selectedCategoryID = targetCategory
             }
@@ -228,7 +228,7 @@ extension HomeView {
             )
             let filled = await model.makePictureFiller().fill(site: targetSite, result: category)
             if filled.hasList || filled.hasCategories || filled.code == 0 {
-                result = filled
+                result = DiscoverContentMerge.content(preservingCategories: filled, current: result)
                 model.storeHomeResult(filled, key: cacheKey)
             }
             if selectedCategoryID != targetCategory {

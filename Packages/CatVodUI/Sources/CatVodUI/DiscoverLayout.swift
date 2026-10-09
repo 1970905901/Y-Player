@@ -4,7 +4,7 @@ import CatVodCore
 // 所以这里显式带上 Foundation（Darwin 上它 re-export CoreGraphics，`CGFloat` 出于此）。
 import Foundation
 
-// 发现页（`HomeView`）的纯逻辑：翻页判定、筛选行模型、站点切换面板的行模型、底部 Tab 栏的收放。
+// 发现页（`HomeView`）的纯逻辑：翻页判定、筛选行模型、站点切换面板的行模型、底部 Tab 栏的收放、内容合并（分类条保护）。
 //
 // 刻意与视图分开：参考录屏里有几处「看不见的分支」——
 // 上游不给 `pagecount` 时要靠「返回空列表」停下上拉加载、上游没给筛选名时不出左侧标签列、
@@ -27,6 +27,24 @@ enum DiscoverPaging {
             return false
         }
         return pageCount <= 0 || page < pageCount
+    }
+}
+
+/// 发现页的**内容合并**：分类 / 翻页响应落回 `result` 前的保护规则。
+///
+/// 为什么要有它：分类条的数据（`class`）由**首页**响应提供，而分类接口**常常不带它**
+/// （实测「玩偶」系接口）。旧写法是整页替换 —— 第一次进分类就把分类条抹掉了，
+/// 表现是「分类显示一下就不见了」。规则与 ``HomeView/appendPage(_:number:)`` 一致：
+/// **上游给了就用上游的（可能改名 / 改序），没给就保持原样**。
+enum DiscoverContentMerge {
+    /// 用 `incoming` 替换 `current` 的内容，但**保护分类条**：`incoming` 没带分类时沿用 `current` 的。
+    static func content(preservingCategories incoming: SpiderResult, current: SpiderResult) -> SpiderResult {
+        guard !incoming.hasCategories else {
+            return incoming
+        }
+        var next = incoming
+        next.categories = current.categories
+        return next
     }
 }
 
