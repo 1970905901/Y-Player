@@ -216,7 +216,7 @@ public struct VodDetailView: View {
                 model: model,
                 title: vod?.vodName ?? "",
                 fallbackPoster: detail.artwork,
-                mode: .fixed
+                mode: model.tmdbPosterMode
             )
             embyHeader
             if lines.count > 1 {

@@ -27,5 +27,20 @@ extension AppModel {
         tmdbConfig.isConfigured
     }
 
+    /// 取图模式（固定 / 随机 / 轮播）：**顶部与选集卡片共用同一套**（见 ``PosterPicker``）。
+    ///
+    /// 与其它偏好同一条路：读写在注入的 `defaults` 上，用户改一次落一次盘。
+    /// 值不认识就回落 `.fixed`（旧版本写进去的值、或手改过的串，都不该让界面空着）。
+    var tmdbPosterMode: PosterMode {
+        get {
+            defaults.string(forKey: Self.tmdbPosterModeDefaultsKey)
+                .flatMap(PosterMode.init(rawValue:)) ?? .fixed
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: Self.tmdbPosterModeDefaultsKey)
+        }
+    }
+
     private static let tmdbConfigDefaultsKey = "tmdb.config"
+    private static let tmdbPosterModeDefaultsKey = "tmdb.posterMode"
 }

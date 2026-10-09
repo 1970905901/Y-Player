@@ -184,6 +184,17 @@ struct PlaybackPageSettingsSection: View {
                     : "没填 api key —— 元信息这一层不工作，界面显示占位。")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+
+                // 取图模式：顶部背景图现在就用它；选集卡片随后接同一套（PosterPicker 已共用）。
+                Picker("海报方式", selection: $model.tmdbPosterMode) {
+                    ForEach(PosterMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+                Text("随机是**进页面定一次**，不是每张都在跳 —— 每张都换会像坏了。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
     }
