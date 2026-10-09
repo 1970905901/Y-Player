@@ -13,8 +13,10 @@ import Foundation
 ///   接口（换掉解析器就是十几行）；Apple 侧的 `URLSession` **没有对应钩子**，要做到得自建连接层
 ///  （见 `docs/任务记录/M06m-DNS方案与决策.md`）。这是**差异**，不是偷懒 ——
 ///   但差异必须说出来：配置里写了 `hosts` 却不生效，用户只会以为「这个站不行」。
-/// - **还没接的界面**：`flags`（上游的播放 flag 菜单）、`wallpaper`（上游的首页壁纸）、
-///   `logo`、`notice`。这些是能做的，只是当前没有消费方；同样要报，免得用户以为配置没生效是自己的问题。
+/// - **还没接的界面**：`flags`（上游的播放 flag 菜单）、`logo`、`notice`。
+///   这些是能做的，只是当前没有消费方；同样要报，免得用户以为配置没生效是自己的问题。
+/// - **有意不做**：`wallpaper`（首页壁纸）—— 首页形态（WebHome）早已决定不做，壁纸无处可用。
+///   它**不是**「还没接」，别再当待办（这次差点按待接界面去做，被指出后才发现矩阵里写着不做）。
 ///
 /// 所以这里的职责只有一个：**列出不生效的字段与原因**，交给界面原样显示。
 /// 它不做任何解析或请求，也不假装支持。
@@ -44,8 +46,10 @@ public enum ConfigCoverage {
     /// `flags`：上游把它做成播放页的 flag 选择菜单（配套 `FlagSelectionListener`），本平台没有这个菜单。
     public static let flagsReason = "本平台没有播放 flag 选择菜单，这份列表不会生效（站点详情自带的 flag 可正常切换）"
 
-    /// `wallpaper`：上游是首页壁纸（`wall` / `getWall()`），本平台首页还没接。
-    public static let wallpaperReason = "本平台首页不显示配置里的壁纸"
+    /// `wallpaper`：上游是首页壁纸（`wall` / `getWall()`）。**本平台有意不做**，不是「还没接」——
+    /// 首页形态（WebHome）早已决定不做（见 `docs/协议兼容矩阵.md`），壁纸无处可用。
+    /// 别再把它当待办（这次就差点按「待接界面」去做，被指出后才发现矩阵里写着不做）。
+    public static let wallpaperReason = "本平台没有网页首页形态（WebHome 已决定不做），配置里的壁纸无处可用"
 
     /// `logo`：配置图标。
     public static let logoReason = "本平台不使用配置图标"
