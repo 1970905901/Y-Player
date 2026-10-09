@@ -112,15 +112,25 @@ struct DiagnosticsReportTests {
             "frame-drop-count": "0",
             "decoder-frame-drop-count": "0",
         ])
-        let rows = DiagnosticsReport.playbackRows(from: full)
-        #expect(rows.count == 7)
-        #expect(rows.first == DiagnosticsReport.PlaybackRow(title: "画面", value: "3840×2160"))
-        #expect(rows.contains(DiagnosticsReport.PlaybackRow(title: "色彩", value: "HDR · PQ (ST2084) · BT.2020")))
-        #expect(rows.contains(DiagnosticsReport.PlaybackRow(title: "解码", value: "硬件解码（VideoToolbox）")))
-        #expect(rows.contains(DiagnosticsReport.PlaybackRow(title: "丢帧", value: "无丢帧")))
+        // 一项一断言：红了就知道是哪一项的输入→输出不对（比「行数对不上」好排查得多）
+        #expect(full.resolutionText == "3840×2160")
+        #expect(full.codecText == "hevc · yuv420p10")
+        #expect(full.fpsText == "23.976")
+        #expect(full.dynamicRangeText == "HDR · PQ (ST2084) · BT.2020")
+        #expect(full.decodeText == "硬件解码（VideoToolbox）")
+        #expect(full.bitrateText == "12.4 Mbps")
+        #expect(full.dropText == "无丢帧")
+        #expect(!full.isEmpty)
 
-        // 只读到分辨率时，其余空项不出现（与播放页那一块同一口径）
+        let rows = DiagnosticsReport.playbackRows(from: full)
+        #expect(rows.map(\.title) == ["画面", "编码", "帧率", "色彩", "解码", "码率", "丢帧"])
+        #expect(rows.first == DiagnosticsReport.PlaybackRow(title: "画面", value: "3840×2160"))
+        #expect(rows.last == DiagnosticsReport.PlaybackRow(title: "丢帧", value: "无丢帧"))
+
+        // 只读到分辨率时，其余空项不出现（与播放页那一块同一口径）——
+        // 「丢帧」尤其重要：那两个计数**没读到**时不许说「无丢帧」（那是句假话）。
         let partial = PlaybackStats(rawValues: ["video-params/w": "1920", "video-params/h": "1080"])
+        #expect(partial.dropText.isEmpty)
         #expect(DiagnosticsReport.playbackRows(from: partial).map(\.title) == ["画面"])
 
         #expect(DiagnosticsReport.playbackRows(from: nil).isEmpty)
