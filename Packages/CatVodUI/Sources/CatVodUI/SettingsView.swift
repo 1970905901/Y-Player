@@ -15,6 +15,8 @@ import SwiftUI
 @MainActor
 public struct SettingsView: View {
     @ObservedObject private var model: AppModel
+    /// 本 Tab 的沉浸页登记簿（下载好的文件直接播时收起底部 Tab 栏）。
+    @EnvironmentObject private var immersiveTabBar: ImmersiveTabBarState
 
     public init(model: AppModel) {
         self.model = model
@@ -32,6 +34,7 @@ public struct SettingsView: View {
         }
         .adaptiveListStyle()
         .navigationTitle("设置")
+        .adaptiveTabBarHidden(immersiveTabBar.isActive)
     }
 
     // MARK: - 源地址

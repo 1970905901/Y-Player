@@ -66,7 +66,7 @@ struct ParsePlaybackView: View {
                 UnsupportedPlaybackView(reason: errorText)
             }
         }
-        .adaptiveTabBarHidden(true)
+        .immersiveTabBarPage()
         .task {
             // 结果体里的字段在这里落地（与 `SitePlayEpisodeView` 同一套）：
             // 解析来源与描述给播放页显示，字幕交给取用链。

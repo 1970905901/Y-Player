@@ -48,6 +48,9 @@ public struct LibraryView: View {
     @State var isSelecting = false
     @State var selection = Set<String>()
 
+    /// 本 Tab 的沉浸页登记簿（详情 / 播放压上来时收起底部 Tab 栏）。
+    @EnvironmentObject private var immersiveTabBar: ImmersiveTabBarState
+
     public init(model: AppModel) {
         self.model = model
     }
@@ -63,6 +66,7 @@ public struct LibraryView: View {
         }
         .adaptiveListStyle()
         .navigationTitle(scope.displayName)
+        .adaptiveTabBarHidden(immersiveTabBar.isActive)
         .adaptiveToolbar {
             scopeMenu
         } trailing: {

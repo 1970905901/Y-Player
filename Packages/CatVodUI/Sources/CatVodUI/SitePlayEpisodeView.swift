@@ -88,7 +88,7 @@ struct SitePlayEpisodeView: View {
                 UnsupportedPlaybackView(reason: errorText)
             }
         }
-        .adaptiveTabBarHidden(true)
+        .immersiveTabBarPage()
         .task {
             await loadResource()
         }

@@ -42,6 +42,8 @@ public struct HomeView: View {
     @State var isLoadingSections = false
     /// 底部 Tab 栏的收放（规格与判定见 ``DiscoverTabBarVisibility``）。
     @State private var tabBar = DiscoverTabBarVisibility()
+    /// 本 Tab 的沉浸页登记簿（详情 / 播放压上来时也要收栏）；登记方见 ``ImmersiveTabBarPageModifier``。
+    @EnvironmentObject private var immersiveTabBar: ImmersiveTabBarState
 
     public init(model: AppModel) {
         self.model = model
@@ -115,7 +117,7 @@ public struct HomeView: View {
             invalidateContent()
             Task { await loadHome(force: true) }
         }
-        .adaptiveTabBarHidden(tabBar.isHidden)
+        .adaptiveTabBarHidden(tabBar.isHidden || immersiveTabBar.isActive)
         .onDisappear {
             // 离开发现页把 Tab 栏放回来：它是导航出去的路，不能带着收起状态离开。
             tabBar.reveal()

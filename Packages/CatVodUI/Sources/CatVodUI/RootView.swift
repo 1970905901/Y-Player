@@ -24,6 +24,12 @@ import SwiftUI
 @MainActor
 public struct RootView: View {
     @StateObject private var model = AppModel()
+    /// 四个 Tab **各一份**的沉浸页登记簿（详情 / 播放压上来时收起底部 Tab 栏；
+    /// 机制与原因见 `Platform/AdaptiveTabBar.swift`）。一份只服务一个 Tab。
+    @StateObject private var discoverImmersiveTabBar = ImmersiveTabBarState()
+    @StateObject private var liveImmersiveTabBar = ImmersiveTabBarState()
+    @StateObject private var libraryImmersiveTabBar = ImmersiveTabBarState()
+    @StateObject private var settingsImmersiveTabBar = ImmersiveTabBarState()
 
     public init() { }
 
@@ -32,6 +38,7 @@ public struct RootView: View {
             AdaptiveNavigationContainer {
                 HomeView(model: model)
             }
+            .environmentObject(discoverImmersiveTabBar)
             .tabItem {
                 Label("发现", systemImage: "play.rectangle")
             }
@@ -39,6 +46,7 @@ public struct RootView: View {
             AdaptiveNavigationContainer {
                 LiveView(model: model)
             }
+            .environmentObject(liveImmersiveTabBar)
             .tabItem {
                 Label("直播", systemImage: "dot.radiowaves.left.and.right")
             }
@@ -46,6 +54,7 @@ public struct RootView: View {
             AdaptiveNavigationContainer {
                 LibraryView(model: model)
             }
+            .environmentObject(libraryImmersiveTabBar)
             .tabItem {
                 Label("追剧", systemImage: "heart")
             }
@@ -53,6 +62,7 @@ public struct RootView: View {
             AdaptiveNavigationContainer {
                 SettingsView(model: model)
             }
+            .environmentObject(settingsImmersiveTabBar)
             .tabItem {
                 Label("设置", systemImage: "gearshape")
             }

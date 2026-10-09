@@ -24,6 +24,9 @@ public struct LiveView: View {
     /// 直播设置（直播源 / EPG 地址覆盖）的弹层。
     @State private var isSettingsPresented = false
 
+    /// 本 Tab 的沉浸页登记簿（播放页压上来时收起底部 Tab 栏）。
+    @EnvironmentObject private var immersiveTabBar: ImmersiveTabBarState
+
     public init(model: AppModel) {
         self.model = model
     }
@@ -31,6 +34,7 @@ public struct LiveView: View {
     public var body: some View {
         content
             .navigationTitle("直播")
+            .adaptiveTabBarHidden(immersiveTabBar.isActive)
             .adaptiveToolbar {
                 EmptyView()
             } trailing: {

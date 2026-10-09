@@ -26,5 +26,7 @@ struct PlatformShimsTests {
         _ = Text("toolbar").adaptiveToolbar(leading: { Text("L") }, trailing: { Text("T") })
         _ = Text("search").adaptiveSearchable(text: .constant(""), prompt: "搜索")
         _ = Text("sheet").adaptiveHalfSheet()
+        _ = Text("tabbar").adaptiveTabBarHidden(true)
+        _ = Text("immersive").immersiveTabBarPage()
     }
 }

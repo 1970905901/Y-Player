@@ -39,11 +39,67 @@ public struct AdaptiveTabBarHiddenModifier: ViewModifier {
 public extension View {
     /// 按需收起**当前视图所在的**底部 Tab 栏（不影响其它 Tab）。
     ///
-    /// 调用点在 Tab 内容**内部**即可生效：SwiftUI 会把该偏好往上递给所在的 `TabView`。
-    /// ⚠️ 若哪天在真机上发现它没有生效，第一件事是把它挪到 `RootView` 里那个 Tab 的内容上
-    /// （`AdaptiveNavigationContainer { HomeView(…) }` 之后）—— 那里离 `TabView` 更近。
-    /// 挪的时候状态也要跟着上移（`HomeView` 的 `@State` 改成绑给 `RootView`）。
+    /// ⚠️ 应用点必须是**栈根页面**（发现页的上滑收起就是这么用的，一直好使）。直接挂在**被推入的页面**
+    /// 上在 iOS 26 上是**无效**的：会被栈根页面的显式值压住 —— 2026-10-09 实测，详情页照旧显示 Tab 栏。
+    /// 沉浸页（详情 / 播放……）要收 Tab 栏，走 ``ImmersiveTabBarPageModifier``，别用这里。
     func adaptiveTabBarHidden(_ isHidden: Bool) -> some View {
         modifier(AdaptiveTabBarHiddenModifier(isHidden: isHidden))
+    }
+}
+
+// MARK: - 沉浸页（详情 / 播放……）收起 Tab 栏
+
+/// 每个 Tab 一份的「沉浸页压在栈里」的登记簿。
+///
+/// 为什么要绕这一圈：`.toolbar(.hidden, for: .tabBar)` 挂在**被推入的页面**上在 iOS 26 上不生效
+/// （见 ``AdaptiveTabBarHiddenModifier`` 的说明），好使的位置是**栈根页面**。
+/// 所以沉浸页不再自己说话，只在这里登记；由各 Tab 的根页面（``HomeView`` / ``LiveView`` /
+/// ``LibraryView`` / ``SettingsView``）读 ``isActive`` 并统一应用。
+///
+/// 一份登记簿只服务一个 Tab —— `RootView` 给四个 Tab 各注入一份（`.environmentObject`），
+/// 免得「发现页还压着详情」时把别的 Tab 的栏也收了。
+public final class ImmersiveTabBarState: ObservableObject {
+    /// 当前压在栈里的沉浸页数量：详情 → 播放可能叠着两层，所以用计数而不是布尔。
+    @Published public private(set) var activePageCount = 0
+
+    /// 本 Tab 是否有沉浸页压在栈里（栈根页面据此收放 Tab 栏）。
+    public var isActive: Bool {
+        activePageCount > 0
+    }
+
+    public init() { }
+
+    /// 沉浸页出现：登记 +1。由 ``ImmersiveTabBarPageModifier`` 调用。
+    func notePageAppeared() {
+        activePageCount += 1
+    }
+
+    /// 沉浸页离场（被更深的页面盖住、或被弹出）：注销 -1。
+    func notePageDisappeared() {
+        activePageCount = max(0, activePageCount - 1)
+    }
+}
+
+/// 把「本页是沉浸页」登记给所在 Tab 的 ``ImmersiveTabBarState``：出现 +1、离场 -1。
+///
+/// 为什么是计数而不是「出现时置 true、离场置 false」：详情 → 播放这种叠两层的场景里，
+/// 旧页的 `onDisappear` 与新页的 `onAppear` 在同一次导航更新里先后脚到 ——
+/// 计数保证中间不会掉回 0，把 Tab 栏闪出来一帧。
+public struct ImmersiveTabBarPageModifier: ViewModifier {
+    @EnvironmentObject private var state: ImmersiveTabBarState
+
+    public init() { }
+
+    public func body(content: Content) -> some View {
+        content
+            .onAppear { state.notePageAppeared() }
+            .onDisappear { state.notePageDisappeared() }
+    }
+}
+
+public extension View {
+    /// 标记「这是一张沉浸页」（详情 / 播放……）：它压在栈里的时候，本 Tab 的底部 Tab 栏收起来。
+    func immersiveTabBarPage() -> some View {
+        modifier(ImmersiveTabBarPageModifier())
     }
 }
