@@ -91,9 +91,9 @@ struct SettingsPlayerUISettingsView: View {
         List {
             PlaybackPageSettingsSection(model: model)
             Section("说明") {
-                Text("播放页的画面控件与手势由系统播放器提供（`docs/UI 规范.md`：不自绘播放控件），"
-                    + "所以这里没有「渲染方式 / 音视频轨道 / 字幕样式」这类内核专属设置；"
-                    + "M3（MPVKit）/ M4（自研 FFmpeg）接入后会补上。")
+                Text("系统内核（AVPlayer）的画面控件与手势由系统提供（`docs/UI 规范.md`：不自绘播放控件）；"
+                    + "MPV 内核自带一套最小控制条与手势（双击暂停 / 横拖进度 / 纵拖音量），音轨与字幕在播放页选。"
+                    + "自研 FFmpeg 内核（M4）接入后，这里再补它自己的渲染与音视频选项。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -108,18 +108,41 @@ struct SettingsPlayerUISettingsView: View {
 struct SettingsPlayerControlView: View {
     @ObservedObject var model: AppModel
 
+    /// 控制方式一行：跟着**当前选的内核**走，别写死「系统播放器」（那行以前就是这么过期的）。
+    private var controlSummary: String {
+        switch model.preferredEngine {
+        case .system: "系统播放器（AVPlayer）"
+        case .mpv: "MPV 自带最小控制条 + 播放页手势"
+        case .ffmpeg: "自研 FFmpeg（尚未接入）"
+        }
+    }
+
+    /// 控制从哪来：两套内核各自说清（系统内核全交给系统；MPV 只有最小控制条 + 手势）。
+    private var controlDetail: String {
+        switch model.preferredEngine {
+        case .system:
+            "播放 / 暂停、进度拖动、全屏、画中画、后台播放与手势都由系统播放器提供，我们不自绘 —— 除倍速外没有其它可调项。"
+        case .mpv:
+            "MPV 的画面由我们自己渲染（MoltenVK → Metal），只配了一条最小控制条（播放 / 暂停、进度、倍速、音轨 / 字幕）；"
+                + "画面上的手势是自绘的：双击暂停、横向拖进度、纵向拖音量。"
+        case .ffmpeg:
+            "自研 FFmpeg 内核还没接入，选它时播放页会明确提示并让你改设置（不自动降级）。"
+        }
+    }
+
     var body: some View {
         List {
             Section("当前形态") {
-                InfoRow(title: "控制方式", value: "系统播放器")
                 InfoRow(title: "当前内核", value: model.preferredEngine.displayName)
+                InfoRow(title: "控制方式", value: controlSummary)
                 InfoRow(title: "倍速", value: "播放页「播放速度」区（0.1x–5.0x，含预设）")
-                Text("播放 / 暂停、进度拖动、全屏、画中画、后台播放与手势都由系统播放器提供，我们不自绘 —— 除倍速外没有其它可调项。")
+                Text(controlDetail)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
             Section("后续") {
-                Text("M3（MPVKit）/ M4（自研 FFmpeg）接入后，这里会出现内核专属控制：手势映射、逐帧步进、音频增益等。上游的「长按屏幕临时加速」要接管手势、与系统播放器自带手势冲突，暂不做（见 M02P15）。")
+                Text("自研 FFmpeg 内核（M4）接入后，这里再补它的内核专属控制：逐帧步进、音频增益、渲染选项等。"
+                    + "上游的「长按屏幕临时加速」要接管手势、与既有手势冲突，暂不做（见 M02P15）。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

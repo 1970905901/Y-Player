@@ -9,7 +9,9 @@ import SwiftUI
 ///
 /// 使用**系统原生播放器 UI**（`AVKit.VideoPlayer`）承载 `.system` 内核：
 /// 按 `docs/UI 规范.md`，各系统版本使用各自的原生控件与手势，不自绘播放控件。
-/// MPV / 自研 FFmpeg 内核（M3/M4）接入后会替换中间的渲染视图，状态区与错误提示保持不变。
+/// **系统内核**用 `AVKit.VideoPlayer`；**MPV 内核**用自绘的 `MpvVideoView`（MoltenVK → Metal）
+/// 加一条最小控制条与手势（M03P4/M03P6）。自研 FFmpeg 内核（M4）接入后同样替换中间那块，
+/// 状态区与错误提示保持不变。
 @MainActor
 public struct PlaybackView: View {
     /// 当前正在播的资源：**换集时会换**（见 `switchEpisode(to:)`），所以是 `@State`。

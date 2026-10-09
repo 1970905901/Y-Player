@@ -52,7 +52,7 @@ public extension AppModel {
 
     /// 下载目录（离线下载的落地位置）。
     ///
-    /// 与本地库同级放在 Application Support 下；传输层尚未接入，所以这个目录通常还不存在 ——
+    /// 与本地库同级放在 Application Support 下；只有真下过东西（M10 起可用）这个目录才存在 ——
     /// 「下载管理」页按 0 字节呈现（空态是真实状态）。
     /// 任务与队列的纯逻辑已在 M10a 落地（`DownloadTask` / `DownloadQueue`），
     /// 「谁往这里写文件」是下一步（分片下载）。
