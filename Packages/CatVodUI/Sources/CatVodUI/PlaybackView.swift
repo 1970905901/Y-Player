@@ -32,6 +32,16 @@ public struct PlaybackView: View {
     let danmaku: DanmakuRequest?
     /// 弹幕请求的回传口：播放页不认识接口配置，把「搜什么」交给上层（`AppModel.loadDanmaku`）。
     let onDanmaku: ((DanmakuRequest) -> Void)?
+    /// 字幕显示设置（在播页只画，不认识 `AppModel`）。由上层传值 —— 见 PlaybackView 顶部说明。
+    let subtitleDisplay: SubtitleDisplayConfig
+    /// 字幕 cue 列表。
+    let subtitleCues: [SubtitleCue]
+    /// 弹幕行。
+    let danmakuLines: [DanmakuLine]
+    /// 弹幕显示设置。
+    let danmakuDisplay: DanmakuDisplayConfig
+    /// 批量下载：把要下载的集交回上层（只有上层知道站点与 `AppModel`）。
+    let onEnqueueDownloads: (@Sendable ([DownloadRequest]) async -> Int)?
 
     @State private var engine: AVPlayerEngine?
     @State private var player: AVPlayer?
@@ -71,6 +81,11 @@ public struct PlaybackView: View {
         progressStore: PlaybackProgressStore? = nil,
         danmaku: DanmakuRequest? = nil,
         onDanmaku: ((DanmakuRequest) -> Void)? = nil,
+        subtitleDisplay: SubtitleDisplayConfig = SubtitleDisplayConfig(),
+        subtitleCues: [SubtitleCue] = [],
+        danmakuLines: [DanmakuLine] = [],
+        danmakuDisplay: DanmakuDisplayConfig = DanmakuDisplayConfig(),
+        onEnqueueDownloads: (@Sendable ([DownloadRequest]) async -> Int)? = nil,
         onStart: (() -> Void)? = nil
     ) {
         self.resource = resource
@@ -80,6 +95,11 @@ public struct PlaybackView: View {
         self.progressStore = progressStore
         self.danmaku = danmaku
         self.onDanmaku = onDanmaku
+        self.subtitleDisplay = subtitleDisplay
+        self.subtitleCues = subtitleCues
+        self.danmakuLines = danmakuLines
+        self.danmakuDisplay = danmakuDisplay
+        self.onEnqueueDownloads = onEnqueueDownloads
         self.onStart = onStart
     }
 
@@ -179,10 +199,10 @@ public struct PlaybackView: View {
                     // 放在弹幕**之后**（= 画在弹幕上层）：字幕是要读的，不该被弹幕盖住。
                     // 显示设置不参与时间轴的构建（没有几何烘进去），所以改字号 / 位置不用重排 ——
                     // 这点与弹幕相反（弹幕的字号会影响计划里量出来的文本宽度）。
-                    if model.subtitleDisplay.isVisible, let subtitleTimeline, !subtitleTimeline.isEmpty {
+                    if subtitleDisplay.isVisible, let subtitleTimeline, !subtitleTimeline.isEmpty {
                         SubtitleOverlay(
                             timeline: subtitleTimeline,
-                            style: model.subtitleDisplay.style.resolved(height: Double(proxy.size.height)),
+                            style: subtitleDisplay.style.resolved(height: Double(proxy.size.height)),
                             clock: playbackClock
                         )
                         .clipped()
@@ -212,7 +232,7 @@ public struct PlaybackView: View {
     /// 与 `danmakuPlanKey` 同一套理由：用「条数 + 首末开始时间」代表整份数组，
     /// 每帧都要算的键不该是 O(n)。
     private var subtitleTimelineKey: String {
-        let cues = model.subtitleCues
+        let cues = subtitleCues
         return [
             String(cues.count),
             String(cues.first?.start ?? -1),
@@ -225,7 +245,7 @@ public struct PlaybackView: View {
     /// 比弹幕的计划便宜得多（排序 + 算最长时长），但仍是 O(n log n)：放进 `.task(id:)` 而不是
     /// 每次 body 都算 —— 播放中 body 会因时钟、状态、进度反复重建。
     private func makeSubtitleTimeline() -> SubtitleTimeline? {
-        let cues = model.subtitleCues
+        let cues = subtitleCues
         guard !cues.isEmpty else {
             return nil
         }
@@ -237,7 +257,7 @@ public struct PlaybackView: View {
     /// 行内容用「条数 + 首末时间」代表，而不是整份数组：比较几万条是 O(n)，而这个键每帧都要算；
     /// 换集时三者几乎必然一起变，够用（同一集重复加载同一份弹幕时结果也一样，不必重排）。
     private func danmakuPlanKey(size: CGSize) -> String {
-        let lines = model.danmakuLines
+        let lines = danmakuLines
         return [
             String(lines.count),
             String(lines.first?.time ?? -1),
@@ -245,7 +265,7 @@ public struct PlaybackView: View {
             String(Int(size.width.rounded())),
             String(Int(size.height.rounded())),
             // 显示设置也要进键：字号影响宽度度量、区域影响轨道数，两者都已经烘进计划本身了。
-            model.danmakuDisplay.persistenceValue,
+            danmakuDisplay.persistenceValue,
         ].joined(separator: "|")
     }
 
@@ -257,11 +277,11 @@ public struct PlaybackView: View {
     /// 宽度度量走 ``AdaptiveFontMetrics``（平台字体），字号从**同一份**解好的 `style` 取 ——
     /// 量宽度与排轨道必须对得上。
     private func makeDanmakuRender(size: CGSize) -> DanmakuRenderPlan? {
-        let lines = model.danmakuLines
+        let lines = danmakuLines
         guard !lines.isEmpty, size.width > 1, size.height > 1 else {
             return nil
         }
-        let style = model.danmakuDisplay.style.resolved(
+        let style = danmakuDisplay.style.resolved(
             width: Double(size.width),
             height: Double(size.height)
         )
