@@ -38,8 +38,6 @@
 
 `PosterPicker` 的接口是读准了的，够用：
 
-## 已知风险（编译/真机时先看这几条）
-
 - `index(step:seed:)` / `image(step:seed:)`，`step` 由调用方驱动；
 - 卡片要「**每张各一张、同一张每次进来都一样**」→ 用 `step: index`（第 i 张卡片取第 i 张图）；
 - `.random` 模式下只看 `seed`，所有卡片会取到**同一张** → 调用方传 `seed &+ UInt64(index)`
@@ -95,6 +93,20 @@
 第 2 步要动 `TMDBDetailHeader` 的加载，第 3 步要动另一个视图的卡片 —— **两边一起改才自洽**。
 分两笔提交、中间夹一段「一边新一边旧」的状态，真机上一眼就是半成品。
 
+## 已知风险（编译/真机时先看这几条）
+
+- `TMDBDetailHeader` 里 `URLSessionTransport()` 是**按需新建**的。
+  若它要求参数、或 model 已有共享实例 → 改成复用。这类「接口形状猜错」本地静态检查抓不到。
+- 详情页顶部的 `TMDBDetailHeader` 与 `embyHeader` 的封面**可能同时显示两张**（见片 3）。
+- `progress.episodeIndex` 与当前线路可能对不上 —— 越界已回落到第一集（`playSlot`）。
+
+## 未偿债
+
+- **M11 约 25 条测试从没跑过**：本机无 Swift 编译器，只有 CI 能验。
+  按 YG 的顺序：**先把功能做完，CI 最后**。
+- 每片提交前跑：`check_braces` / `check_lint` / `audit_duplicate_types` / `swiftformat`。
+  **红着不提交**（这条纠正过两次）。
+
 ## PlaybackView 的 `model` 越界（CatVodUI 首次编译暴露，待修）
 
 那文件的设计是**只收值 + 闭包**（`danmaku` / `onDanmaku` / `onStart`，注释明写「播放页不拿 `AppModel`」）。
@@ -123,16 +135,3 @@ M08/M09/M10 往上接弹幕 / 字幕 / 下载时直接引了 `model`，8 处编�
 
 `PlaybackView:241` 的 `the compiler is unable to type-check this expression in reasonable time`
 就在 `danmakuPlanKey` 里 —— 把那个数组拆成局部变量后，大概率一起消。
-
-
-- `TMDBDetailHeader` 里 `URLSessionTransport()` 是**按需新建**的。
-  若它要求参数、或 model 已有共享实例 → 改成复用。这类「接口形状猜错」本地静态检查抓不到。
-- 详情页顶部的 `TMDBDetailHeader` 与 `embyHeader` 的封面**可能同时显示两张**（见片 3）。
-- `progress.episodeIndex` 与当前线路可能对不上 —— 越界已回落到第一集（`playSlot`）。
-
-## 未偿债
-
-- **M11 约 25 条测试从没跑过**：本机无 Swift 编译器，只有 CI 能验。
-  按 YG 的顺序：**先把功能做完，CI 最后**。
-- 每片提交前跑：`check_braces` / `check_lint` / `audit_duplicate_types` / `swiftformat`。
-  **红着不提交**（这条纠正过两次）。
