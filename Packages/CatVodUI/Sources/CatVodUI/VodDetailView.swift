@@ -445,9 +445,19 @@ public struct VodDetailView: View {
         Section("选集") {
             wholeLineDownloadsRow
             if episodes.isEmpty {
-                Text(isLoading ? "加载中…" : "没有可用线路")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                if isLoading {
+                    // 选集区的加载态：和卡片同一副骨架（一排灰卡片），不是一行小字 ——
+                    // 参考视频里加载中屏幕上就是这些形状。卡片接图后高度跟着改。
+                    HStack(spacing: 8) {
+                        skeletonBlock(width: 92, height: 48)
+                        skeletonBlock(width: 92, height: 48)
+                        skeletonBlock(width: 92, height: 48)
+                    }
+                } else {
+                    Text("没有可用线路")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 ScrollViewReader { proxy in
