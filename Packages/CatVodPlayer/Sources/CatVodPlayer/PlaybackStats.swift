@@ -34,6 +34,16 @@ public struct PlaybackStats: Sendable, Equatable {
     /// `decoder-frame-drop-count`（解码侧丢帧）。
     public var decoderDroppedFrames: Int
 
+    /// `video-out-params/primaries`：**经过色彩转换之后**送给显示的那一路。
+    ///
+    /// 与源那三个字段分开记：M4 要回答的问题正是「源是 HDR，输出还是不是 HDR」——
+    /// 两个都写出来，才看得出中间有没有被压成 SDR。
+    public var outputPrimaries: String
+    /// `video-out-params/gamma`。
+    public var outputGamma: String
+    /// `video-out-params/pixelformat`。
+    public var outputPixelFormat: String
+
     /// **是不是真读到过**丢帧计数。
     ///
     /// 为什么单独记一笔：两个计数都读不到时它们都是 0，而 0 的文案是「无丢帧」——
@@ -55,6 +65,9 @@ public struct PlaybackStats: Sendable, Equatable {
         gamma = text("video-params/gamma")
         hardwareDecoder = text("hwdec-current")
         videoBitrate = Int(text("video-bitrate")) ?? 0
+        outputPrimaries = text("video-out-params/primaries")
+        outputGamma = text("video-out-params/gamma")
+        outputPixelFormat = text("video-out-params/pixelformat")
         let dropped = text("frame-drop-count")
         let decoderDropped = text("decoder-frame-drop-count")
         droppedFrames = Int(dropped) ?? 0
@@ -68,6 +81,7 @@ public struct PlaybackStats: Sendable, Equatable {
             && videoFormat.isEmpty && pixelFormat.isEmpty
             && fps == 0 && primaries.isEmpty && gamma.isEmpty
             && hardwareDecoder.isEmpty && videoBitrate == 0
+            && outputPrimaries.isEmpty && outputGamma.isEmpty && outputPixelFormat.isEmpty
             && !hasDropCounters
     }
 
@@ -97,23 +111,56 @@ public struct PlaybackStats: Sendable, Equatable {
     /// 不拿 primaries 判：BT.2020 + BT.1886 的 10bit **SDR** 也存在，
     /// 按色域判会把 SDR 说成 HDR —— 那是比不显示更坏的一种错。
     public var isHDR: Bool {
-        let value = gamma.lowercased()
-        return value == "pq" || value == "hlg" || value == "smpte2084" || value == "smpte-st-2084"
+        Self.isHDR(gamma: gamma)
     }
 
     /// `HDR · PQ (ST2084) · BT.2020` / `SDR · BT.709`；两样都没读到给空串。
+    ///
+    /// 这是**片源**那一侧；转换之后送给显示的那一路见 ``outputText``。
     public var dynamicRangeText: String {
+        Self.rangeText(primaries: primaries, gamma: gamma)
+    }
+
+    /// 输出侧那一行：`HDR · PQ (ST2084) · BT.2020 · p010` / `SDR · BT.1886 · BT.709 · yuv420p`；
+    /// 什么都没读到给空串（老版本 mpv 没有 `video-out-params`，那就别显示）。
+    public var outputText: String {
+        let range = Self.rangeText(primaries: outputPrimaries, gamma: outputGamma)
+        return [range, outputPixelFormat]
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+
+    /// 输出侧是不是 HDR —— M4 的「HDR 有没有真的送到屏幕」看它。
+    /// 只有读到输出参数时才有意义；没读到给 `nil`（不知道 ≠ 不是）。
+    public var isOutputHDR: Bool? {
+        guard !outputGamma.isEmpty || !outputPrimaries.isEmpty else {
+            return nil
+        }
+        return Self.isHDR(gamma: outputGamma)
+    }
+
+    /// 动态范围那一行（源与输出共用同一套判定与名词）。
+    private static func rangeText(primaries: String, gamma: String) -> String {
         guard !gamma.isEmpty || !primaries.isEmpty else {
             return ""
         }
-        var parts = [isHDR ? "HDR" : "SDR"]
+        var parts = [isHDR(gamma: gamma) ? "HDR" : "SDR"]
         if !gamma.isEmpty {
-            parts.append(Self.colorLabel(gamma))
+            parts.append(colorLabel(gamma))
         }
         if !primaries.isEmpty {
-            parts.append(Self.colorLabel(primaries))
+            parts.append(colorLabel(primaries))
         }
         return parts.joined(separator: " · ")
+    }
+
+    /// HDR 判定：**只认 gamma**（`pq` / `hlg`）。
+    ///
+    /// 不拿 primaries 判：BT.2020 + BT.1886 的 10bit **SDR** 也存在，
+    /// 按色域判会把 SDR 说成 HDR —— 那比不显示更坏。
+    private static func isHDR(gamma: String) -> Bool {
+        let value = gamma.lowercased()
+        return value == "pq" || value == "hlg" || value == "smpte2084" || value == "smpte-st-2084"
     }
 
     /// `硬件解码（VideoToolbox）` / `软件解码`；没读到（还没起播）给空串。

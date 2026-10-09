@@ -821,6 +821,7 @@ extension PlaybackView {
                 statsRow("编码", stats.codecText)
                 statsRow("帧率", stats.fpsText)
                 statsRow("色彩", stats.dynamicRangeText)
+                statsRow("输出", stats.outputText)
                 statsRow("解码", stats.decodeText)
                 statsRow("码率", stats.bitrateText)
                 statsRow("丢帧", stats.dropText)

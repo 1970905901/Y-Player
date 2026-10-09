@@ -40,6 +40,29 @@ struct PlaybackStatsTests {
         #expect(stats.dynamicRangeText == "HDR · HLG · BT.2020")
     }
 
+    @Test("片源是 HDR、输出被压成 SDR：两个都要说出来（M4 要的就是这一对）")
+    func outputMayDifferFromSource() {
+        let stats = PlaybackStats(rawValues: [
+            "video-params/primaries": "bt.2020",
+            "video-params/gamma": "pq",
+            "video-out-params/primaries": "bt.709",
+            "video-out-params/gamma": "bt.1886",
+            "video-out-params/pixelformat": "yuv420p",
+        ])
+        #expect(stats.dynamicRangeText == "HDR · PQ (ST2084) · BT.2020")
+        #expect(stats.outputText == "SDR · BT.1886 · BT.709 · yuv420p")
+        #expect(stats.isOutputHDR == false)
+        #expect(stats.isHDR)
+    }
+
+    @Test("输出侧没读到：不许猜（`isOutputHDR` 给 nil、那一行给空串）")
+    func missingOutputStaysUnknown() {
+        let stats = PlaybackStats(rawValues: ["video-params/gamma": "pq", "video-params/primaries": "bt.2020"])
+        #expect(stats.outputText.isEmpty)
+        #expect(stats.isOutputHDR == nil)
+        #expect(stats.isHDR)
+    }
+
     @Test("BT.2020 + BT.1886 是 10bit SDR —— 不许按色域判成 HDR")
     func wideGamutSDRIsNotHDR() {
         let stats = PlaybackStats(rawValues: [

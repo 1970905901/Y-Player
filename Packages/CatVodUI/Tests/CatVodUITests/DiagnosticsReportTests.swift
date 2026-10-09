@@ -127,6 +127,17 @@ struct DiagnosticsReportTests {
         #expect(rows.first == DiagnosticsReport.PlaybackRow(title: "画面", value: "3840×2160"))
         #expect(rows.last == DiagnosticsReport.PlaybackRow(title: "丢帧", value: "无丢帧"))
 
+        // 片源 HDR + 输出 SDR：两行都得在（M04P2 要回答的就是「HDR 有没有送到屏幕」）
+        let withOutput = PlaybackStats(rawValues: [
+            "video-params/primaries": "bt.2020",
+            "video-params/gamma": "pq",
+            "video-out-params/primaries": "bt.709",
+            "video-out-params/gamma": "bt.1886",
+        ])
+        #expect(DiagnosticsReport.playbackRows(from: withOutput).map(\.title) == ["色彩", "输出"])
+        #expect(DiagnosticsReport.playbackRows(from: withOutput).last?.value == "SDR · BT.1886 · BT.709")
+        #expect(withOutput.isOutputHDR == false)
+
         // 只读到分辨率时，其余空项不出现（与播放页那一块同一口径）——
         // 「丢帧」尤其重要：那两个计数**没读到**时不许说「无丢帧」（那是句假话）。
         let partial = PlaybackStats(rawValues: ["video-params/w": "1920", "video-params/h": "1080"])

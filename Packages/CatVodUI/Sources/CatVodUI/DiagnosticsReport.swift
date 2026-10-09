@@ -104,6 +104,7 @@ struct DiagnosticsReport: Sendable, Equatable {
             ("编码", stats.codecText),
             ("帧率", stats.fpsText),
             ("色彩", stats.dynamicRangeText),
+            ("输出", stats.outputText),
             ("解码", stats.decodeText),
             ("码率", stats.bitrateText),
             ("丢帧", stats.dropText),
