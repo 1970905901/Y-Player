@@ -1,3 +1,4 @@
+import CatVodCore
 import CatVodSource
 
 // 两个「加载状态」类型从类体里搬出来（M06f 遗留清单第 3 条）：`@Published` 存储属性必须在类体里，

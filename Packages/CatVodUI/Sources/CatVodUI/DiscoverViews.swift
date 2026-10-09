@@ -310,7 +310,7 @@ struct DiscoverSitePanel: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
             TextField("搜索站点", text: $keyword)
-                .textInputAutocapitalization(.never)
+                .platformTextInputAutocapitalizationNever()
                 .autocorrectionDisabled()
                 .font(.subheadline)
             if !keyword.isEmpty {

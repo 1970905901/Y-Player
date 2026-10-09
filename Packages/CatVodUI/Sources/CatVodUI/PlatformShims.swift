@@ -8,3 +8,17 @@ public enum PlatformShims {
     /// 卡片圆角。
     public static let cardCornerRadius: CGFloat = 10
 }
+
+public extension View {
+    /// 搜索框「永不自动首字母大写」。
+    ///
+    /// `textInputAutocapitalization` 是 **iOS-only**：直接写在视图里会让 macOS 编译不过（CI 就是这么红的）。
+    /// 平台差异收敛到 shim —— 这是本仓库的规矩。`#if` 内按 `.swiftformat` 的 `--ifdef no-indent` 不额外缩进。
+    func platformTextInputAutocapitalizationNever() -> some View {
+        #if os(iOS)
+        return textInputAutocapitalization(.never)
+        #else
+        return self
+        #endif
+    }
+}
