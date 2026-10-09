@@ -463,6 +463,10 @@ public struct HomeView: View {
                 return "这份配置是多配置入口（`urls`，共 \(model.configSubURLs.count) 条），本平台不列出来挑 —— "
                     + "请把其中一条子配置地址填进「设置 → 源地址」再加载。"
             }
+            if !model.liveSources.isEmpty {
+                // 只有直播源的配置：点播确实没内容，但直播能用 —— 别让用户以为配置坏了。
+                return "这份配置只有直播源：去底部「直播」Tab 看。"
+            }
             return "还没有可用站点：请先在「设置 → 源地址」里加载配置。"
         }
         if model.loadedKind == .javaScript {

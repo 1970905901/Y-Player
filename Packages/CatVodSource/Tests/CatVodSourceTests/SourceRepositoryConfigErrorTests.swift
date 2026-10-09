@@ -33,6 +33,32 @@ struct SourceRepositoryConfigErrorTests {
         #expect(loaded.digest == MD5.hexDigest(of: bundle))
     }
 
+    @Test("没有 sites 但有多仓 urls / 直播源：是合法配置，不能判成「没有可用站点」（M18P1）")
+    func configsWithoutSitesStillLoad() async throws {
+        let repository = try SourceRepository(transport: StubTransport(responses: [:]), cacheDirectory: makeTempDirectory())
+
+        // 多仓：只有 urls
+        let multiWarehouse = try await repository.load(
+            configURL: #"{"urls":["https://a.example/1.json","https://b.example/2.json"]}"#
+        )
+        #expect(multiWarehouse.config.urls.count == 2)
+        #expect(multiWarehouse.config.sites.isEmpty)
+        // 告警里要说清「多配置入口不生效」——否则界面只剩「没有可用站点」
+        let warned = multiWarehouse.warnings.contains { $0.contains("多配置入口") }
+        #expect(warned)
+
+        // 只有直播源：直播页本来就能用
+        let liveOnly = try await repository.load(
+            configURL: #"{"lives":[{"name":"某直播","type":0,"url":"https://live.example/list.txt"}]}"#
+        )
+        #expect(liveOnly.config.lives.count == 1)
+
+        // 三样内容全空才是坏配置
+        await #expect(throws: CatVodError.self) {
+            _ = try await repository.load(configURL: #"{"wallpaper":"https://img.example/w.jpg"}"#)
+        }
+    }
+
     @Test("普通 .md5 地址返回摘要文本：给出去哪找正确地址的说明")
     func digestBodyGivesActionableMessage() async throws {
         let url = "https://example.com/tvbox/config.md5"

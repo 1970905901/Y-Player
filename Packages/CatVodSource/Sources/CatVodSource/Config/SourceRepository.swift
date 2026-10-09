@@ -61,7 +61,13 @@ public actor SourceRepository {
         if config.isErrorResponse {
             throw CatVodError.config(reason: config.msg)
         }
-        if config.sites.isEmpty {
+        // 什么内容都没有才算坏配置。三种「没有 sites 但合法」的形状必须放行（M18P1）：
+        // - 多仓（`urls`）：要在界面上说清「本平台不列出来挑」，现在这条会把它判成坏配置，
+        //   用户看到的是「配置里没有可用站点」，与事实不符；
+        // - 只有直播源（`lives`）：直播页本来就能用（M07 起）；
+        // - 只有解析器（`parses`）之类：单独用不了，但也不该归成"坏"。
+        // 所以判据收紧成「三样内容全空」。
+        if config.sites.isEmpty, config.urls.isEmpty, config.lives.isEmpty {
             throw CatVodError.configHasNoUsableSite
         }
         return config
