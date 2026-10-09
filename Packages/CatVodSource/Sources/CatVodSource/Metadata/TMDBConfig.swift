@@ -92,4 +92,3 @@ extension TMDBConfig {
         self.init(apiKey: parts[0], apiProxy: parts[1], imageProxy: parts[2])
     }
 }
-

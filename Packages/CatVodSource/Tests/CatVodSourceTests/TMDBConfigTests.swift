@@ -69,4 +69,3 @@ struct TMDBConfigTests {
         #expect(TMDBConfig(storageString: "a|b|c|d") == TMDBConfig())
     }
 }
-
