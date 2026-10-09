@@ -44,6 +44,8 @@ public struct HomeView: View {
     @State private var tabBar = DiscoverTabBarVisibility()
     /// 本 Tab 的沉浸页登记簿（详情 / 播放压上来时也要收栏）；登记方见 ``ImmersiveTabBarPageModifier``。
     @EnvironmentObject private var immersiveTabBar: ImmersiveTabBarState
+    /// 网页条目（如宿主配置中心）要在 App 内打开的地址；nil = 没开。
+    @State private var webEntry: WebEntry?
 
     public init(model: AppModel) {
         self.model = model
@@ -116,6 +118,10 @@ public struct HomeView: View {
             model.discoverSiteKey = selectedSiteKey
             invalidateContent()
             Task { await loadHome(force: true) }
+        }
+        .sheet(item: $webEntry) { entry in
+            // 配置中心这类「网页条目」：App 内打开（见 `WebEntryRules` / `WebPageSheet`）。
+            WebPageSheet(entry: entry)
         }
         .adaptiveTabBarHidden(tabBar.isHidden || immersiveTabBar.isActive)
         .onDisappear {
@@ -214,13 +220,10 @@ public struct HomeView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             LazyHStack(spacing: 10) {
                                 ForEach(section.items) { item in
-                                    NavigationLink {
-                                        VodDetailView(model: model, site: selectedSite, vodID: item.vodID)
-                                    } label: {
+                                    posterLink(item) {
                                         DiscoverPosterCard(item: item)
                                             .frame(width: Self.sectionCardWidth)
                                     }
-                                    .buttonStyle(.plain)
                                 }
                             }
                             .padding(.horizontal, 16)
@@ -264,16 +267,37 @@ public struct HomeView: View {
     private var posterGrid: some View {
         LazyVGrid(columns: posterColumns, spacing: 14) {
             ForEach(result.list) { item in
-                NavigationLink {
-                    VodDetailView(model: model, site: selectedSite, vodID: item.vodID)
-                } label: {
+                posterLink(item) {
                     DiscoverPosterCard(item: item)
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+
+    /// 一张海报卡的点击行为：普通条目进详情；**网页条目**（配置中心这类）开着网页看
+    /// —— 详情接口里没有它的内容，进去只会是一片空白（见 ``WebEntryRules``）。
+    @ViewBuilder
+    private func posterLink<Label: View>(
+        _ item: VodItem,
+        @ViewBuilder label: () -> Label
+    ) -> some View {
+        if let url = WebEntryRules.webURL(for: item, site: selectedSite) {
+            Button {
+                webEntry = WebEntry(url: url)
+            } label: {
+                label()
+            }
+            .buttonStyle(.plain)
+        } else {
+            NavigationLink {
+                VodDetailView(model: model, site: selectedSite, vodID: item.vodID)
+            } label: {
+                label()
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     private var posterColumns: [GridItem] {
