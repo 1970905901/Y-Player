@@ -72,8 +72,17 @@
 
 ### 落地三步（照着做，不用再决策）
 
-1. `AppModel+Metadata.swift`：加 `func metadata(for title: String) async -> TMDBResult?`
+1. `AppModel+Metadata.swift`：加一个缓存 + `func metadata(for title: String, mode: PosterMode) async -> TMDBBundle?`
    —— 先查缓存，没有就 `search` + `backdrops` 拉一次并**存下**；同一片名并发请求要合流。
+
+   **⚠️ 一处签名上的修正（写代码前先看这条）**：不要缓存「元信息 + 图集数组」——
+   图集的元素类型本地读不到（`backdrops(kind:id:)` 的返回类型没在任何一处显式写出来，
+   现有代码都是 `(try? …) ?? []` 直接喂给 `TMDBPosterSet`）。
+   所以**缓存 `TMDBMetadata` + 已经建好的 `TMDBPosterSet`**，并记下建它时用的 `mode`：
+   - 命中条件 = 片名相同**且** mode 相同；
+   - mode 不同就重建（换模式是低频操作，多一次请求可接受）。
+   这样只依赖三个**已知**类型（`TMDBMetadata` / `TMDBPosterSet` / `PosterMode`），
+   不靠猜类型名 —— 猜错了本地编译不了、只有 CI 能发现。
 2. `TMDBDetailHeader`：把内部那套 `@State` + `load()` 换成调 model；它只剩「画」和轮播的
    `step` 步进（那是视图级的定时行为，仍归它）。
 3. `embyEpisodeCard` 接图：`image(step: index, seed: seed &+ UInt64(index))`，
