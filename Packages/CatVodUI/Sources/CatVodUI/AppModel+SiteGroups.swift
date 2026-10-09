@@ -73,7 +73,7 @@ public extension AppModel {
     // MARK: - 分组规则的本地设置（M06g）
 
     /// 当前接口的分组规则设置（空 = 四条内置全开、没有自建规则）。
-    var siteGroupRuleSettingsForCurrentConfig: SiteGroupRuleSettings {
+    internal var siteGroupRuleSettingsForCurrentConfig: SiteGroupRuleSettings {
         siteGroupRuleSettings[siteConfigBucketKey] ?? SiteGroupRuleSettings()
     }
 

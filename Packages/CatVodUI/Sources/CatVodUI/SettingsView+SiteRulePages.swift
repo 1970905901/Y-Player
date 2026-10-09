@@ -126,7 +126,7 @@ struct SiteGroupRulesView: View {
                     TextField("名字（只用于这里显示）", text: $draftName)
                     TextField("正则（要有一个捕获组）", text: $draftRegex)
                         .font(.body.monospaced())
-                        .textInputAutocapitalization(.never)
+                        .platformTextInputAutocapitalizationNever()
                         .autocorrectionDisabled()
                     Toggle("标签套方括号", isOn: $draftWrapBracket)
                 }
