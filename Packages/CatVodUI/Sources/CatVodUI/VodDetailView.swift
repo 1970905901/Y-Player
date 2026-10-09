@@ -65,6 +65,41 @@ public struct VodDetailView: View {
         currentLine?.episodes ?? []
     }
 
+    /// 「整部下载」能排的集：**现在就能直接播**的那些。
+    ///
+    /// 判定用详情页自己那套 ``makeResource(for:)``（也就是 `PlayRequestBuilder` 说「直链且无需解析」）
+    /// —— 不另立一套规则，免得「按钮说能下、点进去播不了」。
+    var directDownloadEpisodes: [PlaylistParser.Episode] {
+        episodes.filter { makeResource(for: $0) != nil }
+    }
+
+    /// 「整部下载」入口（M10i）。两种视图形态（精简 / Emby）共用这一行，免得只有一种形态有入口。
+    ///
+    /// 只排上面那批，原因不藏：`type=3/4` 站点的播放地址要**逐集**去站点异步换
+    /// （``SitePlayEpisodeView`` 那条路），整条线路的批量换地址还没接 —— 所以被跳过的集数
+    /// 直接写在下面，不假装整部都排上了。
+    @ViewBuilder
+    private var wholeLineDownloadsRow: some View {
+        if let site, !directDownloadEpisodes.isEmpty {
+            Button {
+                let requests = directDownloadEpisodes.map {
+                    DownloadRequest(episode: $0.displayName, line: currentLine?.name ?? "", url: $0.url)
+                }
+                Task {
+                    await model.enqueueDownloads(requests, siteKey: site.key, title: vod?.vodName ?? "")
+                    await model.runDownloadQueue()
+                }
+            } label: {
+                Label("整部下载（\(directDownloadEpisodes.count) 集）", systemImage: "arrow.down.circle")
+            }
+            if episodes.count > directDownloadEpisodes.count {
+                Text("另有 \(episodes.count - directDownloadEpisodes.count) 集要逐集向站点换地址，暂不支持整部下载。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     public var body: some View {
         content
             .navigationTitle(vod?.vodName.isEmpty == false ? (vod?.vodName ?? "详情") : "详情")
@@ -275,6 +310,7 @@ public struct VodDetailView: View {
     /// 选集：横向滚动的卡片（集名 + 不支持角标 + 上次看到标记）。
     private var embyEpisodeSection: some View {
         Section("选集") {
+            wholeLineDownloadsRow
             if episodes.isEmpty {
                 Text(isLoading ? "加载中…" : "没有可用线路")
                     .font(.footnote)
@@ -398,6 +434,7 @@ public struct VodDetailView: View {
 
     private var episodesSection: some View {
         Section("选集") {
+            wholeLineDownloadsRow
             if episodes.isEmpty {
                 Text(isLoading ? "加载中…" : "没有可用线路")
                     .font(.footnote)
