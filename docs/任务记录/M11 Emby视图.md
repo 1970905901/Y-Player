@@ -93,7 +93,35 @@
 第 2 步要动 `TMDBDetailHeader` 的加载，第 3 步要动另一个视图的卡片 —— **两边一起改才自洽**。
 分两笔提交、中间夹一段「一边新一边旧」的状态，真机上一眼就是半成品。
 
-## 已知风险（编译/真机时先看这几条）
+## PlaybackView 的 `model` 越界（CatVodUI 首次编译暴露，待修）
+
+那文件的设计是**只收值 + 闭包**（`danmaku` / `onDanmaku` / `onStart`，注释明写「播放页不拿 `AppModel`」）。
+M08/M09/M10 往上接弹幕 / 字幕 / 下载时直接引了 `model`，8 处编译不过（`cannot find 'model' in scope`）。
+
+**修法是传值 + 闭包，不是把 `AppModel` 递进去** —— 递进去就是把这条设计作废。
+
+### 要加的参数（**都带默认值**，7 个现有构造点因此一行都不用动）
+
+| 用途 | 现在 | 改成（名字可调，类型名以实际声明为准） | 使用处 |
+| --- | --- | --- | --- |
+| 字幕显示设置 | `model.subtitleDisplay` | `let subtitleDisplay: SubtitleDisplayConfig` | 182 / 185 |
+| 字幕 cue | `model.subtitleCues` | `let subtitleCues: [SubtitleCue] = []` | 215 / 228 |
+| 弹幕行 | `model.danmakuLines` | `let danmakuLines: [DanmakuLine] = []` | 240 / 260 |
+| 弹幕显示设置 | `model.danmakuDisplay` | `let danmakuDisplay: DanmakuDisplayConfig` | 248 / 264 |
+| 批量下载 | `await model.enqueueDownloads(...)` | `let onEnqueueDownloads: (([DownloadRequest]) async -> Int)?` | 299 |
+
+### 构造点（7 处，都已存在）
+
+`LiveScheduleView:75/86`、`LiveView:386`、`ParsePlaybackView:47`、`SettingsView+DataPages:97`、
+`SitePlayEpisodeView:61`、`VodDetailView:657`
+
+→ 只有 **VodDetailView** 与 **SitePlayEpisodeView**（手里有 `model`）传真值，其余走默认值。
+
+### 顺带
+
+`PlaybackView:241` 的 `the compiler is unable to type-check this expression in reasonable time`
+就在 `danmakuPlanKey` 里 —— 把那个数组拆成局部变量后，大概率一起消。
+
 
 - `TMDBDetailHeader` 里 `URLSessionTransport()` 是**按需新建**的。
   若它要求参数、或 model 已有共享实例 → 改成复用。这类「接口形状猜错」本地静态检查抓不到。
