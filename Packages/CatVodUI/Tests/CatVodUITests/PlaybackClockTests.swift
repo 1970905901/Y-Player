@@ -1,4 +1,5 @@
 @testable import CatVodUI
+import Foundation
 import Testing
 
 /// 播放时间的外推（M08h 引入，M09f 改名并单独成文件 —— 弹幕与字幕共用）。

@@ -1,5 +1,6 @@
 import CatVodCore
 import CatVodNet
+import CatVodPlayer
 @testable import CatVodUI
 import Foundation
 import Testing
@@ -18,6 +19,7 @@ private actor WiringTransport: HTTPTransport {
 }
 
 @Suite("离线下载接线：入队 / 驱动 / 删除")
+@MainActor
 struct DownloadWiringTests {
     private func direct(_ text: String) -> HTTPResponse {
         HTTPResponse(status: 200, headers: ["Content-Length": "\(text.utf8.count)"], body: Data(text.utf8))

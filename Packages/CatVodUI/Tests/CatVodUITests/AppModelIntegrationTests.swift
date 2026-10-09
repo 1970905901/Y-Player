@@ -1,4 +1,5 @@
 @testable import CatVodCore
+@testable import CatVodNet
 @testable import CatVodUI
 import Foundation
 import Testing
