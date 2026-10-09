@@ -46,6 +46,14 @@ public struct PlaybackView: View {
     @State private var speed: Float = SpeedSetting.normal
     @State private var isFinished = false
     @State private var lastPersistAt = Date.distantPast
+    /// 弹幕上屏的数据（M08h）：计划 + 它用的版面。
+    @State private var danmakuRender: DanmakuRenderPlan?
+    /// 播放时间的外推：引擎每秒才报一次位置，直接喂给弹幕会一秒跳一格（见 ``DanmakuClock``）。
+    @State private var danmakuClock = DanmakuClock()
+    /// 当前引擎状态（弹幕靠它决定时间走不走：暂停 / 缓冲都该停表）。
+    @State private var playerState: PlayerState = .idle
+    /// 当前倍速（`speedChanged` 事件给的真值）。
+    @State private var playbackRate: Double = 1
 
     /// 进度落库节流间隔（秒）：播放中不必每秒写一次。
     static let persistInterval: TimeInterval = 5
@@ -139,12 +147,78 @@ public struct PlaybackView: View {
     @ViewBuilder
     private var playerArea: some View {
         if let player {
-            VideoPlayer(player: player)
-                .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            GeometryReader { proxy in
+                ZStack {
+                    VideoPlayer(player: player)
+                    // 弹幕层（M08h）：只在有计划时挂上去 —— 没开弹幕 / 这集没搜到时
+                    // 连这一层都不存在，不占渲染开销。
+                    if let danmakuRender {
+                        DanmakuOverlay(
+                            plan: danmakuRender.plan,
+                            style: danmakuRender.style,
+                            clock: danmakuClock
+                        )
+                        .clipped()
+                    }
+                }
+                // 键里带尺寸：旋转屏幕 / 改窗口后，轨道数与字号要按新尺寸重排。
+                .task(id: danmakuPlanKey(size: proxy.size)) {
+                    danmakuRender = makeDanmakuRender(size: proxy.size)
+                }
+            }
+            .aspectRatio(16.0 / 9.0, contentMode: .fit)
         } else {
             ProgressView()
                 .frame(maxWidth: .infinity, minHeight: 200)
         }
+    }
+
+    // MARK: - 弹幕上屏（M08h）
+
+    /// 上屏参数。M08h 用默认值；设置页那组「字号 / 透明度 / 显示区域 / 速度」落地后从 `AppModel` 读。
+    private static let danmakuStyle = DanmakuDisplayStyle()
+
+    /// 计划重排的触发键：**行内容 / 画面尺寸**任一变化都要重排。
+    ///
+    /// 行内容用「条数 + 首末时间」代表，而不是整份数组：比较几万条是 O(n)，而且这个键每帧都要算；
+    /// 换集时三者几乎必然一起变，够用（同一集重复加载同一份弹幕时结果也一样，不必重排）。
+    private func danmakuPlanKey(size: CGSize) -> String {
+        let lines = model.danmakuLines
+        return [
+            String(lines.count),
+            String(lines.first?.time ?? -1),
+            String(lines.last?.time ?? -1),
+            String(Int(size.width.rounded())),
+            String(Int(size.height.rounded())),
+        ].joined(separator: "|")
+    }
+
+    /// 排一次计划。
+    ///
+    /// **只在键变化时跑**：它是 O(行数 × 轨道数) 外加一次全量文本度量（几万条弹幕在设备上
+    /// 是几十毫秒量级）；每帧重排会把播放拖垮。
+    ///
+    /// 宽度度量走 ``AdaptiveFontMetrics``（平台字体），字号从**同一份**解好的 `style` 取 ——
+    /// 量宽度与排轨道必须对得上。
+    private func makeDanmakuRender(size: CGSize) -> DanmakuRenderPlan? {
+        let lines = model.danmakuLines
+        guard !lines.isEmpty, size.width > 1, size.height > 1 else {
+            return nil
+        }
+        let style = Self.danmakuStyle.resolved(
+            width: Double(size.width),
+            height: Double(size.height)
+        )
+        let plan = DanmakuPlan(lines: lines, layout: style.layout) { line in
+            AdaptiveFontMetrics.width(of: line.text, size: style.fontSize(of: line))
+        }
+        return DanmakuRenderPlan(plan: plan, style: style)
+    }
+
+    /// 现在该不该走表：只认 `playing` —— 暂停、缓冲、结束、失败都必须停住，
+    /// 否则「缓冲时弹幕还在划」这种假象会让人以为卡的是弹幕而不是网。
+    private func danmakuRate() -> Double {
+        playerState == .playing ? playbackRate : 0
     }
 }
 
@@ -158,6 +232,9 @@ extension PlaybackView {
         let coordinator = PlayerCoordinator()
         engineText = settings.engine.displayName
         speed = PlaybackSpeedBook.speed()
+        // 弹幕倍速的初值：`speedChanged` 事件不一定在起播时发（引擎本来就是这个速度时它不会变），
+        // 所以这里先把用户设的倍速当作真值用起来。
+        playbackRate = Double(speed)
 
         // 策略：严格按用户设置执行，**不自动降级**。不可用就提示，让用户改设置。
         if case let .unavailable(kind, reason) = coordinator.resolve(settings: settings) {
@@ -200,6 +277,9 @@ extension PlaybackView {
             switch event {
             case let .stateChanged(state):
                 stateText = describe(state)
+                playerState = state
+                // 弹幕：暂停 / 缓冲 / 结束都停表，继续播放再走（先外推再改速率，见 ``DanmakuClock``）。
+                danmakuClock.setRate(danmakuRate(), at: Date())
                 if state == .ended {
                     isFinished = true
                     await persist(force: true)
@@ -211,8 +291,14 @@ extension PlaybackView {
             case let .timeChanged(current, duration):
                 latestPosition = current
                 latestDuration = duration
+                // 弹幕：把「这一刻的位置 + 倍速」一起采下来，下一次上报之前靠外推补足。
+                danmakuClock.sample(position: current, rate: danmakuRate(), at: Date())
                 await persist(force: false)
-            case .bufferedChanged, .tracksChanged, .speedChanged:
+            case let .speedChanged(rate):
+                // 变速：**先外推再换速率** —— 直接改会把这一次上报之前已经走过的距离丢掉，弹幕往回跳。
+                playbackRate = Double(rate)
+                danmakuClock.setRate(danmakuRate(), at: Date())
+            case .bufferedChanged, .tracksChanged:
                 break
             }
         }

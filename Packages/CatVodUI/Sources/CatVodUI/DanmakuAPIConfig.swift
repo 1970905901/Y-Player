@@ -4,7 +4,7 @@ import Foundation
 ///
 /// 对应参考图：「启用弹幕 API」开关 + `API-1`…`API-4` 四个地址槽位。
 /// 这里**只负责把用户填的地址可靠地存下来**（槽位固定 4 个、顺序稳定），
-/// 弹幕的请求链与渲染属于 M8，尚未接入 —— 页面会如实写明这一点，不做假开关。
+/// 请求链与上屏见 M08c / M08h；这里只管「用户填了哪些地址、开没开」。
 public struct DanmakuAPIConfig: Sendable, Equatable {
     /// 地址槽位数量（参考图固定 4 个：API-1…API-4）。
     public static let slotCount = 4

@@ -7,7 +7,7 @@ import Foundation
 // 这一层只做「把服务接上」：搜索 → 候选 → 下载 → 解析都在 `CatVodSource.DanmakuService` 里、
 // 且有单测（M08a/M08b）。这里负责挑地址、管状态、把错误变成一句人话。
 //
-// **上屏渲染还没有** —— 弹幕行（``AppModel/danmakuLines``）已经在手里，缺的是把它们画到视频上。
+// 上屏见 `DanmakuOverlay`（M08h）：拿 `danmakuLines` 排一次计划，再按播放时间逐帧画到视频上。
 
 public extension AppModel {
     /// 载入一集的弹幕。

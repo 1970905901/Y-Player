@@ -131,8 +131,8 @@ public final class AppModel: ObservableObject {
     /// 弹幕 API 配置：启用开关 + 四个地址槽位。
     ///
     /// 参考图里它的副标题写明「开启后将禁用视频源的弹幕功能」。
-    /// 取用链见 `AppModel+Danmaku.swift`（M08a–M08c），调度见 `DanmakuPlan`（M08d）；**把弹幕画到
-    /// 视频上的渲染仍未做**（需要设备/模拟器验证）。
+    /// 取用链见 `AppModel+Danmaku.swift`（M08a–M08c），调度见 `DanmakuPlan`（M08d），
+    /// 上屏见 `DanmakuOverlay`（M08h，屏上效果待真机确认）。
     @Published public var danmakuAPI: DanmakuAPIConfig {
         didSet {
             defaults.set(danmakuAPI.persistenceValue, forKey: StorageKey.danmakuAPI)
