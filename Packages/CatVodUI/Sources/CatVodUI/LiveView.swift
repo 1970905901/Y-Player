@@ -391,6 +391,7 @@ private struct LiveChannelPlaybackView: View {
             resource: resource,
             title: title,
             settings: model.playbackSettings,
+            onPlaybackStats: { model.notePlaybackStats($0) },
             onStart: { model.resetAdSkip() }
         )
         // 换频道 / 换线路 = 换资源：`PlaybackView` 自己的 `.task` 只在视图出现时跑一次，

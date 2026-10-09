@@ -1,3 +1,4 @@
+import CatVodPlayer
 import Foundation
 
 /// 一键诊断报告的**纯数据 + 渲染**（M17P1）。
@@ -27,6 +28,14 @@ struct DiagnosticsReport: Sendable, Equatable {
     var hostStatus: String
     var hostTail: [String]
     var storageFailures: [String]
+    /// 「最近播放」的几行（空数组 = 这次启动还没播过）。
+    var playbackRows: [PlaybackRow] = []
+
+    /// 「最近播放」的一行：标题 + 值。
+    struct PlaybackRow: Sendable, Equatable {
+        var title: String
+        var value: String
+    }
 
     /// 报告正文：纯文本，直接进剪贴板。
     var text: String {
@@ -48,12 +57,15 @@ struct DiagnosticsReport: Sendable, Equatable {
             "解码：\(Self.value(decoder))",
             "内核可用性：\(Self.value(mpvAvailability))",
             "",
+        ]
+        lines.append(contentsOf: playbackSection())
+        lines.append(contentsOf: [
             "【下载】",
             Self.value(downloads),
             "",
             "【宿主】",
             "状态：\(Self.value(hostStatus))",
-        ]
+        ])
         if hostTail.isEmpty {
             lines.append("最近输出：（无）")
         } else {
@@ -68,6 +80,37 @@ struct DiagnosticsReport: Sendable, Equatable {
             lines.append(contentsOf: storageFailures.map { "- \($0)" })
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// 「最近播放」段：**没有就明说**（这条最常被问：画质不对 / 卡顿），不给一个空行。
+    private func playbackSection() -> [String] {
+        var lines = ["【最近播放】"]
+        if playbackRows.isEmpty {
+            lines.append("（这次启动还没播过）")
+        } else {
+            lines.append(contentsOf: playbackRows.map { "\($0.title)：\($0.value)" })
+        }
+        lines.append("")
+        return lines
+    }
+
+    /// 把内核报的播放信息摊成几行：**空的项不出现**（与播放页那一块同一口径）。
+    static func playbackRows(from stats: PlaybackStats?) -> [PlaybackRow] {
+        guard let stats, !stats.isEmpty else {
+            return []
+        }
+        let candidates: [(title: String, value: String)] = [
+            ("画面", stats.resolutionText),
+            ("编码", stats.codecText),
+            ("帧率", stats.fpsText),
+            ("色彩", stats.dynamicRangeText),
+            ("解码", stats.decodeText),
+            ("码率", stats.bitrateText),
+            ("丢帧", stats.dropText),
+        ]
+        return candidates
+            .filter { !$0.value.isEmpty }
+            .map { PlaybackRow(title: $0.title, value: $0.value) }
     }
 
     // MARK: - 脱敏与格式化（纯函数，单测覆盖）

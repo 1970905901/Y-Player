@@ -76,6 +76,7 @@ struct LiveScheduleView: View {
                     resource: resource(url: url),
                     title: "\(channel.name) · \(row.title)",
                     settings: model.playbackSettings,
+                    onPlaybackStats: { model.notePlaybackStats($0) },
                     onStart: { model.resetAdSkip() }
                 )
             } label: {
@@ -87,6 +88,7 @@ struct LiveScheduleView: View {
                     resource: resource(url: channel.playbackURL(index: lineIndex)),
                     title: channel.name,
                     settings: model.playbackSettings,
+                    onPlaybackStats: { model.notePlaybackStats($0) },
                     onStart: { model.resetAdSkip() }
                 )
             } label: {

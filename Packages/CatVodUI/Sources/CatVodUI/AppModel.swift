@@ -83,6 +83,13 @@ public final class AppModel: ObservableObject {
     /// （`private(set)` 只对声明所在文件开放，跨文件写会编译失败）。
     @Published public internal(set) var playbackNotice: String = ""
 
+    /// 最近一次读到的**播放信息**（分辨率 / 编码 / 色彩 / 实际硬解 / 丢帧），M17P2。
+    ///
+    /// 为什么放到 model 上：播放页里那份是 `@State`（只活在那个页面），而「这个人到底在播什么、
+    /// 硬解有没有生效、丢了几帧」正是排查画质与卡顿要问的第一个问题 —— 复制诊断信息时得拿得到。
+    /// 只在读到**非空**结果时由播放页回传（见 `notePlaybackStats(_:)`），读不到不该冲掉上一次。
+    @Published public internal(set) var lastPlaybackStats: PlaybackStats?
+
     /// 首页展示方式（设置 → 首页 → 展示方式）：纵向列表 / 横向海报网格。
     ///
     /// 与内核/解码方式同一套做法：**用户手动选择 + 落 `UserDefaults`**，不随数据自动变化。

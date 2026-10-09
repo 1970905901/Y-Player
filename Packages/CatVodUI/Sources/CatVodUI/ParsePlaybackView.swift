@@ -60,6 +60,7 @@ struct ParsePlaybackView: View {
                             headers: headers
                         )
                     },
+                    onPlaybackStats: { model.notePlaybackStats($0) },
                     onStart: { model.resetAdSkip() }
                 )
             } else if errorText.isEmpty {

@@ -76,6 +76,7 @@ struct SitePlayEpisodeView: View {
                             headers: headers
                         )
                     },
+                    onPlaybackStats: { model.notePlaybackStats($0) },
                     playlist: playlist,
                     onStart: { model.resetAdSkip() }
                 )

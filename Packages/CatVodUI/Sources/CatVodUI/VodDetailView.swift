@@ -412,6 +412,7 @@ public struct VodDetailView: View {
                 onEnqueueDownloads: { requests, siteKey, title, headers in
                     await enqueuePlaybackDownload(requests, siteKey: siteKey, title: title, headers: headers)
                 },
+                onPlaybackStats: { model.notePlaybackStats($0) },
                 playlist: playlist
             )
         } else if let site, isSpiderPlayable(site) {

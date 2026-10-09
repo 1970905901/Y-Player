@@ -51,6 +51,11 @@ public struct PlaybackView: View {
     let danmakuDisplay: DanmakuDisplayConfig
     /// 批量下载：把要下载的集交回上层（只有上层知道站点与 `AppModel`）。
     let onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> DownloadEnqueueOutcome)?
+    /// 播放信息回传口（M17P2）：读到一次**非空**的播放信息就回传一次。
+    ///
+    /// 上层（认识 `AppModel` 的那一层）把它记下来，诊断报告里就有「最近一次到底在播什么」——
+    /// 播放页自己那份是 `@State`，退出页面就没了。
+    let onPlaybackStats: ((PlaybackStats) -> Void)?
 
     @State private var engine: (any PlayerEngine)?
     @State private var player: AVPlayer?
@@ -114,6 +119,7 @@ public struct PlaybackView: View {
         danmakuLines: [DanmakuLine] = [],
         danmakuDisplay: DanmakuDisplayConfig = DanmakuDisplayConfig(),
         onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> DownloadEnqueueOutcome)? = nil,
+        onPlaybackStats: ((PlaybackStats) -> Void)? = nil,
         playlist: PlaybackPlaylist? = nil,
         onStart: (() -> Void)? = nil
     ) {
@@ -131,6 +137,7 @@ public struct PlaybackView: View {
         self.danmakuLines = danmakuLines
         self.danmakuDisplay = danmakuDisplay
         self.onEnqueueDownloads = onEnqueueDownloads
+        self.onPlaybackStats = onPlaybackStats
         self.onStart = onStart
     }
 
@@ -848,12 +855,19 @@ extension PlaybackView {
     }
 
     /// 读一次播放信息：内核不支持就清空（那一块本来也不会显示）。
+    ///
+    /// 读到**非空**结果时回传给上层一次（M17P2）—— 诊断报告要用的就是这一份；
+    /// 读不到东西（还没起播 / 属性没填上）不回传，免得把上一次的真实结果冲掉。
     func refreshPlaybackStats() async {
         guard let engine, let provider = engine as? PlaybackStatsProviding else {
             playbackStats = nil
             return
         }
-        playbackStats = await provider.playbackStats()
+        let stats = await provider.playbackStats()
+        playbackStats = stats
+        if !stats.isEmpty {
+            onPlaybackStats?(stats)
+        }
     }
 
     /// 音轨 / 字幕轨选择。

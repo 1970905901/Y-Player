@@ -1,4 +1,5 @@
 import CatVodCore
+import CatVodPlayer
 @testable import CatVodUI
 import Foundation
 import Testing
@@ -95,6 +96,45 @@ struct DiagnosticsReportTests {
         #expect(stamp.filter { $0 == "-" }.count == 2)
         #expect(stamp.filter { $0 == ":" }.count == 2)
     }
+
+    @Test("最近播放：非空项才成行，值就是内核报的那几个")
+    func playbackRowsFromStats() {
+        let full = PlaybackStats(rawValues: [
+            "video-params/w": "3840",
+            "video-params/h": "2160",
+            "video-format": "hevc",
+            "video-params/pixelformat": "yuv420p10",
+            "container-fps": "23.976",
+            "video-params/primaries": "bt.2020",
+            "video-params/gamma": "pq",
+            "hwdec-current": "videotoolbox",
+            "video-bitrate": "12400000",
+            "frame-drop-count": "0",
+            "decoder-frame-drop-count": "0",
+        ])
+        let rows = DiagnosticsReport.playbackRows(from: full)
+        #expect(rows.count == 7)
+        #expect(rows.first == DiagnosticsReport.PlaybackRow(title: "画面", value: "3840×2160"))
+        #expect(rows.contains(DiagnosticsReport.PlaybackRow(title: "色彩", value: "HDR · PQ (ST2084) · BT.2020")))
+        #expect(rows.contains(DiagnosticsReport.PlaybackRow(title: "解码", value: "硬件解码（VideoToolbox）")))
+        #expect(rows.contains(DiagnosticsReport.PlaybackRow(title: "丢帧", value: "无丢帧")))
+
+        // 只读到分辨率时，其余空项不出现（与播放页那一块同一口径）
+        let partial = PlaybackStats(rawValues: ["video-params/w": "1920", "video-params/h": "1080"])
+        #expect(DiagnosticsReport.playbackRows(from: partial).map(\.title) == ["画面"])
+
+        #expect(DiagnosticsReport.playbackRows(from: nil).isEmpty)
+        #expect(DiagnosticsReport.playbackRows(from: PlaybackStats()).isEmpty)
+    }
+
+    @Test("正文里的「最近播放」段：没有就明说")
+    func playbackSectionInText() {
+        #expect(blank().text.contains("【最近播放】\n（这次启动还没播过）"))
+
+        var report = sample()
+        report.playbackRows = [DiagnosticsReport.PlaybackRow(title: "色彩", value: "HDR · PQ (ST2084) · BT.2020")]
+        #expect(report.text.contains("【最近播放】\n色彩：HDR · PQ (ST2084) · BT.2020"))
+    }
 }
 
 /// 采集那一半（`AppModel.diagnosticsReport`）：内联配置下也该给出一份能看的报告。
@@ -133,5 +173,25 @@ struct DiagnosticsWiringTests {
         )
         #expect(fixture.model.downloadSummaryText.contains("共 2 条"))
         #expect(fixture.model.downloadSummaryText.contains("排队 2"))
+    }
+
+    @Test("播放页回传的播放信息会进报告（M17P2）")
+    func playbackStatsReachReport() async throws {
+        let fixture = try AppModelFixture()
+        defer { fixture.tearDown() }
+        await fixture.load()
+
+        #expect(fixture.model.lastPlaybackStats == nil)
+
+        let stats = PlaybackStats(rawValues: [
+            "video-params/w": "3840",
+            "video-params/h": "2160",
+            "video-format": "hevc",
+        ])
+        fixture.model.notePlaybackStats(stats)
+
+        let report = await fixture.model.diagnosticsReport(now: Date(timeIntervalSince1970: 1_700_000_000))
+        #expect(report.playbackRows.map(\.title) == ["画面", "编码"])
+        #expect(report.text.contains("编码：hevc"))
     }
 }

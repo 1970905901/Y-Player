@@ -98,7 +98,8 @@ struct SettingsDownloadView: View {
                         PlaybackView(
                             resource: MediaResource(url: file.absoluteString),
                             title: title(of: task),
-                            settings: model.playbackSettings
+                            settings: model.playbackSettings,
+                            onPlaybackStats: { model.notePlaybackStats($0) }
                         )
                     } label: {
                         Text("播放")

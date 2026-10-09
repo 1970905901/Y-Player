@@ -10,6 +10,14 @@ import Foundation
 // 顺带把类体长度压回 `type_body_length` 的上限内（SwiftLint 的 error 阈值是 450 行）。
 
 public extension AppModel {
+    /// 记下最近一次读到的播放信息（M17P2）：诊断报告的「最近播放」段就是它。
+    ///
+    /// 可见性是「模块内」：调用方是播放页与详情页那几个视图（都在本模块），
+    /// 没必要把 `PlaybackStats` 这条回传口暴露到包外。
+    internal func notePlaybackStats(_ stats: PlaybackStats) {
+        lastPlaybackStats = stats
+    }
+
     /// 严格解析播放内核（**不降级**）：不可用时返回原因，由 UI 提示用户修改设置。
     func resolvePlayback() -> PlayerEngineResolution {
         PlayerCoordinator().resolve(settings: playbackSettings)

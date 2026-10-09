@@ -32,7 +32,8 @@ extension AppModel {
             downloads: downloadSummaryText,
             hostStatus: hostStatus.summary,
             hostTail: hostDiagnostics(limit: 12),
-            storageFailures: storageFailures
+            storageFailures: storageFailures,
+            playbackRows: DiagnosticsReport.playbackRows(from: lastPlaybackStats)
         )
     }
 
