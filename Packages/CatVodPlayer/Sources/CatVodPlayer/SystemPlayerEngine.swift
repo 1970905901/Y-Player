@@ -120,10 +120,12 @@ public final class AVPlayerEngine: PlayerEngine {
         player.volume = min(max(volume, 0), 1)
     }
 
-    /// 说明：AVPlayer 的轨道选择依赖媒体选择组，M2 先记录选择不做实际切换（M3/M4 由自研内核实现）。
+    /// 轨道选择（M03P7）：音轨 / 字幕轨走 `AVMediaSelectionGroup`。
+    ///
+    /// 三态与上游一致：`auto` = 该组的默认轨、`disabled` = 空选择（字幕「关闭」）、
+    /// `index` = 第 index 个可选项（下标由 `tracksChanged` 报出去，原样送回来即可）。
     public func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async {
-        _ = selection
-        _ = kind
+        applyTrackSelection(selection, for: kind)
     }
 
     public func teardown() async {

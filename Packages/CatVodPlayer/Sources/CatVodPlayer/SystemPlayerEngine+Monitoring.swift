@@ -81,6 +81,8 @@ extension AVPlayerEngine {
         player.play()
         update(.playing)
         emit(.timeChanged(current: lastTime, duration: duration))
+        // 轨道列表就绪后才拿得到（M03P7）：播放页的「轨道」区靠它出现。
+        reportTracks()
     }
 
     func handleFailure(_ reason: String) {
