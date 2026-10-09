@@ -26,9 +26,11 @@ struct HLSBuiltinRulesTests {
     func futureRulesMustBeOffByDefaultAndValid() {
         let rules = HLSBuiltinRules.rules
 
-        #expect(rules.allSatisfy { !$0.enabledByDefault })
+        let allDisabledByDefault = rules.allSatisfy { !$0.enabledByDefault }
+        #expect(allDisabledByDefault)
         #expect(Set(rules.map(\.id)).count == rules.count)
-        #expect(rules.allSatisfy { (try? $0.compile()) != nil })
+        let allCompile = rules.allSatisfy { (try? $0.compile()) != nil }
+        #expect(allCompile)
     }
 
     @Test("状态键的源标识带上包 id 与版本")

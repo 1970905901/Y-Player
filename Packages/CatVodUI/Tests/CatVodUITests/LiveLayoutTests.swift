@@ -210,7 +210,8 @@ struct LiveLayoutTests {
         channel = makeChannel(name: "CCTV-2", urls: ["http://a/2.m3u8"])
         let plain = LiveListLayout.programRows(channel: channel, schedule: schedule, at: now)
         #expect(plain.map(\.state) == [.past, .live, .future])
-        #expect(plain.allSatisfy { $0.catchupURL == nil })
+        let noneHasCatchup = plain.allSatisfy { $0.catchupURL == nil }
+        #expect(noneHasCatchup)
 
         // 这个频道没有节目单 → 空数组（界面显示「暂无节目单」）。
         #expect(LiveListLayout.programRows(channel: channel, schedule: nil, at: now).isEmpty)

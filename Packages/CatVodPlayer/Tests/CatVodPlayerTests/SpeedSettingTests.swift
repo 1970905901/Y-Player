@@ -12,7 +12,8 @@ struct SpeedSettingTests {
         #expect(SpeedSetting.normal == 1.0)
         #expect(SpeedSetting.presets == [0.5, 0.8, 1.0, 1.2, 1.5, 2.0, 3.0, 5.0])
         // 每个预设都必须在合法区间里（否则点了会被静默改值）
-        #expect(SpeedSetting.presets.allSatisfy { SpeedSetting.clamp($0) == $0 })
+        let allPresetsClamped = SpeedSetting.presets.allSatisfy { SpeedSetting.clamp($0) == $0 }
+        #expect(allPresetsClamped)
     }
 
     @Test("夹紧：越界、无穷、NaN")

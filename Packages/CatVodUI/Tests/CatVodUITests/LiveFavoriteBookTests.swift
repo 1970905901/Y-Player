@@ -51,7 +51,8 @@ struct LiveFavoriteBookTests {
 
         let plain = LiveListLayout.groupRows(source.groups)
         #expect(plain.map(\.name) == ["央视", "卫视"])
-        #expect(plain.allSatisfy { !$0.isKeep })
+        let noneKept = plain.allSatisfy { !$0.isKeep }
+        #expect(noneKept)
 
         let rows = LiveListLayout.groupRows(source.groups, favoriteCount: 2)
         #expect(rows.map(\.name) == ["收藏", "央视", "卫视"])

@@ -82,6 +82,7 @@ struct ConfigCoverageTests {
         }
 
         // 没填就不该有这一条（避免噪音）
-        #expect(config().validationWarnings.allSatisfy { !$0.contains("在本平台不生效") })
+        let nothingIgnored = config().validationWarnings.allSatisfy { !$0.contains("在本平台不生效") }
+        #expect(nothingIgnored)
     }
 }

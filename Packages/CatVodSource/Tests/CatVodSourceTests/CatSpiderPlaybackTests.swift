@@ -49,7 +49,8 @@ struct CatSpiderPlaybackTests {
         // 站点 api 为 `.../spider/<key>`，因此真实路径是 `/spider/<key>/<route>`；
         // 这里断言“末段路由名”，避免与站点 key 耦合。
         #expect(requests.map(\.url.lastPathComponent) == ["init", "home", "config"])
-        #expect(requests.allSatisfy { $0.url.path.hasPrefix("/spider/") })
+        let allSpiderRequests = requests.allSatisfy { $0.url.path.hasPrefix("/spider/") }
+        #expect(allSpiderRequests)
         let allPost = requests.allSatisfy { $0.method == .post }
         #expect(allPost)
     }

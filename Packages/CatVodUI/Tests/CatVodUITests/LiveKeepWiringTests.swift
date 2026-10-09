@@ -75,8 +75,10 @@ struct LiveKeepWiringTests {
 
         // 没有记录时列表照旧：不带标记、线路都从第 0 条起。
         let plain = LiveListLayout.channelRows(source.groups[0], guide: nil, at: now)
-        #expect(plain.allSatisfy { !$0.isLastWatched })
-        #expect(plain.allSatisfy { $0.initialLineIndex == 0 })
+        let noneIsLastWatched = plain.allSatisfy { !$0.isLastWatched }
+        #expect(noneIsLastWatched)
+        let allAtFirstLine = plain.allSatisfy { $0.initialLineIndex == 0 }
+        #expect(allAtFirstLine)
     }
 
     @Test("没有地址的频道不算命中「上次观看」——标了也播不了")

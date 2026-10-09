@@ -51,7 +51,8 @@ struct SourceCacheTests {
 
         #expect(entries.count == 3)
         #expect(currentEntries.count == 1)
-        #expect(currentEntries.allSatisfy { $0.fileName.hasPrefix("bundle-") })
+        let allBundles = currentEntries.allSatisfy { $0.fileName.hasPrefix("bundle-") }
+        #expect(allBundles)
         #expect(digestEntry?.isDigest == true)
     }
 

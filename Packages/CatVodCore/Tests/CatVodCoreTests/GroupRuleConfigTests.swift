@@ -53,7 +53,8 @@ struct GroupRuleConfigTests {
         let entries = GroupRuleConfig.entries(interfaceRules: [interfaceRule], userRules: [userRule])
 
         #expect(entries.map(\.rule.id) == (GroupRuleConfig.builtins.map(\.id) + ["i1", "u1"]))
-        #expect(entries.allSatisfy(\.isEnabled))
+        let allEnabled = entries.allSatisfy(\.isEnabled)
+        #expect(allEnabled)
     }
 
     @Test("用户自建规则参与抽标签，也能按 id 关掉")
