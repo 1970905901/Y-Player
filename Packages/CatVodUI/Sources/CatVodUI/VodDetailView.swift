@@ -115,6 +115,8 @@ public struct VodDetailView: View {
     public var body: some View {
         content
             .navigationTitle(vod?.vodName.isEmpty == false ? (vod?.vodName ?? "详情") : "详情")
+            // 详情页是「点进来」的下一层：底部 Tab 栏收起（返回自动恢复；iOS 15 无该能力，见 Platform/AdaptiveTabBar.swift）。
+            .adaptiveTabBarHidden(true)
             .refreshable {
                 await loadDetail(force: true)
                 await loadProgress()

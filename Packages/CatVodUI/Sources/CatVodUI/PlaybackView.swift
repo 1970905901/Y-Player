@@ -162,6 +162,8 @@ public struct PlaybackView: View {
         // 外观跟随应用 / 系统（用户口径）：信息区与导航栏回落系统外观。
         // 画面区自己的黑色衬底**不跟随** —— 视频舞台在浅色下也应是黑的（跟随的是页面，不是画面）。
         .navigationTitle(title)
+        // 播放页也不该看到底部 Tab 栏：播放链路每一层都收起（进入详情页起就没了，见 Platform/AdaptiveTabBar.swift）。
+        .adaptiveTabBarHidden(true)
         .task {
             // 「开始一次播放」的回传口（M06l）：换集/换台时上层用它把「跳过广告」的累计统计归零。
             onStart?()

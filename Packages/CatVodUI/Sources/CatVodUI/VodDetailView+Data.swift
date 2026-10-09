@@ -303,5 +303,6 @@ public struct UnsupportedPlaybackView: View {
         }
         .adaptiveListStyle()
         .navigationTitle("暂不可播放")
+        .adaptiveTabBarHidden(true)
     }
 }
