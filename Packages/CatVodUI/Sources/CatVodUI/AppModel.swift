@@ -681,6 +681,16 @@ public final class AppModel: ObservableObject {
         state.loadedSource?.warnings ?? []
     }
 
+    /// 配置里的**多配置入口**（`urls`，多仓），去掉空项。
+    ///
+    /// **本平台没接**（不列出来给用户挑，见 `ConfigCoverage.urlsReason`）——
+    /// 这里只把它取出来，供界面在「站点为空」时说清原因，而不是让用户以为配置没生效。
+    public var configSubURLs: [String] {
+        (state.loadedSource?.config.urls ?? [])
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
     public var loadedKind: LoadedSource.Kind? {
         state.loadedSource?.kind
     }

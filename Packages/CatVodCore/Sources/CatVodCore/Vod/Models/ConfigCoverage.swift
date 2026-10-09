@@ -13,8 +13,9 @@ import Foundation
 ///   接口（换掉解析器就是十几行）；Apple 侧的 `URLSession` **没有对应钩子**，要做到得自建连接层
 ///  （见 `docs/任务记录/M06m-DNS方案与决策.md`）。这是**差异**，不是偷懒 ——
 ///   但差异必须说出来：配置里写了 `hosts` 却不生效，用户只会以为「这个站不行」。
-/// - **还没接的界面**：`logo`、`notice`。这些是能做的，只是当前没有消费方；同样要报，
-///   免得用户以为配置没生效是自己的问题。
+/// - **还没接的界面**：`logo`、`notice`、`urls`（多配置入口）。这些是能做的，只是当前没有消费方；
+///   同样要报，免得用户以为配置没生效是自己的问题。
+///   其中 `urls` 最要紧：多仓配置的 `sites` 通常是空的，不报就只剩「没有可用站点」。
 ///   （`flags` 原本也列在这一组 —— M09h 去读上游 `Result.isUseParse()` 时才发现它的真实语义是
 ///   **vipFlags**（配置声明「这些线路要靠解析」），不是「flag 选择菜单」；如今它已接进解析判定，
 ///   不再属于这里。这次错标从 M06m 一直挂到现在。）
@@ -57,9 +58,16 @@ public enum ConfigCoverage {
     /// `notice`：配置公告。
     public static let noticeReason = "本平台不显示配置公告"
 
+    /// `urls`：**多配置入口（多仓）**。本平台没接：加载的就是这一份配置本身，
+    /// 配置里列的那些子配置不会列出来给用户挑。
+    ///
+    /// 必须报：多仓配置通常 **`sites` 是空的**，用户只会看到「没有可用站点」，
+    /// 然后以为 App 坏了（其实是要先选一个子配置）。
+    public static let urlsReason = "本平台不支持多配置入口（多仓）：请直接把其中一条子配置地址填进「源地址」"
+
     /// 挑出配置里「有值、但本平台不生效」的字段。
     ///
-    /// 顺序跟 ``SourceConfig`` 的字段声明顺序一致（`doh` → `hosts` → `wallpaper` → `logo` → `notice`；
+    /// 顺序跟 ``SourceConfig`` 的字段声明顺序一致（`doh` → `hosts` → `wallpaper` → `logo` → `notice` → `urls`；
     /// 跳过的 `flags` 已接进解析判定，不再报），界面与测试都依赖这个顺序。
     public static func ignored(in config: SourceConfig) -> [Ignored] {
         var result: [Ignored] = []
@@ -77,6 +85,9 @@ public enum ConfigCoverage {
         }
         if !config.notice.isEmpty {
             result.append(Ignored(key: "notice", title: "配置公告", reason: noticeReason))
+        }
+        if !config.urls.isEmpty {
+            result.append(Ignored(key: "urls", title: "多配置入口", reason: urlsReason))
         }
         return result
     }

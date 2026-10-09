@@ -10,7 +10,8 @@ struct ConfigCoverageTests {
         flags: [String] = [],
         wallpaper: String = "",
         logo: String = "",
-        notice: String = ""
+        notice: String = "",
+        urls: [String] = []
     ) -> SourceConfig {
         var config = SourceConfig()
         config.doh = doh
@@ -19,6 +20,7 @@ struct ConfigCoverageTests {
         config.wallpaper = wallpaper
         config.logo = logo
         config.notice = notice
+        config.urls = urls
         return config
     }
 
@@ -59,6 +61,15 @@ struct ConfigCoverageTests {
         ])
     }
 
+    @Test("多配置入口（`urls`）要报：不报的话多仓配置只会显示「没有可用站点」")
+    func reportsMultipleConfigEntryPoints() {
+        let ignored = ConfigCoverage.ignored(in: config(urls: ["https://a.example/1.json", "https://b.example/2.json"]))
+        #expect(ignored.map(\.key) == ["urls"])
+        #expect(ignored.first?.reason == ConfigCoverage.urlsReason)
+        // 空数组不算「填了」
+        #expect(ConfigCoverage.ignored(in: config(urls: [])).isEmpty)
+    }
+
     @Test("`flags` 不再报：它已接进解析判定（M09h 查清它的语义是 vipFlags，不是「flag 菜单」）")
     func flagsIsNoLongerReported() {
         let withFlags = config(flags: ["youku", "qq"])
@@ -82,11 +93,12 @@ struct ConfigCoverageTests {
             flags: ["youku"],
             wallpaper: "https://img.example/w.jpg",
             logo: "https://img.example/l.png",
-            notice: "公告"
+            notice: "公告",
+            urls: ["https://a.example/1.json"]
         )
         let coverage = filled.validationWarnings.filter { $0.contains("在本平台不生效") }
-        #expect(coverage.count == 5)
-        for key in ["`doh`", "`hosts`", "`wallpaper`", "`logo`", "`notice`"] {
+        #expect(coverage.count == 6)
+        for key in ["`doh`", "`hosts`", "`wallpaper`", "`logo`", "`notice`", "`urls`"] {
             #expect(coverage.contains { $0.contains(key) })
         }
         // `flags` 有值也不该出现：它已经接进解析判定，不再是「不生效的字段」

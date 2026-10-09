@@ -212,4 +212,23 @@ struct AppModelIntegrationTests {
         await fixture.model.loadDanmaku(DanmakuRequest(name: "片名", episode: "第1集"))
         #expect(fixture.model.danmakuStatus == .idle)
     }
+
+    @Test("多配置入口（urls）：取出来给界面说清原因、只留非空项，且**不会自己去加载**（M18P1）")
+    func configSubURLsAreExposed() async throws {
+        let fixture = try AppModelFixture()
+        defer { fixture.tearDown() }
+
+        // 多仓配置的样子：只有 urls，没有 sites
+        await fixture.load("""
+        {"urls":["https://a.example/1.json","   ","https://b.example/2.json"]}
+        """)
+
+        #expect(fixture.model.configSubURLs == ["https://a.example/1.json", "https://b.example/2.json"])
+        #expect(fixture.model.sites.isEmpty)
+        // 告警里要说清「不支持多配置入口」——否则用户只会看到「没有可用站点」
+        let warned = fixture.model.warnings.contains { $0.contains("多配置入口") }
+        #expect(warned)
+        // 没有自己去把子配置加载进来（状态仍是这份配置）
+        #expect(fixture.model.state.loadedSource?.config.urls.count == 2)
+    }
 }
