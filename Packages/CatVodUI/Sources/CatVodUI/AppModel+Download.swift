@@ -153,6 +153,39 @@ public extension AppModel {
         await synchronizeDownloads()
     }
 
+    /// 「这一集是不是已经下好了」—— 按**远端播放地址**找（M10g）。
+    ///
+    /// 为什么按地址找而不是按片名 / 集名：播放流程（详情页 / 选集页 / 解析页 / 直播页）拼出来的
+    /// `MediaResource` 手上只有地址与 header，片名那些在更外层。而地址是**同一份** ——
+    /// 任务当初就是用它入的队（`DownloadRequest.url`）。
+    ///
+    /// 两处必须挡住的情况：
+    /// - 只认 `finished`：半截文件播不了，而「记录说下好了、文件被系统清理掉了」也得挡住
+    ///   （下面前缀扫目录就是为它）；
+    /// - 同一地址可能有多个任务（不同站点），逐个找，找到第一个真有文件的。
+    func localDownloadedFile(forRemoteURL url: String) -> URL? {
+        guard !url.isEmpty else {
+            return nil
+        }
+        for task in downloadTasks where task.status == .finished && task.url == url {
+            if let file = Self.downloadedFile(of: task, in: downloadDirectory) {
+                return file
+            }
+        }
+        return nil
+    }
+
+    /// 找一条任务落下的文件（按前缀扫目录，理由同 ``removeDownloadedFiles(of:in:)``：
+    /// 后缀可能是 `.ts` / `.mp4` / 执行器从地址认出来的其它）。
+    static func downloadedFile(of task: DownloadTask, in directory: URL) -> URL? {
+        let prefix = DownloadTask.sanitized("\(task.fileNameBase) · \(task.siteKey)")
+        let contents = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        guard let name = contents.first(where: { $0.hasPrefix(prefix) }) else {
+            return nil
+        }
+        return directory.appendingPathComponent(name)
+    }
+
     /// 内存里的顺序与库保持一致（都按创建时间），免得界面顺序忽然跳。
     static func sortedDownloadTasks(_ tasks: [DownloadTask]) -> [DownloadTask] {
         tasks.sorted { $0.createdAt < $1.createdAt }

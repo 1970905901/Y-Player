@@ -134,6 +134,56 @@ struct DownloadWiringTests {
         #expect(reopened.downloadTasks.first?.status == DownloadTask.Status.finished)
     }
 
+    @Test("本地接管：下好的集直接播本地文件；排队中 / 没下载都不接管")
+    func localFileTakesOver() async throws {
+        let url = "https://cdn.example/1.mp4"
+        let fixture = try AppModelFixture(downloadTransport: WiringTransport([url: direct("hello")]))
+        defer { fixture.tearDown() }
+        await fixture.load()
+
+        let resource = MediaResource(url: url, headers: ["Referer": "https://site.example"])
+        // 还没入队：不接管，原样给回远地址
+        #expect(fixture.model.localDownloadedFile(forRemoteURL: url) == nil)
+        #expect(fixture.model.proxiedMediaResource(resource).url == url)
+
+        await fixture.model.enqueueDownloads(
+            [DownloadRequest(episode: "第 1 集", line: "线路一", url: url)],
+            siteKey: "a",
+            title: "某剧"
+        )
+        // 排队中也不接管：半截文件播不了
+        #expect(fixture.model.localDownloadedFile(forRemoteURL: url) == nil)
+
+        _ = await fixture.model.runDownloadQueue()
+        let local = try #require(fixture.model.localDownloadedFile(forRemoteURL: url))
+        #expect(local.isFileURL)
+
+        // 接管之后：地址换成文件、header 清空（本地文件不该再带鉴权头）
+        let swapped = fixture.model.proxiedMediaResource(resource)
+        #expect(swapped.url == local.absoluteString)
+        #expect(swapped.headers.isEmpty)
+    }
+
+    @Test("接管的文件也删得掉：删除后不再接管")
+    func removingFileRestoresRemote() async throws {
+        let url = "https://cdn.example/1.mp4"
+        let fixture = try AppModelFixture(downloadTransport: WiringTransport([url: direct("hello")]))
+        defer { fixture.tearDown() }
+        await fixture.load()
+
+        let added = await fixture.model.enqueueDownloads(
+            [DownloadRequest(episode: "第 1 集", line: "线路一", url: url)],
+            siteKey: "a",
+            title: "某剧"
+        )
+        let id = try #require(added.first?.id)
+        _ = await fixture.model.runDownloadQueue()
+        #expect(fixture.model.localDownloadedFile(forRemoteURL: url) != nil)
+
+        await fixture.model.removeDownload(id: id)
+        #expect(fixture.model.localDownloadedFile(forRemoteURL: url) == nil)
+    }
+
     @Test("HLS：清单 + 分片拼成一个 .ts 落地")
     func runsHLS() async throws {
         let index = "https://cdn.example/v/index.m3u8"

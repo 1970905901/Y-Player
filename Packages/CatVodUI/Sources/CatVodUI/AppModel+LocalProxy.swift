@@ -45,11 +45,21 @@ public extension AppModel {
         localProxyNotice = "本机服务已停止（需要 header 的 HLS 源可能播不了）。"
     }
 
-    /// 播放资源：需要注入 header 且本机服务在跑时改走 `/proxy`。
+    /// 播放资源的总入口：**已下载就播本地文件**（M10g），否则按需改走 `/proxy`。
     ///
-    /// 走代理时把 header 从资源上摘掉——header 交给本机服务统一注入，
-    /// 播放器再带一份只会重复，并可能在子请求上把注入值覆盖回去。
+    /// ⚠️ 名字仍叫 `proxiedMediaResource`：它是全仓播放地址的唯一必经点（详情页 / 选集页 /
+    /// 解析页 / 直播页共 5 处），改名要动 5 个调用点，留给下次顺手做 —— 但它现在的职责已经是
+    /// 「播放资源的总入口」。
+    ///
+    /// 本地文件既不需要 header、也不需要代理：把地址换成 `file://`，并把 header 清空
+    /// （留着 header 会让播放器对本地地址也发一遍带鉴权的请求）。续播位置保留。
     func proxiedMediaResource(_ resource: MediaResource) -> MediaResource {
+        if let local = localDownloadedFile(forRemoteURL: resource.url) {
+            var copy = resource
+            copy.url = local.absoluteString
+            copy.headers = [:]
+            return copy
+        }
         guard isLocalProxyEnabled, !resource.headers.isEmpty else {
             return resource
         }
