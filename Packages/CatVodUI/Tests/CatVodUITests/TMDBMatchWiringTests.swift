@@ -65,9 +65,12 @@ struct TMDBMatchWiringTests {
         #expect(bundle.metadata.id == 603)
         #expect(bundle.metadata.isAnimation)
         let searches = await stub.requestCount(matching: "/search/multi")
-        let detailRounds = await stub.requestCount(matching: "/movie/603")
+        // 带 `?` 才是详情那一次：`/movie/603/images` 也含 `/movie/603`（第一版这里就数错了）。
+        let detailRounds = await stub.requestCount(matching: "/movie/603?")
+        let backdropRounds = await stub.requestCount(matching: "/movie/603/images")
         #expect(searches == 0)
         #expect(detailRounds == 1)
+        #expect(backdropRounds == 1)
     }
 
     @Test("改手动匹配会作废会话缓存：下一轮不再拿旧的自动结果")
