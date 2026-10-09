@@ -8,7 +8,7 @@ import SwiftUI
 /// 要换关键词回搜索页，那是搜索页的活；这面墙只回答「别的站点上搜得到什么、长什么样」。
 ///
 /// 搜哪些站点、结果怎么归位见 ``AggregateSearchRules``；请求与并发在
-/// `AppModel.searchAcrossSites(keyword:)` 里 —— 本视图只画。
+/// `AppModel.searchAcrossSites(keyword:)` 里 —— 本视图只画，但**失败要说出来**（见 ``emptyHint``）。
 @MainActor
 struct AggregateSearchView: View {
     @ObservedObject var model: AppModel
@@ -22,6 +22,10 @@ struct AggregateSearchView: View {
     /// 选中的站点；nil = 「全部」。
     @State private var selectedSiteKey: String?
     @State private var isLoading = true
+    /// 这一轮实际搜了几个站点（空态要拿它和 ``failures`` 一起说清「为什么墙上没东西」）。
+    @State private var searchedCount = 0
+    /// 失败站点的可读原因（`站点名：原因`）。
+    @State private var failures: [String] = []
 
     var body: some View {
         HStack(spacing: 0) {
@@ -49,6 +53,14 @@ struct AggregateSearchView: View {
                     ForEach(sections) { section in
                         row(name: section.siteName, count: section.count, key: section.site.key)
                     }
+                }
+                if !sections.isEmpty, !failures.isEmpty {
+                    // 有结果也要把失败说出来：不然「这个站怎么没上墙」只能靠猜。
+                    Text("另有 \(failures.count) 个站点失败")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 8)
                 }
             }
             .padding(.vertical, 8)
@@ -94,7 +106,7 @@ struct AggregateSearchView: View {
             if isLoading {
                 placeholder("正在各站点搜索…", showsSpinner: true)
             } else if visibleEntries.isEmpty {
-                placeholder(emptyHint, showsSpinner: false)
+                placeholder(emptyHint, showsSpinner: false, showsRetry: true)
             } else {
                 grid
             }
@@ -121,8 +133,8 @@ struct AggregateSearchView: View {
         .padding(12)
     }
 
-    private func placeholder(_ text: String, showsSpinner: Bool) -> some View {
-        VStack(spacing: 8) {
+    private func placeholder(_ text: String, showsSpinner: Bool, showsRetry: Bool = false) -> some View {
+        VStack(spacing: 12) {
             if showsSpinner {
                 ProgressView()
             }
@@ -130,6 +142,12 @@ struct AggregateSearchView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            if showsRetry {
+                Button("重试") {
+                    Task { await load() }
+                }
+                .font(.footnote.weight(.semibold))
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 64)
@@ -154,9 +172,20 @@ struct AggregateSearchView: View {
         sections.reduce(0) { $0 + $1.count }
     }
 
+    /// 空态要把「为什么空」说清：**没有可搜站点 / 站点全失败 / 搜到了但零命中**是三件事，
+    /// 含糊成一句「没找到」最耽误排查（这面墙第一版就是这么把自己坑了一次）。
     private var emptyHint: String {
         if model.sites.isEmpty {
             return "还没有可用站点：请先在「设置 → 源地址」里加载配置。"
+        }
+        if searchedCount == 0 {
+            return "当前配置里没有能搜的站点：要么被 searchable=0 关了搜索，要么在当前平台跑不了。"
+        }
+        if failures.count >= searchedCount {
+            return "\(searchedCount) 个站点都没搜成功：\n" + failures.prefix(3).joined(separator: "\n")
+        }
+        if !failures.isEmpty {
+            return "各站点都没有搜到「\(keyword)」。\n另有 \(failures.count) 个站点搜索失败。"
         }
         return "各站点都没有搜到「\(keyword)」。"
     }
@@ -164,7 +193,10 @@ struct AggregateSearchView: View {
     private func load() async {
         isLoading = true
         defer { isLoading = false }
-        sections = await model.searchAcrossSites(keyword: keyword)
+        let outcome = await model.searchAcrossSites(keyword: keyword)
+        sections = outcome.sections
+        searchedCount = outcome.searchedCount
+        failures = outcome.failures
         // 选中的站点这一轮没命中（或站点清单变过）：回落「全部」，别停在一张空网格上。
         if let key = selectedSiteKey, !sections.contains(where: { $0.id == key }) {
             selectedSiteKey = nil
