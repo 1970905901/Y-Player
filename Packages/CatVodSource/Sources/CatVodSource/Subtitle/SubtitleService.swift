@@ -38,7 +38,10 @@ public struct SubtitleService: Sendable {
     /// - 空响应体返回空数组而不是抛错：**下到了但没内容**，与「下不到」是两件事。
     public func load(from source: SubtitleSource, headers: [String: String] = [:]) async throws -> [SubtitleCue] {
         let url = source.url.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let requestURL = URL(string: url) else {
+        // 光有 `URL(string:)` 不够：`"不是 URL"` 会解析成一个**没有 scheme 的相对 URL**，
+        // 于是真的去发请求、最后以 .network 失败告终 —— 而这是「地址本身就是错的」，
+        // 该报 .decoding。与本仓库其它入口一致（`CatSpiderHTTPClient` / `ApiRequestFactory`）。
+        guard let requestURL = URL(string: url), requestURL.scheme != nil, requestURL.host != nil else {
             throw CatVodError.decoding(path: "subtitle", reason: "字幕地址不是合法 URL：\(url)")
         }
         let response = try await transport.send(HTTPRequest(url: requestURL, headers: headers))
