@@ -426,6 +426,14 @@ public final class AppModel: ObservableObject {
     /// 播放页那一行弹幕状态（`.idle` = 不显示）。
     @Published public internal(set) var danmakuStatus: DanmakuStatus = .idle
 
+    // MARK: - 字幕（M09c）
+
+    /// 已载入的字幕 cue（**渲染还没做**，见 `AppModel+Subtitle.swift`）。
+    @Published public internal(set) var subtitleCues: [SubtitleCue] = []
+
+    /// 播放页显示的「字幕：源 · N 条」状态行。
+    @Published public internal(set) var subtitleStatus: SubtitleStatus = .idle
+
     /// 跳过广告的统计（M06k）：本机服务的 `/m3u8` 在后台线程记账，这里持有同一个盒子。
     let adSkipRecorder = AdSkipRecorder()
 

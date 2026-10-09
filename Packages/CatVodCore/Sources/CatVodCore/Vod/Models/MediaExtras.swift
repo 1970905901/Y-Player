@@ -70,6 +70,17 @@ public struct SubtitleSource: Codable, Sendable, Hashable, Identifiable {
 
     public var id: String { "\(language)|\(url)" }
 
+    /// 展示名：`name` → `language` → `url` 逐级回落。
+    ///
+    /// 与 ``DanmakuSource/displayName`` 同一思路，只是字幕多一层「语言」可用 ——
+    /// 字幕源常常只给 `zh` / `en` 而不给名字。
+    public var displayName: String {
+        if !name.isEmpty {
+            return name
+        }
+        return language.isEmpty ? url : language
+    }
+
     public init(name: String = "", url: String = "", language: String = "", format: String = "") {
         self.name = name
         self.url = url
