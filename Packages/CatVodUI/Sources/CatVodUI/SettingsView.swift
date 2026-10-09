@@ -230,7 +230,7 @@ public struct SettingsView: View {
     private var dataSection: some View {
         Section("数据") {
             NavigationLink {
-                SettingsDownloadView()
+                SettingsDownloadView(model: model)
             } label: {
                 Text("下载管理")
             }

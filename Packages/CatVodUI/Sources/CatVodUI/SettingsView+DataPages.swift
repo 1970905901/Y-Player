@@ -17,6 +17,8 @@ import UniformTypeIdentifiers
 /// 卡片下方写明缺什么、属于哪个里程碑 —— 不摆一个空任务列表出来骗人。
 @MainActor
 struct SettingsDownloadView: View {
+    @ObservedObject var model: AppModel
+
     /// 空间快照：进页面查一次（查询要遍历下载目录，不适合每次重绘都算）。
     @State private var snapshot = StorageSpace.Snapshot()
 
@@ -26,12 +28,133 @@ struct SettingsDownloadView: View {
                 StorageBar(snapshot: snapshot)
             }
             Section {
-                emptyState
+                if model.downloadTasks.isEmpty {
+                    emptyState
+                } else {
+                    ForEach(model.downloadTasks) { task in
+                        taskRow(task)
+                    }
+                    Button("清空下载（连文件一起删）", role: .destructive) {
+                        Task {
+                            await model.clearDownloads()
+                            refresh()
+                        }
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("下载内容")
+                    Spacer()
+                    if model.isDownloading {
+                        Text("正在下载…")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } footer: {
+                Text("下载在**进入本页时推进**（M10a 记的「后台下载」还没做）：列表里的进度、暂停与删除都作用在真实任务上，文件落在应用数据目录的 `Downloads/` 下。")
             }
         }
         .adaptiveListStyle()
         .navigationTitle("下载管理")
-        .task { refresh() }
+        .task {
+            refresh()
+            await model.synchronizeDownloads()
+            // 进页面就跑一轮队列：这一版没有后台下载，所以「看得见的时候」才推进。
+            await model.runDownloadQueue()
+            refresh()
+        }
+    }
+
+    /// 一条任务：标题 · 集名 + 状态 + 进度 + 操作。
+    ///
+    /// 进度有两种形态：知道总量就画确定进度条，不知道就画不确定态 —— 这正是 M10a 把
+    /// `progress` 做成可选值的原因（`0` 会让人以为「卡在开头」）。
+    private func taskRow(_ task: DownloadTask) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title(of: task))
+                    .lineLimit(1)
+                Spacer()
+                Text(statusText(task))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if task.status == .running {
+                if let progress = task.progress {
+                    ProgressView(value: progress)
+                } else {
+                    ProgressView()
+                }
+            }
+            HStack(spacing: 16) {
+                if task.status != .finished {
+                    Button(primaryActionTitle(task)) {
+                        Task {
+                            await toggle(task)
+                            await model.runDownloadQueue()
+                            refresh()
+                        }
+                    }
+                }
+                Button("删除", role: .destructive) {
+                    Task {
+                        await model.removeDownload(id: task.id)
+                        refresh()
+                    }
+                }
+            }
+            .font(.caption)
+            if !task.failureReason.isEmpty {
+                Text(task.failureReason)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func title(of task: DownloadTask) -> String {
+        task.episode.isEmpty ? task.title : "\(task.title) · \(task.episode)"
+    }
+
+    /// 状态文案：说得清「现在到底在干什么」。
+    private func statusText(_ task: DownloadTask) -> String {
+        switch task.status {
+        case .waiting:
+            "排队中"
+        case .running:
+            "下载中"
+        case .paused:
+            "已暂停"
+        case .finished:
+            "已完成"
+        case .failed:
+            "失败"
+        }
+    }
+
+    private func primaryActionTitle(_ task: DownloadTask) -> String {
+        switch task.status {
+        case .waiting, .running:
+            "暂停"
+        case .paused, .failed:
+            "继续"
+        case .finished:
+            ""
+        }
+    }
+
+    private func toggle(_ task: DownloadTask) async {
+        switch task.status {
+        case .waiting, .running:
+            await model.pauseDownload(id: task.id)
+        case .paused, .failed:
+            await model.resumeDownload(id: task.id)
+        case .finished:
+            break
+        }
     }
 
     /// 空态卡片：图标 + 标题 + 原因（对齐参考图的居中块）。
@@ -43,7 +166,7 @@ struct SettingsDownloadView: View {
             Text("暂无下载内容")
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            Text("离线下载尚未接通：任务与队列的规则已落地（M10a），还缺落库、分片下载与本地播放地址接管。")
+            Text("在播放页点右上角的「下载本集」就会出现在这里；下载的集在本地播（本地地址接管）是下一步。")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -53,7 +176,7 @@ struct SettingsDownloadView: View {
     }
 
     private func refresh() {
-        snapshot = StorageSpace.snapshot(downloadDirectory: AppModel.downloadDirectory)
+        snapshot = StorageSpace.snapshot(downloadDirectory: model.downloadDirectory)
     }
 }
 

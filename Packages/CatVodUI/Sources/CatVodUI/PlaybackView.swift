@@ -57,6 +57,8 @@ public struct PlaybackView: View {
     @State private var playerState: PlayerState = .idle
     /// 当前倍速（`speedChanged` 事件给的真值）。
     @State private var playbackRate: Double = 1
+    /// 「离线下载」那一块的反馈文案（加入队列 / 已经下过）。
+    @State private var downloadNotice = ""
 
     /// 进度落库节流间隔（秒）：播放中不必每秒写一次。
     static let persistInterval: TimeInterval = 5
@@ -85,6 +87,16 @@ public struct PlaybackView: View {
         VStack(spacing: 0) {
             playerArea
             List {
+                Section("离线下载") {
+                    Button("下载本集") {
+                        Task { await enqueueDownload() }
+                    }
+                    if !downloadNotice.isEmpty {
+                        Text(downloadNotice)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Section("播放状态") {
                     InfoRow(title: "状态", value: stateText)
                     if !engineText.isEmpty {
@@ -265,6 +277,34 @@ public struct PlaybackView: View {
     /// 弹幕与字幕共用它：两者都必须跟画面同一刻。
     private func clockRate() -> Double {
         playerState == .playing ? playbackRate : 0
+    }
+
+    // MARK: - 离线下载（M10f）
+
+    /// 把这一集加进下载队列。
+    ///
+    /// 三处取值的理由：
+    /// - **站点 key** 从 `progressContext` 取 —— 播放页本来就不认识站点配置，
+    ///   进度上下文是它手上唯一「这一集是谁」的线索；
+    /// - **片名 / 集名** 优先用弹幕请求里的那两个字段：那是上层拼好的可搜索名字，
+    ///   比播放页标题准（标题常带「 · 线路」这类后缀，写进文件名会很难看）；
+    /// - **请求头** 直接用 `resource.headers`：与播放本身同一套（站点鉴权都在里面），
+    ///   下载时缺一个 header 就会 403。
+    private func enqueueDownload() async {
+        let request = DownloadRequest(
+            episode: danmaku?.episode ?? title,
+            line: "",
+            url: resource.url
+        )
+        let added = await model.enqueueDownloads(
+            [request],
+            siteKey: progressContext?.key.siteKey ?? "",
+            title: danmaku?.name ?? title,
+            headers: resource.headers
+        )
+        downloadNotice = added.isEmpty
+            ? "这一集已经在下载列表里了（同站点 + 同名 + 同集只下一次）。"
+            : "已加入下载队列 —— 去「设置 → 数据 → 下载管理」看进度。"
     }
 }
 
