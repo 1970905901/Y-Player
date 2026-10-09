@@ -69,3 +69,27 @@ public struct TMDBConfig: Sendable, Hashable {
         return trimmed.hasSuffix("/") ? trimmed + direct : trimmed + "/" + direct
     }
 }
+
+// MARK: - 落盘
+
+extension TMDBConfig {
+    /// 落 `UserDefaults` 的形态：`apiKey|apiProxy|imageProxy`。
+    ///
+    /// 用 `|` 做分隔是安全的：key 是字母数字，代理是地址，三个字段都不会含 `|`。
+    /// （与本仓其它偏好一致 —— 见 `DanmakuDisplayConfig` / `SubtitleDisplayConfig` 的「落盘形态」。）
+    public var storageString: String {
+        [apiKey, apiProxy, imageProxy].joined(separator: "|")
+    }
+
+    /// 从存储串还原。**字段数不对就整条作废**（回落空配置）：
+    /// 宁可不工作（界面会提示没填 key），也不要留下「半条配置」这种查不出的怪状态。
+    public init(storageString: String) {
+        let parts = storageString.components(separatedBy: "|")
+        guard parts.count == 3 else {
+            self.init()
+            return
+        }
+        self.init(apiKey: parts[0], apiProxy: parts[1], imageProxy: parts[2])
+    }
+}
+

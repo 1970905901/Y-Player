@@ -52,4 +52,21 @@ struct TMDBConfigTests {
         let templated = try #require(TMDBConfig(imageProxy: "https://img.example/p?src={url}&w=780").imageURL("/abc.jpg"))
         #expect(templated.absoluteString == "https://img.example/p?src=https://image.tmdb.org/t/p/original/abc.jpg&w=780")
     }
+
+    @Test("落盘往返：三个字段原样回来")
+    func storageRoundTrip() {
+        let config = TMDBConfig(apiKey: "k1", apiProxy: "https://p.example", imageProxy: "https://img.example/{url}")
+        let restored = TMDBConfig(storageString: config.storageString)
+        #expect(restored == config)
+    }
+
+    @Test("存储串字段数不对就整条作废，不留半条配置")
+    func brokenStorageFallsBack() {
+        #expect(TMDBConfig(storageString: "") == TMDBConfig())
+        #expect(TMDBConfig(storageString: "only-key") == TMDBConfig())
+        #expect(TMDBConfig(storageString: "a|b") == TMDBConfig())
+        // 多出来的字段同样作废（将来加字段时这是「旧版本写、新版本读」的保护）
+        #expect(TMDBConfig(storageString: "a|b|c|d") == TMDBConfig())
+    }
 }
+
