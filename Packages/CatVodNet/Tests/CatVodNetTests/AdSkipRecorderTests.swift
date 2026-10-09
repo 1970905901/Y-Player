@@ -16,9 +16,10 @@ struct AdSkipRecorderTests {
             fallback: false,
             removedSegments: removed,
             removedDurationSec: duration,
-            removedSegmentDetails: [],
-            // 逐条规则的命中次数（M06k 起的统计字段，无默认值）。这个测试不关心命中明细，给空。
-            ruleCounts: [:]
+            // 逐条规则的命中次数（M06k 起的统计字段，无默认值，且在 removedSegmentDetails **之前**）。
+            // 这个测试不关心命中明细，给空。
+            ruleCounts: [:],
+            removedSegmentDetails: []
         )
     }
 
