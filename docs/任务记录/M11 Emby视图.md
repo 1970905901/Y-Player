@@ -38,6 +38,8 @@
 
 `PosterPicker` 的接口是读准了的，够用：
 
+## 已知风险（编译/真机时先看这几条）
+
 - `index(step:seed:)` / `image(step:seed:)`，`step` 由调用方驱动；
 - 卡片要「**每张各一张、同一张每次进来都一样**」→ 用 `step: index`（第 i 张卡片取第 i 张图）；
 - `.random` 模式下只看 `seed`，所有卡片会取到**同一张** → 调用方传 `seed &+ UInt64(index)`
