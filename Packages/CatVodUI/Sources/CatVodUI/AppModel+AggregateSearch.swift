@@ -15,6 +15,13 @@ struct AggregateSearchOutcome {
 }
 
 extension AppModel {
+    /// 聚合搜索**实际会用的站点**：能搜的（可运行 + 允许搜索）减掉用户在「筛选站源」里关掉的。
+    ///
+    /// 搜索页与详情页 🔍 的海报墙都从这里取站点范围 —— 一个开关管两处。
+    var searchEnabledSites: [Site] {
+        AggregateSearchRules.enabled(sites: sites, excluding: searchExcludedSiteKeys)
+    }
+
     /// 聚合搜索（M11 片 5 的聚合海报墙）：并发搜参与聚合的站点。
     ///
     /// 口径（与别的搜索刻意不同，写下来免得被「顺手统一」）：
@@ -25,7 +32,8 @@ extension AppModel {
     /// - 取图走搜索页同一套 `PictureFiller`：墙上的海报与搜索页看到的应该是同一张。
     func searchAcrossSites(keyword: String) async -> AggregateSearchOutcome {
         let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
-        let allSearchable = AggregateSearchRules.searchableSites(sites: sites)
+        // 站点范围 = 能搜的 − 「筛选站源」里关掉的（两个入口共用这一条，见 searchEnabledSites）。
+        let allSearchable = searchEnabledSites
         let indexed = allSearchable.filter { $0.indexs == 1 }
         let firstRound = indexed.isEmpty ? allSearchable : indexed
         guard !trimmed.isEmpty, !firstRound.isEmpty else {

@@ -28,6 +28,24 @@ enum AggregateSearchRules {
         sites.filter { $0.availability.isAvailable && $0.searchAvailability.isUsable }
     }
 
+    /// 聚合搜索**实际参与**的站点：能搜的（``searchableSites(sites:)``）**减掉用户关掉的**。
+    ///
+    /// 两个入口共用这一条：搜索页与详情页 🔍 的海报墙；开关状态存在 `AppModel.searchExcludedSiteKeys`。
+    static func enabled(sites: [Site], excluding excludedKeys: Set<String>) -> [Site] {
+        searchableSites(sites: sites).filter { !excludedKeys.contains($0.key) }
+    }
+
+    /// 站点不能参与聚合搜索的原因；能参与返回 nil（「筛选站源」面板据此把那行开关置灰并写明原因）。
+    static func searchDisabledReason(_ site: Site) -> String? {
+        if !site.availability.isAvailable {
+            return site.availability.reason ?? "当前平台跑不了这个站点"
+        }
+        if !site.searchAvailability.isUsable {
+            return "配置里关了搜索（searchable = 0）"
+        }
+        return nil
+    }
+
     /// **首轮**搜哪些站点，保持站点清单的顺序：
     ///
     /// 1. 先取 ``searchableSites(sites:)``；

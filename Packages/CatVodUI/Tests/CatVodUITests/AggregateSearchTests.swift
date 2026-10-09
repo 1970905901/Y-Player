@@ -22,6 +22,21 @@ struct AggregateSearchTests {
         #expect(AggregateSearchRules.searchableSites(sites: sites).map(\.key) == ["a", "c"])
     }
 
+    @Test("筛选站源：用户关掉的站点不参与，哪怕它本来能搜")
+    func enabledExcludesSwitchedOffSites() {
+        let sites = [site(key: "a"), site(key: "b"), site(key: "c", searchable: 0)]
+        #expect(AggregateSearchRules.enabled(sites: sites, excluding: ["b"]).map(\.key) == ["a"])
+    }
+
+    @Test("面板置灰的原因：能搜=没有原因；关搜索 / 平台跑不了各有各的说法")
+    func searchDisabledReasons() {
+        #expect(AggregateSearchRules.searchDisabledReason(site(key: "a")) == nil)
+        #expect(AggregateSearchRules.searchDisabledReason(site(key: "b", searchable: 0)) == "配置里关了搜索（searchable = 0）")
+        // csp_ 开头的 JAR 站点在 Apple 平台跑不了（原因里带 JVM）。
+        let jarSite = Site(key: "c", name: "JAR 站", type: 3, api: "csp_test")
+        #expect(AggregateSearchRules.searchDisabledReason(jarSite)?.contains("JVM") == true)
+    }
+
     @Test("有索引站点就只搜「索引站点」——上游 indexs 的语义就是参与聚合搜索")
     func prefersIndexSites() {
         let sites = [site(key: "a"), site(key: "b", indexs: 1), site(key: "c", indexs: 1)]

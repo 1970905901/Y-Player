@@ -48,6 +48,7 @@ public final class AppModel: ObservableObject {
         static let siteGroupRules = "yplayer.siteGroupRules"
         static let discoverSiteKey = "yplayer.discoverSiteKey"
         static let searchSiteKey = "yplayer.searchSiteKey"
+        static let searchExcludedSites = "yplayer.searchExcludedSites"
         static let hlsAdRuleOverrides = "yplayer.hlsAdRuleOverrides"
     }
 
@@ -417,6 +418,16 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    /// 聚合搜索里被用户**关掉**的站点 key（搜索页右上角「筛选站源」面板）。
+    ///
+    /// 两个入口共用这一份：搜索页与详情页 🔍 的海报墙都按它决定搜哪些站点。
+    /// 存成数组（`Set` 不能直接进 `UserDefaults`），读回来再变回集合。
+    @Published public internal(set) var searchExcludedSiteKeys: Set<String> {
+        didSet {
+            defaults.set(searchExcludedSiteKeys.sorted(), forKey: StorageKey.searchExcludedSites)
+        }
+    }
+
     /// 站点面板**分组条**的顺序：**接口地址 → 分组名数组**（上游 `SiteGroupOrderStore`，键 `site_group_order_<cid>`）。
     ///
     /// 按接口分桶的理由同直播那些书：换接口时分组名整套换掉，混在一起会互相污染。
@@ -613,6 +624,8 @@ public final class AppModel: ObservableObject {
         discoverSiteKey = defaults.string(forKey: StorageKey.discoverSiteKey) ?? ""
         // 搜索页上次选中的站点：与发现页各自独立（还原规则共用 `SiteSelection`）。
         searchSiteKey = defaults.string(forKey: StorageKey.searchSiteKey) ?? ""
+        // 聚合搜索关掉的站点：默认空（= 只要能搜的站点都参与）。
+        searchExcludedSiteKeys = Set(defaults.stringArray(forKey: StorageKey.searchExcludedSites) ?? [])
 
         // 站点分组规则的本地设置：默认空（= 四条内置全开、没有自建规则）。
         siteGroupRuleSettings = SiteGroupRuleBook.decode(defaults.string(forKey: StorageKey.siteGroupRules))
