@@ -36,9 +36,10 @@ public struct SpiderResult: Codable, Sendable, Hashable {
     /// 歌词。
     /// 歌词（LRC）。
     ///
-    /// ⚠️ **本平台还没用**：LRC 解析与歌词显示都未做（弹幕/字幕那种「解析核心 + 取用链 + 渲染」
-    /// 三段都没开始）。留着字段是因为它属于站点返回的既有形状，解析进来比丢掉强；
-    /// 要接的时候按字幕那套（M09）走一遍即可。
+    /// ❌ **不做**（已核对上游，不是「还没接」）：`FongMi/TV`（fongmi 分支）1387 个文件里
+    /// **没有任何**歌词相关文件（`lrc` / `lyric` 双双零命中），播放媒体组装类
+    /// (`playback/vod/VodPlaybackMedia.java`) 也不碰 `lrc` —— 字段只是协议透传，
+    /// 跟 ``drm`` 同类。别再把它们当待办。
     public var lrc: String = ""
     /// 媒体 MIME。
     public var format: String = ""

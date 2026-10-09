@@ -29,6 +29,9 @@ struct SitePlayEpisodeView: View {
     @State private var resource: MediaResource?
     /// 站点说「还要再解析一次」时存下 play 的结果，body 里转交给解析链（见 ``loadResource()``）。
     @State private var parseFallback: SpiderResult?
+    /// 站点结果自带的弹幕源：结果体只在 `loadResource` 里拿到，而 `onDanmaku` 闭包只带 `request`，
+    /// 所以在这里存一份（M09e：它优先于 API 搜索）。
+    @State private var embeddedDanmaku: [DanmakuSource] = []
     @State private var errorText = ""
 
     /// 进度上下文：Spider 站点的播放地址是异步换来的，但片名/线路/集名在进页面前就已确定。
@@ -62,7 +65,7 @@ struct SitePlayEpisodeView: View {
                     progressContext: progressContext,
                     progressStore: model.progressStore,
                     danmaku: DanmakuRequest(name: title, episode: episode.displayName),
-                    onDanmaku: { request in Task { await model.loadDanmaku(request) } },
+                    onDanmaku: { request in Task { await model.loadDanmaku(request, embedded: embeddedDanmaku) } },
                     onStart: { model.resetAdSkip() }
                 )
             } else if let parseFallback {
@@ -113,6 +116,7 @@ struct SitePlayEpisodeView: View {
             // 结果体里的三个字段在这里落地（`desc` / `jxFrom` / `subs`）：
             // 前两个直接显示（M09d），字幕交给取用链（M09c）。
             model.notePlaybackInfo(from: result)
+            embeddedDanmaku = result.danmaku
             await model.loadSubtitles(SubtitleRequest(
                 sources: result.subs,
                 headers: HTTPHeaderMerger.merge([site.header, result.header])

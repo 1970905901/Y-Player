@@ -17,28 +17,35 @@ public extension AppModel {
     /// - 开关关着、或四个槽位都空 → 什么都不做、也不提示（那是用户的设置，不是错误）；
     /// - 用 `search` + `lines(from:)` 而不是 `load`：这样能知道**是哪条源**给的弹幕，写进状态行；
     /// - 传输复用 ``AppModel/transportForConfiguration()``：接口 header、代理、广告拦截都与站点一致。
-    func loadDanmaku(_ request: DanmakuRequest) async {
+    ///
+    /// - Parameter embedded: 站点结果自带的弹幕源（``SpiderResult/danmaku``）。它**优先于** API 搜索
+    ///   —— 上游 `VodPlaybackMedia.searchDanmaku` 里的 `DanmakuSetting.isSpiderFirst()` 就是这个意思
+    ///   （M09e）。站点自己给的源通常跟它的片源/集名对得上，而 API 搜索是按片名猜的。
+    func loadDanmaku(_ request: DanmakuRequest, embedded: [DanmakuSource] = []) async {
         guard danmakuAPI.isEnabled, !request.isEmpty else {
             clearDanmaku()
-            return
-        }
-        guard let api = danmakuAPI.filledAddresses.first else {
-            danmakuLines = []
-            danmakuStatus = .idle
             return
         }
         danmakuStatus = .loading
         danmakuLines = []
         let service = DanmakuService(transport: transportForConfiguration())
+
+        var searched: [DanmakuSource] = []
+        if let api = danmakuAPI.filledAddresses.first {
+            searched = await (try? service.search(api: api, name: request.name, episode: request.episode)) ?? []
+        }
+        guard let selection = DanmakuSourceSelection.preferred(result: embedded, api: searched) else {
+            // 结果自带和 API 搜索都没给出可用源：没搜过就静默（用户没填地址），搜过就如实说「没搜到」
+            danmakuStatus = searched.isEmpty && embedded.isEmpty ? .idle : .empty
+            return
+        }
+
         do {
-            let sources = try await service.search(api: api, name: request.name, episode: request.episode)
-            guard let source = sources.first else {
-                danmakuStatus = .empty
-                return
-            }
-            let lines = try await service.lines(from: source)
+            let lines = try await service.lines(from: selection.source)
             danmakuLines = lines
-            danmakuStatus = lines.isEmpty ? .empty : .loaded(source: source.displayName, count: lines.count)
+            danmakuStatus = lines.isEmpty
+                ? .empty
+                : .loaded(source: selection.source.displayName, count: lines.count)
         } catch {
             danmakuStatus = .failed(userFacingMessage(error))
         }
