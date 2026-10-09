@@ -93,9 +93,17 @@ extension AppModel {
     private func performTMDBLookup(title: String, mode: PosterMode) async -> TMDBMetadataOutcome {
         do {
             let client = TMDBClient(config: tmdbConfig, transport: tmdbTransportOverride ?? URLSessionTransport())
-            let results = try await client.search(title)
-            guard let found = results.first else {
-                return .notFound
+            // 手动匹配优先（M11 片 5）：用户指定了就取那一条，**不再搜** ——
+            // 这一层存在的意义正是「自动搜出来的不是我要的」。
+            let found: TMDBMetadata
+            if let match = tmdbMatchKey(for: title) {
+                found = try await client.details(kind: match.kind, id: match.id)
+            } else {
+                let results = try await client.search(title)
+                guard let first = results.first else {
+                    return .notFound
+                }
+                found = first
             }
             let fetched = try? await client.backdrops(kind: found.kind, id: found.id)
             let backdrops = fetched ?? []
@@ -110,6 +118,62 @@ extension AppModel {
             return .failed(userFacingMessage(error))
         }
     }
+
+    /// 这一片有没有手动匹配。片名按**去空白**归一 —— 与表的键（``TMDBMatchBook/setKey(_:for:)``）一致。
+    func tmdbMatchKey(for title: String) -> TMDBMatchKey? {
+        tmdbMatchBook.key(for: title.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// 这一片现在走的是哪条路：`auto`（自动搜）或 `movie:123`。
+    ///
+    /// 用途是**当加载键**：详情页顶部与选集卡片两个 `.task(id:)` 都把它拼进键里，
+    /// 手动匹配一改，两处各自重拉 —— 不用谁去通知谁。
+    func tmdbMatchToken(for title: String) -> String {
+        tmdbMatchKey(for: title)?.storageToken ?? "auto"
+    }
+
+    /// 手动匹配表（M11 片 5）：片名 → 指定 TMDB 条目。落盘在注入的 `defaults` 上，与 `tmdbConfig` 同一条路。
+    var tmdbMatchBook: TMDBMatchBook {
+        get {
+            TMDBMatchBook(storageString: defaults.string(forKey: Self.tmdbMatchDefaultsKey) ?? "")
+        }
+        set {
+            let encoded = newValue.storageString
+            if encoded.isEmpty {
+                defaults.removeObject(forKey: Self.tmdbMatchDefaultsKey)
+            } else {
+                defaults.set(encoded, forKey: Self.tmdbMatchDefaultsKey)
+            }
+        }
+    }
+
+    /// 手动指定 / 恢复自动匹配（`key` 传 nil 就是恢复），并**当场作废这一片的会话缓存**：
+    /// 下一次读（加载键一变就会读）走新匹配，而不是复用旧结果。
+    ///
+    /// 在途请求一并丢掉：那一轮用的是旧匹配，结果不该盖在新选择上。
+    func setTMDBMatchKey(_ key: TMDBMatchKey?, for title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return
+        }
+        var book = tmdbMatchBook
+        book.setKey(key, for: trimmed)
+        tmdbMatchBook = book
+        tmdbBundleCache[title] = nil
+        tmdbBundleCache[trimmed] = nil
+        tmdbBundleInflight = tmdbBundleInflight.filter { !$0.key.hasSuffix("|\(trimmed)") }
+    }
+
+    /// 「手动匹配」面板用：按用户输入搜 TMDB，返回候选（电影与剧集一起给）。
+    ///
+    /// 不走 ``tmdbBundle(for:mode:)``：那个是「按片名取整片结果」，这一步是**挑选**，
+    /// 要的就是原始候选列表（含 id 与类型），也不该写进缓存。
+    func tmdbSearchCandidates(_ query: String) async throws -> [TMDBMetadata] {
+        let client = TMDBClient(config: tmdbConfig, transport: tmdbTransportOverride ?? URLSessionTransport())
+        return try await client.search(query)
+    }
+
+    private static let tmdbMatchDefaultsKey = "tmdb.matches"
 }
 
 /// 一次刮削的产物：元信息 + **已建好的取图集** + 建它时的取图模式（缓存命中要连着模式一起对）。

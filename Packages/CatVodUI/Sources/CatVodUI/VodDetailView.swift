@@ -44,6 +44,8 @@ public struct VodDetailView: View {
     @State var episodeMetadata: TMDBMetadata?
     /// 剧集列表抽屉是否展开（M11：选集区头的「更多」；回传的跳转走 `openEpisode(at:)`）。
     @State var isEpisodeDrawerPresented = false
+    /// 「⋯」→ 手动匹配元信息（M11 片 5）的面板是否打开。
+    @State var isShowingMetadataMatch = false
 
     public init(model: AppModel, site: Site?, vodID: String) {
         self.model = model

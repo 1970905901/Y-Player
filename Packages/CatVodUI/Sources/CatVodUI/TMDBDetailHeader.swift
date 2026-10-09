@@ -40,7 +40,8 @@ struct TMDBDetailHeader: View {
 
     /// 重新拉取的触发键：片名或取图模式变了才重来（换源 / 设置里换模式都会变）。
     private var loadKey: String {
-        "\(title)|\(mode.rawValue)"
+        // 手动匹配也进键（M11 片 5）：在「⋯」里选了新的一条，这里就该重拉。
+        "\(title)|\(mode.rawValue)|\(model.tmdbMatchToken(for: title))"
     }
 
     var body: some View {

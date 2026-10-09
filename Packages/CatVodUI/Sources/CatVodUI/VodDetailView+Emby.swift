@@ -68,6 +68,9 @@ extension VodDetailView {
 
             Menu {
                 Toggle("元信息刮削", isOn: $model.tmdbScrapeEnabled)
+                Button("手动匹配元信息…") {
+                    isShowingMetadataMatch = true
+                }
                 Text(model.isTMDBConfigured ? "TMDB 已配置" : "TMDB 未配置（设置 → 播放 → 播放页）")
             } label: {
                 Image(systemName: "ellipsis.circle")
@@ -208,6 +211,13 @@ extension VodDetailView {
                 openEpisode(at: index)
             }
             // 参考图里抽屉只占半屏（上面的详情还看得见）；iOS 15 没有半屏形态，回落整页。
+            .adaptiveHalfSheet()
+        }
+        .sheet(isPresented: $isShowingMetadataMatch) {
+            TMDBMatchSheet(model: model, title: vod?.vodName ?? "") { key in
+                // 落库在 model 上；两个 `.task(id:)` 的加载键都含匹配 token，会各自重拉。
+                model.setTMDBMatchKey(key, for: vod?.vodName ?? "")
+            }
             .adaptiveHalfSheet()
         }
     }
@@ -399,7 +409,9 @@ extension VodDetailView {
 
     /// 卡片取图集的加载键：片名 / 取图模式变了才重拉（缓存与合流在 `AppModel` 那层）。
     var episodePosterLoadKey: String {
-        "\(vod?.vodName ?? "")|\(model.tmdbPosterMode.rawValue)"
+        let title = vod?.vodName ?? ""
+        // 手动匹配也进键（M11 片 5）：在「⋯」里选了新的一条，这里就该重拉。
+        return "\(title)|\(model.tmdbPosterMode.rawValue)|\(model.tmdbMatchToken(for: title))"
     }
 
     /// 拉页面要用的取图集 + 元信息：与顶部走同一份（同键并发会合流，不会各拉一次）。
