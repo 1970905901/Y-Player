@@ -436,6 +436,8 @@ struct SettingsLogView: View {
     @State private var isLoading = false
     @State private var isExporting = false
     @State private var exportDocument = EngineLogDocument(text: "")
+    /// 复制诊断信息之后的一行反馈（成功/失败都要说，不做点了没反应）。
+    @State private var diagnosticsNotice = ""
 
     var body: some View {
         List {
@@ -453,6 +455,24 @@ struct SettingsLogView: View {
                 Text(model.hostStatus.summary)
                     .font(.footnote)
                     .foregroundStyle(model.hostStatus.isRunning ? Color.secondary : Color.orange)
+            }
+            Section {
+                Button {
+                    Task { await copyDiagnostics() }
+                } label: {
+                    Label("复制诊断信息", systemImage: "doc.on.doc")
+                }
+                if !diagnosticsNotice.isEmpty {
+                    Text(diagnosticsNotice)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("诊断")
+            } footer: {
+                Text("把「环境 / 接口与摘要 / 播放设置 / 内核可用性 / 下载 / 宿主 / 失败记录」拼成一段文本复制到剪贴板 —— 反馈问题时贴这段比截图省事。接口地址只留主机与路径，查询串整体抹掉。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
             Section("说明") {
                 Text("日志开关控制宿主输出是否落盘：开启后运行日志会写进日志文件，重启应用后仍在；关闭时只在内存里保留最近若干行，进程退出即消失（致命错误无论如何都会落盘，否则崩溃就没有现场）。")
@@ -481,6 +501,14 @@ struct SettingsLogView: View {
             contentType: .plainText,
             defaultFilename: "YPlayer-引擎日志"
         ) { _ in }
+    }
+
+    /// 复制诊断信息（M17P1）：报告是纯文本，直接进剪贴板，粘到聊天窗口或记事本都行。
+    private func copyDiagnostics() async {
+        let report = await model.diagnosticsReport()
+        PlatformShims.copyToClipboard(report.text)
+        let lineCount = report.text.split(separator: "\n").count
+        diagnosticsNotice = "已复制 \(lineCount) 行到剪贴板。"
     }
 
     /// 读一次日志现状：内存输出 + 落盘文件（路径与大小）。

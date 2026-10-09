@@ -106,6 +106,13 @@ public struct InterfaceManagementView: View {
             }
             if let cached = source.cachedURL {
                 InfoRow(title: "缓存文件", value: cached.lastPathComponent)
+                // 「我这份配置是新版吗」：摘要只说明是哪一份，时间和大小才是线索（M17P1）。
+                if let size = CachedFileFacts.size(of: cached) {
+                    InfoRow(title: "缓存大小", value: size)
+                }
+                if let modified = CachedFileFacts.modifiedAt(of: cached) {
+                    InfoRow(title: "拉取时间", value: DiagnosticsReport.timestamp(modified))
+                }
             }
         }
     }
