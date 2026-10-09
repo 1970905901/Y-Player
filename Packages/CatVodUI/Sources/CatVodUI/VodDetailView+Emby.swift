@@ -3,7 +3,7 @@ import CatVodSource
 import CatVodStore
 import SwiftUI
 
-/// Emby 视图（M11）的成员：加载骨架、大播放按钮、图标行、Emby 版式与选集横滑。
+/// Emby 视图（M11）的成员：加载骨架、大播放按钮、图标行、Emby 版式、选集横滑与剧集列表抽屉的入口。
 ///
 /// 拆出来的原因很实在：`VodDetailView` 的**类型体**超过 SwiftLint `type_body_length`
 /// 的 error 线（450 行）。扩展不计入类型体 —— 与仓库既有的 `VodDetailView+Data.swift`
@@ -169,6 +169,14 @@ extension VodDetailView {
         }
         .adaptiveListStyle()
         .background(autoPlayLink)
+        .sheet(isPresented: $isEpisodeDrawerPresented) {
+            EpisodeListDrawer(
+                episodes: episodes,
+                currentIndex: playSlot?.index
+            ) { index in
+                openEpisodeFromDrawer(index)
+            }
+        }
     }
 
     /// 头部：大封面 + 片名与信息列 + 简介。
@@ -256,8 +264,25 @@ extension VodDetailView {
     }
 
     /// 选集：横向滚动的卡片（缩略图 + 集名 + 不支持角标 + 上次看到标记；缩略图与顶部同一次刮削）。
+    /// 区头一行：「共 N 集」+「更多」→ 剧集列表抽屉（``EpisodeListDrawer``）。
     var embyEpisodeSection: some View {
         Section("选集") {
+            // 参考视频的区头「更多」：进剧集列表抽屉。上一集 / 下一集等其余区头控件
+            // 随区头整体对齐时再做，不在这里顺手加。
+            if !episodes.isEmpty {
+                HStack {
+                    Text("共 \(episodes.count) 集")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        isEpisodeDrawerPresented = true
+                    } label: {
+                        Label("更多", systemImage: "list.bullet")
+                            .font(.footnote)
+                    }
+                }
+            }
             wholeLineDownloadsRow
             if episodes.isEmpty {
                 if isLoading {
@@ -379,6 +404,22 @@ extension VodDetailView {
         let outcome = await model.tmdbBundle(for: title, mode: model.tmdbPosterMode)
         if case let .found(bundle) = outcome {
             episodePosterSet = bundle.posterSet
+        }
+    }
+
+    /// 抽屉里点了一集：关抽屉 → 走与点卡片**同一条**隐藏导航链进播放页。
+    ///
+    /// 先等一小会儿再激活：抽屉退场动画没走完就 push，返回时偶发一层空白
+    /// （与 `scheduleAutoPlayIfNeeded` 延迟 0.3 秒是同一个理由）。
+    func openEpisodeFromDrawer(_ index: Int) {
+        guard episodes.indices.contains(index) else {
+            return
+        }
+        isEpisodeDrawerPresented = false
+        autoPlayEpisodeIndex = index
+        Task {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            isAutoPlaying = true
         }
     }
 }
