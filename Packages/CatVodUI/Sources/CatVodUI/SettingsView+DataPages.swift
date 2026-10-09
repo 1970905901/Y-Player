@@ -43,7 +43,7 @@ struct SettingsDownloadView: View {
             Text("暂无下载内容")
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            Text("离线下载尚未接入：还缺分片下载、任务队列与本地播放地址接管（M6 的本地代理已提供 `/proxy`，下载调度排在它之后）。")
+            Text("离线下载尚未接通：任务与队列的规则已落地（M10a），还缺落库、分片下载与本地播放地址接管。")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
