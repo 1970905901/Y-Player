@@ -98,8 +98,8 @@ public struct VodDetailView: View {
                     DownloadRequest(episode: $0.displayName, line: currentLine?.name ?? "", url: $0.url)
                 }
                 Task {
-                    await model.enqueueDownloads(requests, siteKey: site.key, title: vod?.vodName ?? "")
-                    await model.runDownloadQueue()
+                    // 入队即开跑（M10h）：不用等用户再进「下载管理」页。
+                    await model.enqueueDownloadsAndStart(requests, siteKey: site.key, title: vod?.vodName ?? "")
                 }
             } label: {
                 Label("整部下载（\(directDownloadEpisodes.count) 集）", systemImage: "arrow.down.circle")
@@ -381,6 +381,22 @@ public struct VodDetailView: View {
         )
     }
 
+    /// 播放页「下载本集」的交回口（M10h）：站内拿不到站点 key 时用详情页自己的站点兜底，
+    /// 两个都空就是 `.unsupported`（`enqueueDownloadsAndStart` 会挡）。
+    func enqueuePlaybackDownload(
+        _ requests: [DownloadRequest],
+        siteKey: String,
+        title: String,
+        headers: [String: String]
+    ) async -> DownloadEnqueueOutcome {
+        await model.enqueueDownloadsAndStart(
+            requests,
+            siteKey: siteKey.isEmpty ? (site?.key ?? "") : siteKey,
+            title: title,
+            headers: headers
+        )
+    }
+
     @ViewBuilder
     // （internal：拆分出的 `VodDetailView+Emby.swift` 也要用，不能是 private。）
     func destination(for episode: PlaylistParser.Episode, at index: Int) -> some View {
@@ -393,6 +409,9 @@ public struct VodDetailView: View {
                 settings: model.playbackSettings,
                 progressContext: progressContext(for: episode, at: index),
                 progressStore: model.progressStore,
+                onEnqueueDownloads: { requests, siteKey, title, headers in
+                    await enqueuePlaybackDownload(requests, siteKey: siteKey, title: title, headers: headers)
+                },
                 playlist: playlist
             )
         } else if let site, isSpiderPlayable(site) {

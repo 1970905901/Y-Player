@@ -50,7 +50,7 @@ public struct PlaybackView: View {
     /// 弹幕显示设置。
     let danmakuDisplay: DanmakuDisplayConfig
     /// 批量下载：把要下载的集交回上层（只有上层知道站点与 `AppModel`）。
-    let onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> Int)?
+    let onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> DownloadEnqueueOutcome)?
 
     @State private var engine: (any PlayerEngine)?
     @State private var player: AVPlayer?
@@ -113,7 +113,7 @@ public struct PlaybackView: View {
         subtitleCues: [SubtitleCue] = [],
         danmakuLines: [DanmakuLine] = [],
         danmakuDisplay: DanmakuDisplayConfig = DanmakuDisplayConfig(),
-        onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> Int)? = nil,
+        onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> DownloadEnqueueOutcome)? = nil,
         playlist: PlaybackPlaylist? = nil,
         onStart: (() -> Void)? = nil
     ) {
@@ -533,14 +533,15 @@ public struct PlaybackView: View {
     /// 交给上层下载。
     ///
     /// 播放页不认识 `AppModel`（见文件顶部的设计说明），下载队列只有上层知道；
-    /// `onEnqueueDownloads` 为 nil 表示当前上下文不支持下载，返回 -1 让调用方给提示。
+    /// `onEnqueueDownloads` 为 nil 表示这个入口没接线 —— 老实回 `.unsupported`，
+    /// **不许**当成「已加入队列」糊过去（``DownloadEnqueueOutcome``）。
     private func enqueueViaUpperLayer(
         _ requests: [DownloadRequest],
         siteKey: String,
         title: String
-    ) async -> Int {
+    ) async -> DownloadEnqueueOutcome {
         guard let onEnqueueDownloads else {
-            return -1
+            return .unsupported
         }
         return await onEnqueueDownloads(requests, siteKey, title, activeResource.headers)
     }
@@ -551,14 +552,19 @@ public struct PlaybackView: View {
             line: "",
             url: activeResource.url
         )
-        let added = await enqueueViaUpperLayer(
+        let outcome = await enqueueViaUpperLayer(
             [request],
             siteKey: activeProgressContext?.key.siteKey ?? "",
             title: danmaku?.name ?? activeTitle
         )
-        downloadNotice = added == 0
-            ? "这一集已经在下载列表里了（同站点 + 同名 + 同集只下一次）。"
-            : "已加入下载队列 —— 去「设置 → 数据 → 下载管理」看进度。"
+        switch outcome {
+        case let .added(count):
+            downloadNotice = "已加入下载队列 \(count) 条（应用在前台时会自动下）—— 进度在「设置 → 数据 → 下载管理」。"
+        case .alreadyQueued:
+            downloadNotice = "这一集已经在下载列表里了（同站点 + 同名 + 同集只下一次）。"
+        case .unsupported:
+            downloadNotice = "这个入口不支持下载（直播 / 临时播放没有站点上下文）。"
+        }
     }
 }
 

@@ -514,6 +514,11 @@ public final class AppModel: ObservableObject {
     /// 队列驱动是否在跑（界面据此显示「正在下载」）。
     @Published public internal(set) var isDownloading = false
 
+    /// 前台下载驱动的任务句柄（nil = 现在没有驱动在跑）。
+    ///
+    /// 与 `isDownloading` 分开：后者是「这一轮队列在跑」，前者是「有没有人负责把队列接着往下推」。
+    var downloadDriverTask: Task<Void, Never>?
+
     /// 下载任务存储（GRDB；打开失败时降级为内存实现，与进度 / 收藏同一套）。
     public let downloadStore: DownloadTaskStore
 

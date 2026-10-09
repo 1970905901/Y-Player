@@ -68,6 +68,14 @@ struct SitePlayEpisodeView: View {
                     progressStore: model.progressStore,
                     danmaku: DanmakuRequest(name: title, episode: episode.displayName),
                     onDanmaku: { request in Task { await model.loadDanmaku(request, embedded: embeddedDanmaku) } },
+                    onEnqueueDownloads: { requests, siteKey, title, headers in
+                        await model.enqueueDownloadsAndStart(
+                            requests,
+                            siteKey: siteKey.isEmpty ? site.key : siteKey,
+                            title: title,
+                            headers: headers
+                        )
+                    },
                     playlist: playlist,
                     onStart: { model.resetAdSkip() }
                 )

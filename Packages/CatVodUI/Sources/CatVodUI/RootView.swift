@@ -30,6 +30,8 @@ public struct RootView: View {
     @StateObject private var liveImmersiveTabBar = ImmersiveTabBarState()
     @StateObject private var libraryImmersiveTabBar = ImmersiveTabBarState()
     @StateObject private var settingsImmersiveTabBar = ImmersiveTabBarState()
+    /// 前后台状态：回到前台要把没下完的接着跑（M10h）。
+    @Environment(\.scenePhase) private var scenePhase
 
     public init() { }
 
@@ -74,6 +76,19 @@ public struct RootView: View {
             // 本机代理服务（M6）：启动时就起来，播放时才有端口可用
             // （`playbackResource(_:)` 是同步判定，不能在那里 await）。
             await model.ensureLocalServer()
+            // 上次没下完的（被系统挂起或被杀掉时留下的 `running` 会被降级成 `waiting`）：
+            // 回到前台接着跑，不必先进「下载管理」页（M10h）。
+            await model.synchronizeDownloads()
+            model.startDownloadDriverIfNeeded()
+        }
+        .onChange(of: scenePhase) { phase in
+            guard phase == .active else {
+                return
+            }
+            Task {
+                await model.synchronizeDownloads()
+                model.startDownloadDriverIfNeeded()
+            }
         }
     }
 }

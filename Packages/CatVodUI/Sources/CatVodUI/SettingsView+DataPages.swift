@@ -54,7 +54,7 @@ struct SettingsDownloadView: View {
                     }
                 }
             } footer: {
-                Text("下载在**进入本页时推进**（M10a 记的「后台下载」还没做）：列表里的进度、暂停与删除都作用在真实任务上，文件落在应用数据目录的 `Downloads/` 下。")
+                Text("下载在**应用处于前台时自动推进**（入队即开始；App 不在前台也继续下的「后台下载」还没做）：列表里的进度、暂停与删除都作用在真实任务上，文件落在应用数据目录的 `Downloads/` 下。")
             }
         }
         .adaptiveListStyle()
@@ -62,8 +62,9 @@ struct SettingsDownloadView: View {
         .task {
             refresh()
             await model.synchronizeDownloads()
-            // 进页面就跑一轮队列：这一版没有后台下载，所以「看得见的时候」才推进。
-            await model.runDownloadQueue()
+            // 驱动挂在 model 上（入队即启动、回到前台再启动）：这一页只负责把它叫醒 + 刷新界面，
+            // 不再独占「谁来推进队列」这件事。
+            model.startDownloadDriverIfNeeded()
             refresh()
         }
     }
@@ -107,7 +108,7 @@ struct SettingsDownloadView: View {
                     Button(primaryActionTitle(task)) {
                         Task {
                             await toggle(task)
-                            await model.runDownloadQueue()
+                            model.startDownloadDriverIfNeeded()
                             refresh()
                         }
                     }
@@ -181,7 +182,7 @@ struct SettingsDownloadView: View {
             Text("暂无下载内容")
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            Text("在播放页点右上角的「下载本集」就会出现在这里；下载的集在本地播（本地地址接管）是下一步。")
+            Text("在播放页点「下载本集」、或在详情页点「整部下载」就会出现在这里；下好的集在播放时会自动走本地文件（本地地址接管，M10g）。")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

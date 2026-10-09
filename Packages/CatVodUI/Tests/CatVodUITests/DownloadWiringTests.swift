@@ -212,4 +212,72 @@ struct DownloadWiringTests {
         let written = try String(contentsOf: directory.appendingPathComponent(name), encoding: .utf8)
         #expect(written == "AAABBBB")
     }
+
+    // MARK: - 前台驱动（M10h）
+
+    /// 轮询等这条任务跑完（最多约 2 秒）：驱动是真的异步任务，这里不能靠「调用返回了」下结论。
+    private func waitForFirstTaskToFinish(_ model: AppModel) async -> Bool {
+        for _ in 0 ..< 100 {
+            if model.downloadTasks.first?.status == DownloadTask.Status.finished {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        return model.downloadTasks.first?.status == DownloadTask.Status.finished
+    }
+
+    @Test("入队即开跑：不调驱动、不进下载管理页，也会自己下完")
+    func driverStartsOnEnqueue() async throws {
+        let url = "https://cdn.example/1.mp4"
+        let fixture = try AppModelFixture(downloadTransport: WiringTransport([url: direct("hello")]))
+        defer { fixture.tearDown() }
+        await fixture.load()
+
+        let outcome = await fixture.model.enqueueDownloadsAndStart(
+            [DownloadRequest(episode: "第 1 集", line: "线路一", url: url)],
+            siteKey: "a",
+            title: "某剧"
+        )
+        #expect(outcome == .added(1))
+
+        // 关键：这里**没有** runDownloadQueue()，也没有进「下载管理」页 —— 驱动应当自己跑完。
+        #expect(await waitForFirstTaskToFinish(fixture.model))
+        #expect(!fixture.model.hasPendingDownloads)
+    }
+
+    @Test("回到前台：排队中的任务被驱动接手（不用进下载管理页）")
+    func driverResumesWaitingTasks() async throws {
+        let url = "https://cdn.example/1.mp4"
+        let fixture = try AppModelFixture(downloadTransport: WiringTransport([url: direct("hello")]))
+        defer { fixture.tearDown() }
+        await fixture.load()
+
+        // 只入队不启动：等价于「上次没跑完就被杀掉」留下的 waiting。
+        await fixture.model.enqueueDownloads(
+            [DownloadRequest(episode: "第 1 集", line: "线路一", url: url)],
+            siteKey: "a",
+            title: "某剧"
+        )
+        #expect(fixture.model.downloadTasks.first?.status == DownloadTask.Status.waiting)
+        #expect(fixture.model.hasPendingDownloads)
+
+        fixture.model.startDownloadDriverIfNeeded()
+        #expect(await waitForFirstTaskToFinish(fixture.model))
+    }
+
+    @Test("没有站点上下文：不入队，老实回 unsupported")
+    func emptySiteKeyIsUnsupported() async throws {
+        let fixture = try AppModelFixture(downloadTransport: WiringTransport([:]))
+        defer { fixture.tearDown() }
+        await fixture.load()
+
+        let outcome = await fixture.model.enqueueDownloadsAndStart(
+            [DownloadRequest(episode: "第 1 集", line: "", url: "https://cdn.example/1.mp4")],
+            siteKey: "   ",
+            title: "某剧"
+        )
+        #expect(outcome == .unsupported)
+        #expect(fixture.model.downloadTasks.isEmpty)
+        #expect(!fixture.model.hasPendingDownloads)
+    }
 }

@@ -52,6 +52,14 @@ struct ParsePlaybackView: View {
                     progressStore: model.progressStore,
                     danmaku: DanmakuRequest(name: vodName, episode: episode.displayName),
                     onDanmaku: { request in Task { await model.loadDanmaku(request, embedded: detail.danmaku) } },
+                    onEnqueueDownloads: { requests, siteKey, title, headers in
+                        await model.enqueueDownloadsAndStart(
+                            requests,
+                            siteKey: siteKey.isEmpty ? site.key : siteKey,
+                            title: title,
+                            headers: headers
+                        )
+                    },
                     onStart: { model.resetAdSkip() }
                 )
             } else if errorText.isEmpty {

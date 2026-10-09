@@ -9,7 +9,9 @@ import Foundation
 // - **库是唯一来源**：`downloadTasks` 只是镜像，任何写入都先落库再刷新（与收藏 / 播放进度同一套）
 //   —— 否则会出现「界面上有、重启就没了」；
 // - **失败不抛错**：下载失败只写进那一条任务的状态与原因，不带崩别的流程（与弹幕 / 字幕一致）；
-// - **驱动只在前台跑**：M10a 记的「后台下载」留口还没做，所以这里是「进下载管理页就开始跑」。
+// - **驱动只在前台跑，但不绑页面**：M10a 记的「后台下载」留口还没做，所以驱动是前台任务；
+//   不过启动它的时机是「入队」与「回到前台」，不再要求用户停在「下载管理」页上
+//   （以前只有那页的 `.task` 会驱动队列，在详情页点完「整部下载」转身去看剧 = 队列一动不动）。
 
 public extension AppModel {
     /// 载入库里的下载任务。
@@ -55,6 +57,56 @@ public extension AppModel {
     /// 继续 / 重试（会重置自动重试额度，见 ``DownloadQueue/retrying(_:)``）。
     func resumeDownload(id: String) async {
         await updateDownload(id: id) { DownloadQueue.retrying($0) }
+        startDownloadDriverIfNeeded()
+    }
+
+    /// 播放页「下载本集」的接线口：入队 + 立刻开跑，并把结果说清（见 ``DownloadEnqueueOutcome``）。
+    ///
+    /// 没有站点上下文（直播、临时播放）时**不入队**、老实回 `.unsupported` ——
+    /// 空站点 key 会让任务的文件名与去重都失去意义。
+    func enqueueDownloadsAndStart(
+        _ requests: [DownloadRequest],
+        siteKey: String,
+        title: String,
+        headers: [String: String] = [:]
+    ) async -> DownloadEnqueueOutcome {
+        guard !siteKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .unsupported
+        }
+        let added = await enqueueDownloads(requests, siteKey: siteKey, title: title, headers: headers)
+        guard !added.isEmpty else {
+            return .alreadyQueued
+        }
+        startDownloadDriverIfNeeded()
+        return .added(added.count)
+    }
+
+    /// 还有没有「该跑」的任务：排队中 / 下载中。
+    ///
+    /// 暂停（用户意愿）、完成、失败（等用户重试）都不算 —— 驱动不该把用户的暂停当成待办。
+    var hasPendingDownloads: Bool {
+        downloadTasks.contains { $0.status == .waiting || $0.status == .running }
+    }
+
+    /// 前台下载驱动（M10h）：入队即启动、回到前台再启动一次，跑到没有可启动的为止。
+    ///
+    /// 重复调用是安全的：已经在驱动就直接返回（`runDownloadQueue` 自己也有防重入）。
+    /// 循环结束条件用「还有没有待办」而不是「这一轮跑掉几条」——
+    /// 刚跑完又有人入队（或刚才被并发路径挡着）时会再补一轮，最多两轮。
+    func startDownloadDriverIfNeeded() {
+        guard downloadDriverTask == nil, hasPendingDownloads else {
+            return
+        }
+        downloadDriverTask = Task { [weak self] in
+            guard let self else {
+                return
+            }
+            defer { downloadDriverTask = nil }
+            await runDownloadQueue()
+            if hasPendingDownloads {
+                await runDownloadQueue()
+            }
+        }
     }
 
     /// 删掉一条任务，并**连文件一起删**。
