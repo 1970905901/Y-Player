@@ -109,6 +109,8 @@ public struct HomeView: View {
         }
         .onChange(of: selectedSiteKey) { _ in
             // 站点换了：旧站点的分类/筛选/列表全部作废（否则会出现「站点已换、内容还是旧的」）。
+            // 顺手落盘：冷启动 / 去别的 Tab 回来时据此还原（见 `syncHomeWithInterface`）。
+            model.discoverSiteKey = selectedSiteKey
             invalidateContent()
             Task { await loadHome(force: true) }
         }

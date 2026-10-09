@@ -63,14 +63,19 @@ extension HomeView {
         let catalogChanged = loadedCatalogRevision != model.siteCatalogRevision
         loadedCatalogRevision = model.siteCatalogRevision
 
-        let firstKey = browsableSites.first?.key ?? ""
-        if selectedSiteKey != firstKey {
-            // 站点已换（或当前选中的站点已不存在）：改选首个可用站点。
+        let targetKey = DiscoverSiteSelection.resolvedKey(
+            current: selectedSiteKey,
+            saved: model.discoverSiteKey,
+            available: browsableSites.map(\.key)
+        )
+        if selectedSiteKey != targetKey {
+            // 选中的站点不存在了（换接口 / 配置里删了它）：回落到「上次保存的 → 首个可用站点」。
+            // 还在清单里的选择**不动** —— 去别的 Tab 转一圈回来不该把选择丢掉。
             // 加载交给 `.onChange(of: selectedSiteKey)` 统一发起，避免同一次切换发两次请求。
             if catalogChanged {
                 invalidateContent()
             }
-            selectedSiteKey = firstKey
+            selectedSiteKey = targetKey
             return
         }
         guard !selectedSiteKey.isEmpty else {

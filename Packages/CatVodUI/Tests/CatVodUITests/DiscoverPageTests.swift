@@ -49,6 +49,19 @@ struct DiscoverPageTests {
         #expect(DiscoverContentMerge.content(preservingCategories: richer, current: home).categories == richer.categories)
     }
 
+    // MARK: - DiscoverSiteSelection
+
+    @Test("选站点还原：当前选择优先；没了用上次保存的；都没有才回落首个")
+    func siteSelectionRestore() {
+        let available = ["a", "b", "c"]
+        #expect(DiscoverSiteSelection.resolvedKey(current: "b", saved: "c", available: available) == "b")
+        #expect(DiscoverSiteSelection.resolvedKey(current: "", saved: "c", available: available) == "c")
+        #expect(DiscoverSiteSelection.resolvedKey(current: "gone", saved: "c", available: available) == "c")
+        #expect(DiscoverSiteSelection.resolvedKey(current: "gone", saved: "alsoGone", available: available) == "a")
+        #expect(DiscoverSiteSelection.resolvedKey(current: "b", saved: "gone", available: available) == "b")
+        #expect(DiscoverSiteSelection.resolvedKey(current: "", saved: "", available: []).isEmpty)
+    }
+
     // MARK: - DiscoverFilterRow
 
     private func makeFilter(name: String = "地区") -> VodFilter {

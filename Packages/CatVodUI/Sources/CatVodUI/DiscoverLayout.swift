@@ -125,6 +125,24 @@ struct DiscoverSiteRuleInput: Hashable {
     var names: [String: String] = [:]
 }
 
+/// 发现页选站点的**还原规则**（修「切去别的 Tab 再回来，站点丢了」）。
+///
+/// 优先级：当前视图的选择（还在清单里）> 上次保存的选择（还在清单里）> 首个可用站点。
+/// 之前的实现每次都回落首个站点 —— 只要 `syncHomeWithInterface` 再跑一遍（切 Tab 回来 /
+/// 接口刷新），用户的切换就没了。
+enum DiscoverSiteSelection {
+    /// 解决「这次同步该选中哪个站点」。
+    static func resolvedKey(current: String, saved: String, available: [String]) -> String {
+        if !current.isEmpty, available.contains(current) {
+            return current
+        }
+        if !saved.isEmpty, available.contains(saved) {
+            return saved
+        }
+        return available.first ?? ""
+    }
+}
+
 /// 站点切换面板的行模型与分组（M06e / M06f / M06g）。
 ///
 /// 单测价值：录屏里的面板有三种容易做错的状态 —— 站点名为空、当前站点、站点顺序，
