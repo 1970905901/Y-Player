@@ -95,6 +95,27 @@ public final class GRDBDatabase: Sendable {
                 t.column("updatedAt", .double).notNull()
             }
         }
+        // v2：离线下载的任务表（M10b）。
+        //
+        // 为什么**追加**而不并进 v1：装过的库已经跑过 v1，改 v1 的内容不会重跑 ——
+        // 迁移一旦发布就只能追加，这是 `DatabaseMigrator` 的用法，也是这个文件存在的意义。
+        migrator.registerMigration("v2.download") { db in
+            try db.create(table: "downloadTask") { t in
+                t.primaryKey("id", .text)
+                t.column("siteKey", .text).notNull()
+                t.column("title", .text).notNull().defaults(to: "")
+                t.column("episode", .text).notNull().defaults(to: "")
+                t.column("line", .text).notNull().defaults(to: "")
+                t.column("url", .text).notNull().defaults(to: "")
+                t.column("headers", .text).notNull().defaults(to: "{}")
+                t.column("status", .text).notNull().defaults(to: "waiting")
+                t.column("expectedBytes", .integer).notNull().defaults(to: 0)
+                t.column("receivedBytes", .integer).notNull().defaults(to: 0)
+                t.column("failureReason", .text).notNull().defaults(to: "")
+                t.column("retryCount", .integer).notNull().defaults(to: 0)
+                t.column("createdAt", .double).notNull()
+            }
+        }
         try migrator.migrate(queue)
     }
 }
