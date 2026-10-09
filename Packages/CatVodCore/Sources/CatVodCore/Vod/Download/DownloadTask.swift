@@ -208,10 +208,16 @@ public struct DownloadTask: Sendable, Hashable, Identifiable {
         cleaned = String(cleaned.prefix(max(1, limit))).trimmingCharacters(in: .whitespaces)
         // 去掉开头的点**放在折叠与截断之后**：先把 `../..` 变成 `.. ..` 再逐点剥离，
         // 否则前面那一步又会把点重新留在开头（`..` 这种名字能跳出目录）。
-        while cleaned.hasPrefix(".") {
+        // 前导 `..` 要清干净：`../../etc/passwd` 清洗后是 `.. .. etc passwd`，
+        // 去掉第一个 `.` 会露出空格、再露出下一个 `..`。所以**每一轮先 trim 再判前缀** ——
+        // 漏掉循环里的 trim，就会出现测试抓到的 `.. etc passwd`（开头还是点）。
+        while true {
+            cleaned = cleaned.trimmingCharacters(in: .whitespaces)
+            guard cleaned.hasPrefix(".") else {
+                break
+            }
             cleaned.removeFirst()
         }
-        cleaned = cleaned.trimmingCharacters(in: .whitespaces)
         return cleaned.isEmpty ? fallback : cleaned
     }
 

@@ -79,7 +79,10 @@ public enum ParseResultValidator {
         }
         // 空线路名不该匹配到任何 flag：`flags: ["", "youku"]` 这种配置下，
         // 不挡这道会把「没有线路名的直链结果」也判成要解析。
-        let matched = !flag.isEmpty && configFlags.contains(flag)
+        // 空白串不算 flag：`"   "` 会让 `configFlags.contains` 判为相等 ——
+        // 但那是「两边都空」，不是匹配上了解析器。用 `isWhitespace` 判定，不引 Foundation。
+        let hasVisibleFlag = flag.contains { !$0.isWhitespace }
+        let matched = hasVisibleFlag && configFlags.contains(flag)
         return (resultPlayURL.isEmpty && matched) || jx == 1
     }
 
