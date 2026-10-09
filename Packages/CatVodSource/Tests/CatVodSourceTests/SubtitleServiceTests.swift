@@ -56,7 +56,7 @@ struct SubtitleServiceTests {
     func noSourceIsNotAnError() async throws {
         let service = SubtitleService(transport: transport(srt))
 
-        let loaded = try await service.load(from: source(""), source(""))
+        let loaded = try await service.load(from: [source(""), source("")])
 
         #expect(loaded == nil)
     }
@@ -66,7 +66,7 @@ struct SubtitleServiceTests {
         let transport = transport(srt)
         let service = SubtitleService(transport: transport)
 
-        let loaded = try await service.load(from: source("https://a.example.com/1.srt"))
+        let loaded = try await service.load(from: [source("https://a.example.com/1.srt")])
 
         let request = try #require(await transport.requests.first)
         #expect(request.url.absoluteString == "https://a.example.com/1.srt")
@@ -95,7 +95,7 @@ struct SubtitleServiceTests {
         let vtt = "00:00:01.000 --> 00:00:02.000\n正文"
         let service = SubtitleService(transport: transport(vtt))
 
-        let loaded = try await service.load(from: source("https://a.example.com/1", format: "text/vtt"))
+        let loaded = try await service.load(from: [source("https://a.example.com/1", format: "text/vtt")])
 
         #expect(loaded?.cues.count == 1)
         #expect(loaded?.cues.first?.end == 2)
@@ -105,7 +105,7 @@ struct SubtitleServiceTests {
     func emptyBodyIsNotAnError() async throws {
         let service = SubtitleService(transport: transport(""))
 
-        let loaded = try await service.load(from: source("https://a.example.com/1.srt"))
+        let loaded = try await service.load(from: [source("https://a.example.com/1.srt")])
 
         #expect(loaded?.cues.isEmpty == true)
     }
@@ -115,7 +115,7 @@ struct SubtitleServiceTests {
         let service = SubtitleService(transport: transport("nope", status: 404))
 
         do {
-            _ = try await service.load(from: source("https://a.example.com/1.srt"))
+            _ = try await service.load(from: [source("https://a.example.com/1.srt")])
             Issue.record("404 不该成功")
         } catch let error as CatVodError {
             guard case let .network(status, _, _) = error else {
@@ -131,7 +131,7 @@ struct SubtitleServiceTests {
         let service = SubtitleService(transport: transport(srt))
 
         do {
-            _ = try await service.load(from: source("不是 URL"))
+            _ = try await service.load(from: [source("不是 URL")])
             Issue.record("非法地址不该成功")
         } catch let error as CatVodError {
             guard case let .decoding(path, _) = error else {
