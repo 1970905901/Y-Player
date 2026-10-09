@@ -122,4 +122,30 @@ struct CatSpiderProtocolTests {
             _ = try await client.home()
         }
     }
+
+    @Test("非 200 且宿主给了原因：把那句话带进错误里（别只剩「返回非 200」）")
+    func nonSuccessCarriesHostMessage() async throws {
+        let api = try #require(URL(string: "http://127.0.0.1:9988/spider/cat"))
+        let site = Site(key: "cat", name: "猫源", type: 3, api: api.absoluteString)
+        let body = Data(#"{"statusCode":500,"error":"Internal Server Error","message":"网盘凭据失效，请重新登录"}"#.utf8)
+        let recorder = CatSpiderRequestRecorder(response: HTTPResponse(status: 500, body: body))
+        let client = try #require(CatSpiderHTTPClient(site: site, transport: recorder))
+
+        do {
+            _ = try await client.play(flag: "木偶", id: "1")
+            Issue.record("非 200 应当抛错")
+        } catch let error as CatVodError {
+            let text = error.errorDescription ?? String(describing: error)
+            #expect(text.contains("网盘凭据失效"))
+            #expect(text.contains("/play"))
+        }
+    }
+
+    @Test("错误正文的抠法：message / error / 非 JSON 原样 / 空正文")
+    func failureDetailRules() {
+        #expect(CatSpiderHTTPClient.failureDetail(from: Data(#"{"message":"要登录"}"#.utf8)) == "要登录")
+        #expect(CatSpiderHTTPClient.failureDetail(from: Data(#"{"error":"boom"}"#.utf8)) == "boom")
+        #expect(CatSpiderHTTPClient.failureDetail(from: Data("spider 崩了".utf8)) == "spider 崩了")
+        #expect(CatSpiderHTTPClient.failureDetail(from: Data()).isEmpty)
+    }
 }

@@ -119,8 +119,36 @@ public struct CatSpiderHTTPClient: Sendable {
         let request = HTTPRequest.json(url: url, body: body, headers: headers, timeout: timeout)
         let response = try await transport.send(request)
         guard response.isSuccess else {
-            throw CatVodError.network(status: response.status, url: url.absoluteString, reason: "CatSpider 路由 \(route.rawValue) 返回非 200")
+            let detail = Self.failureDetail(from: response.body)
+            let reason = detail.isEmpty
+                ? "CatSpider 路由 \(route.rawValue) 返回非 200"
+                : "CatSpider 路由 \(route.rawValue) 返回非 200：\(detail)"
+            throw CatVodError.network(status: response.status, url: url.absoluteString, reason: reason)
         }
         return try CatSpiderResponseDecoder.decode(response.body, as: type, path: route.rawValue)
+    }
+
+    /// 从**错误响应体**里抠一句能给人看的话。
+    ///
+    /// 为什么要有它：宿主（fastify）报错时正文通常是 `{"statusCode":500,"message":"…"}`，
+    /// 只报「返回非 200」等于把**宿主给出的原因**（要登录 / 解析失败 / 上游拒绝…）丢掉 ——
+    /// 界面上只剩一句「网络失败」，用户和我都只能猜。
+    ///
+    /// 规则：先找 JSON 里的 `message` / `msg` / `error`（可读文案优先），都不是就原样截断；
+    /// 空正文返回空串（调用方保留原来的简短文案）。
+    static func failureDetail(from body: Data, limit: Int = 200) -> String {
+        if let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+            for key in ["message", "msg", "error"] {
+                guard let text = object[key] as? String else { continue }
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    return String(trimmed.prefix(limit))
+                }
+            }
+        }
+        guard let raw = String(data: body, encoding: .utf8) else {
+            return ""
+        }
+        return String(raw.trimmingCharacters(in: .whitespacesAndNewlines).prefix(limit))
     }
 }
