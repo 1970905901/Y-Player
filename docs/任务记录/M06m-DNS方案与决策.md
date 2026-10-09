@@ -33,7 +33,7 @@
 
 | 字段 | 上游怎么用 | 我们的状态 |
 | --- | --- | --- |
-| `flags` | 播放页的 flag 选择菜单（配套 `FlagSelectionListener.java`） | 没有这个菜单；**站点详情自带的 flag 可正常切换**，配置里这份列表不生效 |
+| `flags` | ~~播放页的 flag 选择菜单（配套 `FlagSelectionListener.java`）~~ → **实为 `vipFlags`** | ⚠️ **本格结论已作废（M09h）**：上游 `Result.isUseParse()` 拿它判「这条线路要不要走解析」，我们已照样接上（`ParseResultValidator.usesParse`），不再是「不生效」 |
 | `wallpaper` | 首页壁纸（`VodConfig` 里叫 `wall`，`getWall()`） | **不做**（2026-10-09 定）：首页形态（WebHome）早已决定不做，壁纸无处可用。**它和另外三个不是一类** —— 不是「还没接」，别再当待办 |
 | `logo` | 配置图标 | 未使用 |
 | `notice` | —（FongMi 的 `VodConfig` 里**没有**这个字段） | 未显示 |

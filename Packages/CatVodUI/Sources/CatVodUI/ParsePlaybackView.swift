@@ -246,7 +246,11 @@ struct ParsePlaybackView: View {
         errorText = reasons.isEmpty ? "解析失败：没有可用的解析通道。" : reasons.joined(separator: "；")
     }
 
-    /// 与 ``ParseJobResolver`` 对齐的上下文：结果级 `playUrl` 优先、站点级回退；`useParse` 取详情的 `parse/jx`。
+    /// 与 ``ParseJobResolver`` 对齐的上下文：结果级 `playUrl` 优先、站点级回退。
+    ///
+    /// `useParse` 走的是**上游 `Result.isUseParse()`**（M09h），不是 `needParse()`：
+    /// 配置里有默认解析器、且（结果级 `playUrl` 为空 **且** 本线路在配置 `flags` 里）或 `jx = 1`。
+    /// 两者混用会让「配置声明要靠解析的线路」（`flags` / vipFlags）整套失效。
     private func parseContext() -> ParseContext {
         let config = model.state.loadedSource?.config
         return ParseContext(
@@ -262,7 +266,13 @@ struct ParsePlaybackView: View {
             headers: HTTPHeaderMerger.merge([site.header, detail.header]),
             parsers: config?.parses ?? [],
             defaultParserName: config?.parse ?? "",
-            useParse: detail.requiresParsing,
+            useParse: ParseResultValidator.usesParse(
+                resultPlayURL: detail.playUrl,
+                flag: lineName,
+                configFlags: config?.flags ?? [],
+                hasDefaultParser: !(config?.parse ?? "").isEmpty,
+                jx: detail.jx
+            ),
             timeout: TimeInterval(site.timeout)
         )
     }

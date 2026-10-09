@@ -35,11 +35,52 @@ public enum ParseResultValidator {
         return picked.isEmpty ? fallback : picked
     }
 
-    /// 解析结果是否**还需要继续解析**（`parse = 1` 或 `jx = 1`）。
+    /// 解析结果是否**还需要继续解析**（`parse = 1` 或 `jx = 1`）—— 上游 `Result.needParse()`。
     ///
     /// 为 `true` 时交给 ``ParseJobResolver/followUp(parsedURL:headers:context:)`` 再排一次。
+    ///
+    /// ⚠️ 它与 ``usesParse(resultPlayURL:flag:configFlags:hasDefaultParser:jx:)`` 是**两个不同的判定**
+    /// （上游也是两个方法：`needParse()` / `isUseParse()`），别混 —— 这一个只看结果**自称**要不要解析。
     public static func needsFollowUp(_ result: SpiderResult) -> Bool {
         result.requiresParsing
+    }
+
+    /// 这次播放**要不要先套默认解析器** —— 上游 `Result.isUseParse()`（M09h）。
+    ///
+    /// 上游原文：
+    /// ```
+    /// if (!VodConfig.hasParse()) return false;
+    /// return (getPlayUrl().isEmpty() && VodConfig.get().getFlags().contains(getFlag())) || getJx() == 1;
+    /// ```
+    ///
+    /// `flags`（上游叫 **`vipFlags`**）唯一的用途就在这里：配置声明「这些线路要靠解析」。
+    /// （上游还把它传给 spider 的 `playerContent(flag, id, vipFlags)`，那是宿主侧的事。）
+    ///
+    /// 为什么必须与 `needParse()` 分开：那一个是「结果自称要解析」，这一个是「配置认不认这条线路
+    /// 需要解析」。混用会两头都错 —— 没被声明过的线路也去套默认解析器，或者把声明过的漏掉。
+    ///
+    /// - Parameters:
+    ///   - resultPlayURL: 结果级 `playUrl`（``SpiderResult/playUrl``）。
+    ///   - flag: 本次线路名（协议里的 `flag`）。
+    ///   - configFlags: 配置的 `flags`。
+    ///   - hasDefaultParser: 配置里有没有默认解析器（`SourceConfig.parse` 非空）。
+    ///   - jx: 结果的 `jx`。
+    public static func usesParse(
+        resultPlayURL: String,
+        flag: String,
+        configFlags: [String],
+        hasDefaultParser: Bool,
+        jx: Int
+    ) -> Bool {
+        // 配置里没有默认解析器 → 没什么可套的。这一道**在 `jx` 判断之前**，与上游顺序一致：
+        // 上游 `isUseParse()` 也是先 `hasParse()`，没有默认解析器时连 `jx == 1` 都返回 false。
+        guard hasDefaultParser else {
+            return false
+        }
+        // 空线路名不该匹配到任何 flag：`flags: ["", "youku"]` 这种配置下，
+        // 不挡这道会把「没有线路名的直链结果」也判成要解析。
+        let matched = !flag.isEmpty && configFlags.contains(flag)
+        return (resultPlayURL.isEmpty && matched) || jx == 1
     }
 
     /// 上游认的四个键 → 标准写法。

@@ -13,8 +13,11 @@ import Foundation
 ///   接口（换掉解析器就是十几行）；Apple 侧的 `URLSession` **没有对应钩子**，要做到得自建连接层
 ///  （见 `docs/任务记录/M06m-DNS方案与决策.md`）。这是**差异**，不是偷懒 ——
 ///   但差异必须说出来：配置里写了 `hosts` 却不生效，用户只会以为「这个站不行」。
-/// - **还没接的界面**：`flags`（上游的播放 flag 菜单）、`logo`、`notice`。
-///   这些是能做的，只是当前没有消费方；同样要报，免得用户以为配置没生效是自己的问题。
+/// - **还没接的界面**：`logo`、`notice`。这些是能做的，只是当前没有消费方；同样要报，
+///   免得用户以为配置没生效是自己的问题。
+///   （`flags` 原本也列在这一组 —— M09h 去读上游 `Result.isUseParse()` 时才发现它的真实语义是
+///   **vipFlags**（配置声明「这些线路要靠解析」），不是「flag 选择菜单」；如今它已接进解析判定，
+///   不再属于这里。这次错标从 M06m 一直挂到现在。）
 /// - **有意不做**：`wallpaper`（首页壁纸）—— 首页形态（WebHome）早已决定不做，壁纸无处可用。
 ///   它**不是**「还没接」，别再当待办（这次差点按待接界面去做，被指出后才发现矩阵里写着不做）。
 ///
@@ -43,9 +46,6 @@ public enum ConfigCoverage {
     /// `doh` 为什么做不到：DoH 要先能自己发 DNS 查询，前提与 `hosts` 相同。
     public static let dohReason = "同上：DoH 需要先能自建解析与连接，URLSession 做不到，规则不会生效"
 
-    /// `flags`：上游把它做成播放页的 flag 选择菜单（配套 `FlagSelectionListener`），本平台没有这个菜单。
-    public static let flagsReason = "本平台没有播放 flag 选择菜单，这份列表不会生效（站点详情自带的 flag 可正常切换）"
-
     /// `wallpaper`：上游是首页壁纸（`wall` / `getWall()`）。**本平台有意不做**，不是「还没接」——
     /// 首页形态（WebHome）早已决定不做（见 `docs/协议兼容矩阵.md`），壁纸无处可用。
     /// 别再把它当待办（这次就差点按「待接界面」去做，被指出后才发现矩阵里写着不做）。
@@ -59,8 +59,8 @@ public enum ConfigCoverage {
 
     /// 挑出配置里「有值、但本平台不生效」的字段。
     ///
-    /// 顺序跟 ``SourceConfig`` 的字段声明顺序一致（`doh` → `hosts` → `flags` → `wallpaper` → `logo` →
-    /// `notice`），界面与测试都依赖这个顺序。
+    /// 顺序跟 ``SourceConfig`` 的字段声明顺序一致（`doh` → `hosts` → `wallpaper` → `logo` → `notice`；
+    /// 跳过的 `flags` 已接进解析判定，不再报），界面与测试都依赖这个顺序。
     public static func ignored(in config: SourceConfig) -> [Ignored] {
         var result: [Ignored] = []
         if !config.doh.isEmpty {
@@ -68,9 +68,6 @@ public enum ConfigCoverage {
         }
         if !config.hosts.isEmpty {
             result.append(Ignored(key: "hosts", title: "host 覆盖", reason: hostsReason))
-        }
-        if !config.flags.isEmpty {
-            result.append(Ignored(key: "flags", title: "播放 flag 列表", reason: flagsReason))
         }
         if !config.wallpaper.isEmpty {
             result.append(Ignored(key: "wallpaper", title: "首页壁纸", reason: wallpaperReason))
