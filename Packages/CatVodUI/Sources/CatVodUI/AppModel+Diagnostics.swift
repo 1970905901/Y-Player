@@ -7,7 +7,12 @@ import Foundation
 //
 // 这一层只**采集**（谁是当前接口、缓存是哪天拉的、内核怎么配的、下载与宿主现在什么状态），
 // 拼成文字在 `DiagnosticsReport.text` 里 —— 那边是纯函数，有单测。
-public extension AppModel {
+//
+// ⚠️ 这个 extension **不能写成 `public extension`**：`DiagnosticsReport` 是模块内类型
+// （只给设置页的诊断区用），而 public extension 里的成员默认是 public，
+// 「public 方法返回 internal 类型」编译器直接报错（M10h 那次踩的是同一个坑）。
+// 真要把报告暴露给外部时，得连类型一起抬成 public。
+extension AppModel {
     /// 采一份诊断快照。`now` 只为测试注入（默认就是此刻）。
     func diagnosticsReport(now: Date = Date()) async -> DiagnosticsReport {
         let cachedURL = state.loadedSource?.cachedURL
