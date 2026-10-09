@@ -11,7 +11,7 @@ struct SubtitleTimelineTests {
     func empty() {
         let timeline = SubtitleTimeline(cues: [])
         #expect(timeline.isEmpty)
-        #expect(timeline.count == 0)
+        // `count == 0` 已由上一行的 `isEmpty` 覆盖（SwiftLint `empty_count` 也算它违规），所以不重复写。
         #expect(timeline.cues(at: 0).isEmpty)
         #expect(timeline.cues(at: 100).isEmpty)
     }

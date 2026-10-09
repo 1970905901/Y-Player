@@ -229,8 +229,16 @@ extension Color {
     ///
     /// 单独成函数是为了能测：`Color` 拿不回分量，比不了大小，而拆错一位就是「红色变蓝色」
     /// 这种一眼看不出对错的错。
-    static func components(ofARGB value: UInt32) -> (red: Double, green: Double, blue: Double, alpha: Double) {
-        (
+    /// ARGB 分量。用具名结构体而不是四元组：SwiftLint 的 `large_tuple` 不允许超过两个成员的元组。
+    struct ARGBComponents {
+        let red: Double
+        let green: Double
+        let blue: Double
+        let alpha: Double
+    }
+
+    static func components(ofARGB value: UInt32) -> ARGBComponents {
+        ARGBComponents(
             red: Double((value >> 16) & 0xFF) / 255,
             green: Double((value >> 8) & 0xFF) / 255,
             blue: Double(value & 0xFF) / 255,

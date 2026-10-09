@@ -51,7 +51,8 @@ struct ParseUseParseTests {
     @Test("配置里没有默认解析器 → 一律不解析，连 `jx = 1` 也一样（上游就是这个顺序）")
     func withoutDefaultParserNothingUsesParse() {
         #expect(!usesParse(hasDefaultParser: false))
-        #expect(!usesParse(jx: 1, hasDefaultParser: false))
+        // 参数顺序按声明来（`hasDefaultParser` 在 `jx` 前）——顺序错了是编译错误。
+        #expect(!usesParse(hasDefaultParser: false, jx: 1))
     }
 
     @Test("空线路名不匹配任何 flag：别把「没有线路名的直链结果」判成要解析")
