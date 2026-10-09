@@ -108,8 +108,9 @@ struct TMDBMatchSheet: View {
         Section("搜索 TMDB") {
             HStack {
                 TextField("片名 / 关键词", text: $query)
-                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
+                    // 两个平台分支收在同一处（`textInputAutocapitalization` 是 iOS-only，见 PlatformShims）。
+                    .platformTextInputAutocapitalizationNever()
+                    .autocorrectionDisabled()
                     .onSubmit {
                         Task { await search() }
                     }

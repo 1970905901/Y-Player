@@ -50,7 +50,15 @@ public struct TMDBMatchBook: Sendable, Equatable {
     private var entries: [String: TMDBMatchKey]
 
     public init(entries: [String: TMDBMatchKey] = [:]) {
-        self.entries = entries
+        var normalized: [String: TMDBMatchKey] = [:]
+        for (title, key) in entries {
+            let trimmed = Self.normalizedTitle(title)
+            guard !trimmed.isEmpty else {
+                continue
+            }
+            normalized[trimmed] = key
+        }
+        self.entries = normalized
     }
 
     /// 从落盘串还原。
@@ -59,10 +67,13 @@ public struct TMDBMatchBook: Sendable, Equatable {
         for line in storageString.split(separator: "\n") {
             let parts = line.split(separator: "|", omittingEmptySubsequences: false)
             guard parts.count == 2,
-                  let title = String(parts[0]).removingPercentEncoding,
-                  !title.isEmpty,
+                  let decoded = String(parts[0]).removingPercentEncoding,
                   let key = TMDBMatchKey(storageToken: String(parts[1]))
             else {
+                continue
+            }
+            let title = Self.normalizedTitle(decoded)
+            guard !title.isEmpty else {
                 continue
             }
             parsed[title] = key
@@ -96,18 +107,25 @@ public struct TMDBMatchBook: Sendable, Equatable {
         entries.keys.sorted()
     }
 
+    /// 查这一片的手动匹配：片名同样**去空白归一** —— 写的时候归一、查的时候不归一，
+    /// 就会出现「明明设过却查不到」（Mac 上第一次跑测试就是这么红的）。
     public func key(for title: String) -> TMDBMatchKey? {
-        entries[title]
+        entries[Self.normalizedTitle(title)]
     }
 
     /// 记一条 / 清一条：`key` 传 nil 就是「恢复自动匹配」。
     /// 空白片名直接忽略 —— 空键会把整页元信息串味。
     public mutating func setKey(_ key: TMDBMatchKey?, for title: String) {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = Self.normalizedTitle(title)
         guard !trimmed.isEmpty else {
             return
         }
         entries[trimmed] = key
+    }
+
+    /// 片名归一：去掉前后空白。**写、查、还原三处都走它** —— 三处不一致就会出现「写了却查不到」。
+    private static func normalizedTitle(_ title: String) -> String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     public mutating func removeAll() {
