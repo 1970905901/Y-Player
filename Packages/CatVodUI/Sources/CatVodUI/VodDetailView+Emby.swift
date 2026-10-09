@@ -198,6 +198,8 @@ extension VodDetailView {
             ) { index in
                 openEpisode(at: index)
             }
+            // 参考图里抽屉只占半屏（上面的详情还看得见）；iOS 15 没有半屏形态，回落整页。
+            .adaptiveHalfSheet()
         }
     }
 

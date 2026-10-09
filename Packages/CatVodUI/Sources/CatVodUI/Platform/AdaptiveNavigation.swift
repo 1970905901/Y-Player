@@ -183,3 +183,26 @@ public extension View {
         #endif
     }
 }
+
+// MARK: - 半屏 sheet
+
+/// 版本自适应的「半屏 sheet」：iOS 16+ / macOS 13+ 用系统原生的 `presentationDetents([.medium])`
+/// 加拖拽指示条；iOS 15 没有半屏形态，回落**该版本原生**的整页 sheet（不跨版本仿制，见文件头规则）。
+public struct AdaptiveHalfSheetModifier: ViewModifier {
+    public func body(content: Content) -> some View {
+        if #available(iOS 16.0, macOS 13.0, *) {
+            content
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        } else {
+            content
+        }
+    }
+}
+
+public extension View {
+    /// 把 sheet 限制成半屏（剧集列表抽屉用：参考图里它只占半屏，上面的详情还看得见）。
+    func adaptiveHalfSheet() -> some View {
+        modifier(AdaptiveHalfSheetModifier())
+    }
+}

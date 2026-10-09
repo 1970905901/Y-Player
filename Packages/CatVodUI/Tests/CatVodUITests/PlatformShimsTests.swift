@@ -25,5 +25,6 @@ struct PlatformShimsTests {
         _ = Text("list").adaptiveListStyle()
         _ = Text("toolbar").adaptiveToolbar(leading: { Text("L") }, trailing: { Text("T") })
         _ = Text("search").adaptiveSearchable(text: .constant(""), prompt: "搜索")
+        _ = Text("sheet").adaptiveHalfSheet()
     }
 }
