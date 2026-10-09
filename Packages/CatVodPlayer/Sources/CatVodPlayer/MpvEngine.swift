@@ -179,6 +179,21 @@ public actor MpvEngine: PlayerEngine {
         }
     }
 
+    /// 上报轨道列表（播放页「音轨 / 字幕」下拉框靠它）。
+    ///
+    /// 时机：`file-loaded` 之后读一次 —— 这时 mpv 已经把容器里的轨道都认出来了；
+    /// 换片必然再来一次 `file-loaded`，所以不必 observe。
+    /// 读 `track-list` 而不是观察它：那是**结构化属性**（node），为几行下拉框接一套 node 解析不划算。
+    private func emitTrackList() {
+        guard let session,
+              let json = session.propertyString("track-list"),
+              let tracks = MpvEventMapping.trackIDs(fromTrackListJSON: json)
+        else {
+            return
+        }
+        emit(.tracksChanged(video: tracks.video, audio: tracks.audio, subtitle: tracks.subtitle))
+    }
+
     /// 取下一件事件；拿不到会话或已取消时返回 nil（循环就此结束）。
     private func nextEvent() -> MpvSessionEvent? {
         guard let session, !Task.isCancelled else { return nil }
@@ -194,6 +209,7 @@ public actor MpvEngine: PlayerEngine {
         case .fileLoaded:
             // mpv 加载完即开始播（若用户此前按了暂停，`pause` 属性变化会把状态纠正过来）。
             update(.playing)
+            emitTrackList()
         case let .endFile(reason):
             let failure = MpvEventMapping.isFailure(endFileReason: reason)
             update(failure ? .failed("播放失败（mpv 报告 \(reason)）") : .ended)

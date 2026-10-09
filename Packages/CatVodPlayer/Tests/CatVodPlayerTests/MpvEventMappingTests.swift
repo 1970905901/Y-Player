@@ -111,6 +111,33 @@ struct MpvEventMappingTests {
         #expect(MpvPropertyValue.none.boolValue == nil)
     }
 
+    @Test("track-list：按类型分三组，封面图轨道不算画面轨")
+    func trackListParsing() throws {
+        let json = """
+        [
+            {"id": 1, "type": "video", "default": true},
+            {"id": 2, "type": "video", "albumart": true},
+            {"id": 3, "type": "audio", "lang": "zh"},
+            {"id": 4, "type": "audio", "lang": "en"},
+            {"id": 5, "type": "sub", "title": "简体"},
+            {"id": 6, "type": "unknown"}
+        ]
+        """
+        let tracks = try #require(MpvEventMapping.trackIDs(fromTrackListJSON: json))
+        #expect(tracks.video == [1])
+        #expect(tracks.audio == [3, 4])
+        #expect(tracks.subtitle == [5])
+    }
+
+    @Test("track-list：解析不了返回 nil（别发空列表把界面上的选择清空）")
+    func trackListParseFailure() {
+        #expect(MpvEventMapping.trackIDs(fromTrackListJSON: "") == nil)
+        #expect(MpvEventMapping.trackIDs(fromTrackListJSON: "不是 JSON") == nil)
+        #expect(MpvEventMapping.trackIDs(fromTrackListJSON: #"{"a":1}"#) == nil)
+        // 空数组是合法输入：就是「没有轨道」。
+        #expect(MpvEventMapping.trackIDs(fromTrackListJSON: "[]")?.video == [])
+    }
+
     @Test("事件等待超时：小到不卡命令，大到不空转")
     func waitTimeout() {
         // 这个值直接等于「命令最坏等多久」（事件循环在 actor 里阻塞等待），改大要慎重。

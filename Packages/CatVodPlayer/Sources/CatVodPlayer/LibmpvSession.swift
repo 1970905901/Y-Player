@@ -92,6 +92,16 @@ final class LibmpvSession: MpvSession, @unchecked Sendable {
         return code < 0 ? Self.message(code) : nil
     }
 
+    func propertyString(_ name: String) -> String? {
+        guard let handle, !destroyed else { return nil }
+        guard let value = mpv_get_property_string(handle, name) else {
+            return nil
+        }
+        // mpv 的字符串是它自己 malloc 的，必须 `mpv_free`（不是 Swift 管的）。
+        defer { mpv_free(value) }
+        return String(cString: value)
+    }
+
     func waitEvent(timeout: Double) -> MpvSessionEvent {
         // 已销毁：当作会话结束（引擎的循环据此退出），而不是崩在野指针上。
         guard let handle, !destroyed else { return .shutdown }

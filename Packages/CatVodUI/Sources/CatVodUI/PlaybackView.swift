@@ -49,6 +49,12 @@ public struct PlaybackView: View {
     @State private var mpvSurface: MpvVideoSurface?
     /// 正在拖进度条：拖动期间不采纳内核报回的位置，否则滑杆会被顶回去。
     @State private var isScrubbing = false
+    /// 内核上报的轨道（系统内核现在不上报，只有 MPV 会报，见 M03P3/M03P5）。
+    @State private var audioTracks: [Int] = []
+    @State private var subtitleTracks: [Int] = []
+    /// 当前选中的轨道（界面态；换片时回到「自动」）。
+    @State private var audioSelection: TrackSelection = .auto
+    @State private var subtitleSelection: TrackSelection = .auto
     @State private var stateText = "准备中…"
     @State private var engineText = ""
     @State private var errorText = ""
@@ -126,6 +132,9 @@ public struct PlaybackView: View {
                     if !engineText.isEmpty {
                         InfoRow(title: "内核", value: engineText)
                     }
+                }
+                if !audioTracks.isEmpty || !subtitleTracks.isEmpty {
+                    tracksSection
                 }
                 Section("媒体") {
                     Text(resource.url)
@@ -523,7 +532,13 @@ extension PlaybackView {
                 // 变速：**先外推再换速率** —— 直接改会把这一次上报之前已经走过的距离丢掉，弹幕往回跳。
                 playbackRate = Double(rate)
                 playbackClock.setRate(clockRate(), at: Date())
-            case .bufferedChanged, .tracksChanged:
+            case let .tracksChanged(_, audio, subtitle):
+                audioTracks = audio
+                subtitleTracks = subtitle
+                // 换片（或换轨）后旧选择作废：回到「自动」，由内核挑默认轨。
+                audioSelection = .auto
+                subtitleSelection = .auto
+            case .bufferedChanged:
                 break
             }
         }
@@ -579,6 +594,54 @@ extension PlaybackView {
             return
         }
         await engine.seek(to: 0)
+    }
+
+    /// 音轨 / 字幕轨选择。
+    ///
+    /// **只有内核报了轨道才出现**：系统内核（`AVPlayerEngine`）现在不上报轨迹，
+    /// 所以那边不显示这一块 —— 不做「点不动的假菜单」。
+    private var tracksSection: some View {
+        Section("轨道") {
+            if !audioTracks.isEmpty {
+                Picker("音轨", selection: audioSelectionBinding) {
+                    Text("自动").tag(TrackSelection.auto)
+                    ForEach(audioTracks, id: \.self) { id in
+                        Text("音轨 \(id)").tag(TrackSelection.index(id))
+                    }
+                }
+            }
+            if !subtitleTracks.isEmpty {
+                Picker("字幕", selection: subtitleSelectionBinding) {
+                    Text("自动").tag(TrackSelection.auto)
+                    Text("关闭").tag(TrackSelection.disabled)
+                    ForEach(subtitleTracks, id: \.self) { id in
+                        Text("字幕 \(id)").tag(TrackSelection.index(id))
+                    }
+                }
+            }
+        }
+    }
+
+    /// 音轨选择：改界面态 + 立刻下发内核（`selectTrack`）。
+    private var audioSelectionBinding: Binding<TrackSelection> {
+        Binding(
+            get: { audioSelection },
+            set: { selection in
+                audioSelection = selection
+                Task { await engine?.selectTrack(selection, for: .audio) }
+            }
+        )
+    }
+
+    /// 字幕轨选择：同上。
+    private var subtitleSelectionBinding: Binding<TrackSelection> {
+        Binding(
+            get: { subtitleSelection },
+            set: { selection in
+                subtitleSelection = selection
+                Task { await engine?.selectTrack(selection, for: .subtitle) }
+            }
+        )
     }
 
     /// 「播放速度」区：当前值 + 预设 + 恢复。

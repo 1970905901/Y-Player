@@ -15,6 +15,7 @@ final class FakeMpvSession: MpvSession, @unchecked Sendable {
         case initialize
         case observe(property: String, id: UInt64, format: String)
         case command([String])
+        case propertyString(name: String)
         case destroy
     }
 
@@ -23,10 +24,17 @@ final class FakeMpvSession: MpvSession, @unchecked Sendable {
     private var pendingEvents: [MpvSessionEvent] = []
     private let initializeFailure: String?
     private let commandFailure: String?
+    /// 脚本化的属性字符串（`track-list` 之类的结构化属性用它喂）。
+    private let propertyStrings: [String: String]
 
-    init(initializeFailure: String? = nil, commandFailure: String? = nil) {
+    init(
+        initializeFailure: String? = nil,
+        commandFailure: String? = nil,
+        propertyStrings: [String: String] = [:]
+    ) {
         self.initializeFailure = initializeFailure
         self.commandFailure = commandFailure
+        self.propertyStrings = propertyStrings
     }
 
     // MARK: - 断言用
@@ -95,6 +103,11 @@ final class FakeMpvSession: MpvSession, @unchecked Sendable {
         return commandFailure
     }
 
+    func propertyString(_ name: String) -> String? {
+        record(.propertyString(name: name))
+        return propertyStrings[name]
+    }
+
     /// 事件立即返回（不睡）：单测不等真时间，队列空就给 `.none` —— 与真实现超时后返回 `.none` 同形。
     func waitEvent(timeout: Double) -> MpvSessionEvent {
         _ = timeout
@@ -122,9 +135,14 @@ final class FakeMpvSession: MpvSession, @unchecked Sendable {
 private func makeEngine(
     decoderMode: DecoderMode = .hardware,
     initializeFailure: String? = nil,
-    commandFailure: String? = nil
+    commandFailure: String? = nil,
+    propertyStrings: [String: String] = [:]
 ) -> (engine: MpvEngine, session: FakeMpvSession) {
-    let session = FakeMpvSession(initializeFailure: initializeFailure, commandFailure: commandFailure)
+    let session = FakeMpvSession(
+        initializeFailure: initializeFailure,
+        commandFailure: commandFailure,
+        propertyStrings: propertyStrings
+    )
     let engine = MpvEngine(decoderMode: decoderMode, makeSession: { session })
     return (engine, session)
 }
@@ -347,6 +365,37 @@ struct MpvEngineTests {
         let state = await waitForState(engine, .playing)
         #expect(state == .playing)
         await engine.teardown()
+    }
+
+    @Test("file-loaded 后上报轨道列表（音轨 / 字幕轨的下拉框靠它）")
+    func trackListReportedAfterLoad() async throws {
+        let (engine, _) = makeEngine(propertyStrings: [
+            "track-list": #"[{"id":1,"type":"video"},{"id":2,"type":"audio"},{"id":3,"type":"sub"}]"#,
+        ])
+        var iterator = engine.events.makeAsyncIterator()
+        try await engine.load(MediaResource(url: "https://cdn.example.com/a.mp4"))
+        await engine.handle(.fileLoaded)
+
+        let loading = await iterator.next()
+        #expect(loading == .stateChanged(.loading))
+        let playing = await iterator.next()
+        #expect(playing == .stateChanged(.playing))
+        let tracks = await iterator.next()
+        #expect(tracks == .tracksChanged(video: [1], audio: [2], subtitle: [3]))
+    }
+
+    @Test("track-list 读不到：什么都不发（别把界面上的选择清空）")
+    func trackListAbsentStaysSilent() async throws {
+        let (engine, _) = makeEngine()
+        var iterator = engine.events.makeAsyncIterator()
+        try await engine.load(MediaResource(url: "https://cdn.example.com/a.mp4"))
+        await engine.handle(.fileLoaded)
+        _ = await iterator.next()
+        _ = await iterator.next()
+        // file-loaded 之后**下一条**就是普通属性事件：中间没有 tracksChanged。
+        await engine.handle(.property(id: MpvEventMapping.pausedID, value: .flag(true)))
+        let next = await iterator.next()
+        #expect(next == .stateChanged(.paused))
     }
 
     @Test("纯工具：轨道取值与数值格式")

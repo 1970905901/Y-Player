@@ -21,6 +21,11 @@ public protocol MpvSession: AnyObject, Sendable {
     func observe(property: String, id: UInt64, format: String)
     /// 执行命令（`mpv_command`，例如 `["loadfile", url, "replace"]`）；失败返回错误描述。
     func command(_ args: [String]) -> String?
+    /// 读一个属性的字符串形式（`mpv_get_property_string`）；没有值返回 nil。
+    ///
+    /// 用途：`track-list` 这种**结构化属性** —— mpv 会把它转成 JSON 字符串，
+    /// 拉起轨道列表时读一次就够（轨迹变化时再读，不必用属性观察去接 node）。
+    func propertyString(_ name: String) -> String?
     /// 取下一件事件（`mpv_wait_event`，最多等 `timeout` 秒；超时给 `.none`）。
     func waitEvent(timeout: Double) -> MpvSessionEvent
     /// 销毁（`mpv_terminate_destroy`）；实现要保证**幂等**（引擎与 deinit 都可能调）。
