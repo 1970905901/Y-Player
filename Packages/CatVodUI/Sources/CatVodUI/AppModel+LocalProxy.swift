@@ -47,13 +47,13 @@ public extension AppModel {
 
     /// 播放资源的总入口：**已下载就播本地文件**（M10g），否则按需改走 `/proxy`。
     ///
-    /// ⚠️ 名字仍叫 `proxiedMediaResource`：它是全仓播放地址的唯一必经点（详情页 / 选集页 /
-    /// 解析页 / 直播页共 5 处），改名要动 5 个调用点，留给下次顺手做 —— 但它现在的职责已经是
-    /// 「播放资源的总入口」。
+    /// 名字原来是 `proxiedMediaResource` —— 那时它只做「要 header 就改走 `/proxy`」这一件事；
+    /// 加了本地下载接管（M10g）之后，它的职责变成「播放资源的总入口」：详情页 / 选集页 /
+    /// 解析页 / 直播页 / 下载列表都经过它，所以改名成 `playbackResource`。
     ///
     /// 本地文件既不需要 header、也不需要代理：把地址换成 `file://`，并把 header 清空
     /// （留着 header 会让播放器对本地地址也发一遍带鉴权的请求）。续播位置保留。
-    func proxiedMediaResource(_ resource: MediaResource) -> MediaResource {
+    func playbackResource(_ resource: MediaResource) -> MediaResource {
         if let local = localDownloadedFile(forRemoteURL: resource.url) {
             var copy = resource
             copy.url = local.absoluteString

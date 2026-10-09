@@ -62,7 +62,7 @@ public struct RootView: View {
             // 加载完成会自增 `siteCatalogRevision`，首页/搜索/追剧据此拿到站点（见 M02P9）。
             await model.loadSavedSourceIfNeeded()
             // 本机代理服务（M6）：启动时就起来，播放时才有端口可用
-            // （`proxiedMediaResource(_:)` 是同步判定，不能在那里 await）。
+            // （`playbackResource(_:)` 是同步判定，不能在那里 await）。
             await model.ensureLocalServer()
         }
     }

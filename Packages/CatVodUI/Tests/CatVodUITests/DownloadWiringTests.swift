@@ -144,7 +144,7 @@ struct DownloadWiringTests {
         let resource = MediaResource(url: url, headers: ["Referer": "https://site.example"])
         // 还没入队：不接管，原样给回远地址
         #expect(fixture.model.localDownloadedFile(forRemoteURL: url) == nil)
-        #expect(fixture.model.proxiedMediaResource(resource).url == url)
+        #expect(fixture.model.playbackResource(resource).url == url)
 
         await fixture.model.enqueueDownloads(
             [DownloadRequest(episode: "第 1 集", line: "线路一", url: url)],
@@ -159,7 +159,7 @@ struct DownloadWiringTests {
         #expect(local.isFileURL)
 
         // 接管之后：地址换成文件、header 清空（本地文件不该再带鉴权头）
-        let swapped = fixture.model.proxiedMediaResource(resource)
+        let swapped = fixture.model.playbackResource(resource)
         #expect(swapped.url == local.absoluteString)
         #expect(swapped.headers.isEmpty)
     }

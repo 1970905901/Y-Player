@@ -129,7 +129,7 @@ struct SitePlayEpisodeView: View {
                 parseFallback = result
                 return
             }
-            resource = model.proxiedMediaResource(MediaResource(
+            resource = model.playbackResource(MediaResource(
                 url: playURL,
                 headers: HTTPHeaderMerger.merge([site.header, result.header]),
                 startPosition: 0,

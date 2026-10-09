@@ -349,7 +349,7 @@ private struct LiveChannelRowView: View {
 /// 换台的范围就是**用户眼前那份清单**：``groups`` 是分组条上看得见的那几组（锁着的加密分组不在里面），
 /// 组内换台只在该组的频道里循环 —— 与列表一致，不会切到看不见的频道。
 ///
-/// 资源交给 ``AppModel/proxiedMediaResource(_:)``：需要 header 时改走本机 `/proxy`，
+/// 资源交给 ``AppModel/playbackResource(_:)``：已下载就播本地文件（M10g），否则需要 header 时改走本机 `/proxy`，
 /// 让 header 覆盖到子清单 / 分片 / 密钥请求上（M6 的约定）。
 @MainActor
 private struct LiveChannelPlaybackView: View {
@@ -534,7 +534,7 @@ private struct LiveChannelPlaybackView: View {
     }
 
     private var resource: MediaResource {
-        model.proxiedMediaResource(MediaResource(
+        model.playbackResource(MediaResource(
             url: current.playbackURL(index: lineIndex),
             headers: current.requestHeaders(fallback: model.liveSource?.headers() ?? [:])
         ))

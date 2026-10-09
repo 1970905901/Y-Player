@@ -301,10 +301,10 @@ struct ParsePlaybackView: View {
 
     /// 播放资源：站点 header → 详情 header → 解析器给的 header，后者覆盖前者。
     ///
-    /// 最后交给 ``AppModel/proxiedMediaResource(_:)``：需要 header 时改走本机 `/proxy`（M6），
+    /// 最后交给 ``AppModel/playbackResource(_:)``：已下载就播本地文件（M10g），否则需要 header 时改走本机 `/proxy`（M6），
     /// 让 header 覆盖到子清单/分片/密钥请求上。
     private func resource(from parsed: ParsedPlayback) -> MediaResource {
-        model.proxiedMediaResource(MediaResource(
+        model.playbackResource(MediaResource(
             url: parsed.url,
             headers: HTTPHeaderMerger.merge([site.header, detail.header, parsed.headers]),
             startPosition: 0,

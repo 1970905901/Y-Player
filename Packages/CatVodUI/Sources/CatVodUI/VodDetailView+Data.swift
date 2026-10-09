@@ -179,7 +179,7 @@ extension VodDetailView {
         guard !request.requiresParsing else {
             return nil
         }
-        return model.proxiedMediaResource(MediaResource(
+        return model.playbackResource(MediaResource(
             url: episode.url,
             headers: HTTPHeaderMerger.merge([site.header, detail.header]),
             startPosition: 0,

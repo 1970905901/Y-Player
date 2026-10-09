@@ -125,7 +125,7 @@ struct LiveScheduleView: View {
     }
 
     private func resource(url: String) -> MediaResource {
-        model.proxiedMediaResource(MediaResource(
+        model.playbackResource(MediaResource(
             url: url,
             headers: channel.requestHeaders(fallback: model.liveSource?.headers() ?? [:])
         ))

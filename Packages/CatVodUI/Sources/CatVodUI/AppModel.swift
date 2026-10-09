@@ -234,7 +234,7 @@ public final class AppModel: ObservableObject {
 
     /// 本机服务端口；未启动为 nil。
     ///
-    /// 在 AppModel 里留一份而不是每次去问 actor：``proxiedMediaResource(_:)`` 是**同步**判定，
+    /// 在 AppModel 里留一份而不是每次去问 actor：``playbackResource(_:)`` 是**同步**判定，
     /// 而 `LocalHTTPServer.port` 是 actor 属性，读它必须 await。
     ///
     /// setter 理由同 ``localProxyNotice``：启停逻辑在 `AppModel+LocalProxy.swift`。
