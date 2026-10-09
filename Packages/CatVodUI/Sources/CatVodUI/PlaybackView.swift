@@ -55,6 +55,13 @@ public struct PlaybackView: View {
     /// 当前选中的轨道（界面态；换片时回到「自动」）。
     @State private var audioSelection: TrackSelection = .auto
     @State private var subtitleSelection: TrackSelection = .auto
+    /// MPV 手势：拖动开始时的基准值（手势给的是相对量）。
+    @State private var gestureBasePosition: Double?
+    @State private var gestureBaseVolume: Double?
+    /// 手势提示条（进度预览 / 音量）；空 = 不显示。
+    @State private var gestureHint = ""
+    /// 当前音量（0...1）：MPV 手势改的是它；系统内核不碰（音量交给硬件键）。
+    @State private var volume: Double = 1
     @State private var stateText = "准备中…"
     @State private var engineText = ""
     @State private var errorText = ""
@@ -205,7 +212,7 @@ public struct PlaybackView: View {
                 ZStack {
                     // 纯黑衬底：视频按 aspect-fit 居中，留边永远是黑（不是页面底色）。
                     Color.black
-                    videoLayer
+                    videoLayer(size: proxy.size)
                     // 弹幕层（M08h）：只在有计划时挂上去 —— 没开弹幕 / 这集没搜到时
                     // 连这一层都不存在，不占渲染开销。
                     if let danmakuRender {
@@ -232,6 +239,18 @@ public struct PlaybackView: View {
                     if mpvSurface != nil {
                         mpvControls
                     }
+                    // 手势提示（进度预览 / 音量）：只显示、不拦触摸。
+                    if !gestureHint.isEmpty {
+                        Text(gestureHint)
+                            .font(.headline.monospacedDigit())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Color.black.opacity(0.55), in: Capsule())
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                            .padding(.top, 24)
+                            .allowsHitTesting(false)
+                    }
                 }
                 // 键里带尺寸：旋转屏幕 / 改窗口后，轨道数与字号要按新尺寸重排。
                 .task(id: danmakuPlanKey(size: proxy.size)) {
@@ -253,14 +272,71 @@ public struct PlaybackView: View {
     }
 
     /// 画面本体：系统内核走系统播放器控件；MPV 走自绘的 metal 层（``MpvVideoView``）。
+    ///
+    /// 手势**只挂在 MPV 这边**：系统内核的画面是 `VideoPlayer`，它自带一整套手势，
+    /// 我们再叠一层只会互相打架（M02P15 的「长按临时加速」不做，同一条理由）。
     @ViewBuilder
-    private var videoLayer: some View {
+    private func videoLayer(size: CGSize) -> some View {
         if let player {
             VideoPlayer(player: player)
         } else if let mpvSurface {
             MpvVideoView(surface: mpvSurface)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    // 双击 = 播放 / 暂停。
+                    Task { await togglePlayback() }
+                }
+                .gesture(mpvGesture(width: size.width))
         }
     }
+
+    /// MPV 画面上的手势：
+    /// - **双击**：播放 / 暂停（上面那条）；
+    /// - **横向拖**：调进度 —— 拖动中只显示预览，**松手才 seek**（一次拖动几十个中间值，
+    ///   逐个 seek 会把内核打爆）；换算固定为「拖满一屏宽 ≈ 120 秒」；
+    /// - **纵向拖**：音量 —— 向上加、向下减，200pt 满量程，松手下发内核。
+    private func mpvGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onChanged { value in
+                let dx = value.translation.width
+                let dy = value.translation.height
+                if abs(dx) > abs(dy) {
+                    let base = gestureBasePosition ?? latestPosition
+                    gestureBasePosition = base
+                    let target = seekTarget(base: base, dx: dx, width: width)
+                    gestureHint = "\(Self.timeText(target)) / \(Self.timeText(latestDuration))"
+                } else {
+                    let base = gestureBaseVolume ?? volume
+                    gestureBaseVolume = base
+                    volume = min(max(base - Double(dy) / Self.volumePointsForFullRange, 0), 1)
+                    gestureHint = "音量 \(Int((volume * 100).rounded()))%"
+                }
+            }
+            .onEnded { value in
+                let dx = value.translation.width
+                let dy = value.translation.height
+                if abs(dx) > abs(dy), let base = gestureBasePosition {
+                    let target = seekTarget(base: base, dx: dx, width: width)
+                    Task { await engine?.seek(to: target) }
+                } else if gestureBaseVolume != nil {
+                    let target = Float(volume)
+                    Task { await engine?.setVolume(target) }
+                }
+                gestureBasePosition = nil
+                gestureBaseVolume = nil
+                gestureHint = ""
+            }
+    }
+
+    /// 把「横向拖了多少」换算成目标秒数（夹在 0...总时长）。
+    private func seekTarget(base: Double, dx: CGFloat, width: CGFloat) -> Double {
+        let delta = Double(dx / max(width, 1)) * Self.seekSecondsPerScreen
+        return min(max(base + delta, 0), max(latestDuration, 0))
+    }
+
+    /// 手势换算常量：拖满一屏宽 ≈ 120 秒；纵向 200pt 满量程音量。
+    static let seekSecondsPerScreen: Double = 120
+    static let volumePointsForFullRange: Double = 200
 
     /// MPV 的最小控制条：播放 / 暂停 + 进度 + 时间。
     ///

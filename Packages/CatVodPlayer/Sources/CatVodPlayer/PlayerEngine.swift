@@ -131,6 +131,8 @@ public protocol PlayerEngine: AnyObject, Sendable {
     func pause() async
     func seek(to seconds: Double) async
     func setRate(_ rate: Float) async
+    /// 音量（0...1）。系统内核写 `AVPlayer.volume`；MPV 写 `volume`（0–100，100 = 原声）。
+    func setVolume(_ volume: Float) async
     func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async
     func teardown() async
 }

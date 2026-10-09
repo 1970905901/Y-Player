@@ -115,6 +115,11 @@ public final class AVPlayerEngine: PlayerEngine {
         emit(.speedChanged(rate))
     }
 
+    /// 音量（0...1）：写 `AVPlayer.volume` —— 这是 App 内的相对音量，系统音量仍归硬件键。
+    public func setVolume(_ volume: Float) async {
+        player.volume = min(max(volume, 0), 1)
+    }
+
     /// 说明：AVPlayer 的轨道选择依赖媒体选择组，M2 先记录选择不做实际切换（M3/M4 由自研内核实现）。
     public func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async {
         _ = selection

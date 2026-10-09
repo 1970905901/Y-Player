@@ -264,7 +264,7 @@ struct MpvEngineTests {
         #expect(resumed == .playing)
     }
 
-    @Test("命令：play / pause / seek / 倍速 / 轨道选择 都下发给会话")
+    @Test("命令：play / pause / seek / 倍速 / 音量 / 轨道选择 都下发给会话")
     func commands() async throws {
         let (engine, session) = makeEngine()
         try await engine.load(MediaResource(url: "https://cdn.example.com/a.m3u8"))
@@ -272,6 +272,7 @@ struct MpvEngineTests {
         await engine.pause()
         await engine.seek(to: 90)
         await engine.setRate(1.5)
+        await engine.setVolume(0.5)
         await engine.selectTrack(.disabled, for: .subtitle)
         await engine.selectTrack(.index(2), for: .audio)
         await engine.selectTrack(.auto, for: .video)
@@ -283,6 +284,7 @@ struct MpvEngineTests {
             ["set", "pause", "yes"],
             ["seek", "90.000", "absolute"],
             ["set", "speed", "1.500"],
+            ["set", "volume", "50.000"],
             ["set", "sid", "no"],
             ["set", "aid", "2"],
             ["set", "vid", "auto"],

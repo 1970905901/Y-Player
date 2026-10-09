@@ -27,6 +27,19 @@ struct SystemPlayerRateTests {
         engine.finishEvents()
     }
 
+    @Test("音量：0...1 之外的值先夹紧再写进 AVPlayer")
+    func volumeIsClamped() async {
+        let engine = AVPlayerEngine(decoderMode: .hardware)
+        await engine.setVolume(2)
+        #expect(engine.systemPlayer().volume == 1)
+        await engine.setVolume(-1)
+        #expect(engine.systemPlayer().volume == 0)
+        await engine.setVolume(0.3)
+        #expect(abs(engine.systemPlayer().volume - 0.3) < 0.001)
+        await engine.teardown()
+        engine.finishEvents()
+    }
+
     @Test("暂停再播不丢倍速（引擎记着用户请求的值）")
     func pauseKeepsRate() async throws {
         let engine = AVPlayerEngine(decoderMode: .software)

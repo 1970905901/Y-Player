@@ -116,6 +116,13 @@ public actor MpvEngine: PlayerEngine {
         emit(.speedChanged(rate))
     }
 
+    /// 音量：mpv 的 `volume` 属性是 0–100（100 = 原声），这里把 0...1 换算过去。
+    public func setVolume(_ volume: Float) async {
+        guard let session else { return }
+        let clamped = min(max(volume, 0), 1)
+        _ = session.command(["set", "volume", Self.number(Double(clamped) * 100)])
+    }
+
     public func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async {
         guard let session else { return }
         let name = switch kind {
