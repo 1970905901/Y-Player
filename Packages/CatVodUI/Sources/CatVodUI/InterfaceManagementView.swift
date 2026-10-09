@@ -30,7 +30,6 @@ public struct InterfaceManagementView: View {
         List {
             configSection
             if case let .loaded(source) = model.state {
-                configInfoSection(source)
                 summarySection(source)
             }
             if case let .failed(reason) = model.state {
@@ -82,49 +81,6 @@ public struct InterfaceManagementView: View {
                 }
             }
         }
-    }
-
-    // MARK: - 配置自带的图标与公告
-
-    /// `SourceConfig.logo` / `.notice`：以前解析进来就丢，现在至少在这儿能看见。
-    ///
-    /// 公告在发现页那条横幅上关掉后就只剩这里了 —— 所以这一块**不跟着关**：
-    /// 「看过了」不等于「再也找不到」。
-    @ViewBuilder
-    private func configInfoSection(_ source: LoadedSource) -> some View {
-        let logo = source.config.logo.trimmingCharacters(in: .whitespacesAndNewlines)
-        let notice = source.config.notice.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !logo.isEmpty || !notice.isEmpty {
-            Section("配置") {
-                if let url = Self.imageURL(logo) {
-                    HStack(spacing: 12) {
-                        AsyncImage(url: url) { image in
-                            image.resizable().scaledToFit()
-                        } placeholder: {
-                            Color.secondary.opacity(0.12)
-                        }
-                        .frame(width: 44, height: 44)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        Text("配置图标")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                if !notice.isEmpty {
-                    Text(notice)
-                        .font(.footnote)
-                }
-            }
-        }
-    }
-
-    /// 图标地址：**只认带 scheme 的完整地址**。上游的 `logo` 也可能是相对路径，
-    /// 相对路径在 App 里没有基准地址可拼 —— 宁可整块不显示，也不画一个破图框。
-    private static func imageURL(_ raw: String) -> URL? {
-        guard !raw.isEmpty, let url = URL(string: raw), url.scheme != nil else {
-            return nil
-        }
-        return url
     }
 
     // MARK: - 状态摘要

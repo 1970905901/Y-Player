@@ -46,8 +46,6 @@ public struct HomeView: View {
     @EnvironmentObject private var immersiveTabBar: ImmersiveTabBarState
     /// 网页条目（如宿主配置中心）要在 App 内打开的地址；nil = 没开。
     @State private var webEntry: WebEntry?
-    /// 配置公告是否展开了全文（默认两行，点一下展开）。
-    @State private var isNoticeExpanded = false
 
     public init(model: AppModel) {
         self.model = model
@@ -155,7 +153,6 @@ public struct HomeView: View {
     private var contentScroll: some View {
         ScrollView {
             VStack(spacing: 0) {
-                noticeBanner
                 if !result.categories.isEmpty {
                     DiscoverCategoryStrip(
                         categories: result.categories,
@@ -192,44 +189,6 @@ public struct HomeView: View {
                     tabBar.touchEnded()
                 }
         )
-    }
-
-    /// 配置公告（`SourceConfig.notice`）：一条细横幅，点文字展开全文，✕ 关掉就不再出现。
-    ///
-    /// 放在**滚动区顶部**而不是钉在屏幕上：发现页是整屏滑动（分类 / 筛选 / 海报连成一片），
-    /// 不该为一条公告再常驻一条栏。关掉的状态落盘在 `AppModel` 上 ——
-    /// 同一条不再出现，配置换了新公告会再来一次。
-    @ViewBuilder
-    private var noticeBanner: some View {
-        if let notice = model.pendingConfigNotice {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "megaphone.fill")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-                Text(notice)
-                    .font(.footnote)
-                    .lineLimit(isNoticeExpanded ? nil : 2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            isNoticeExpanded.toggle()
-                        }
-                    }
-                Button {
-                    model.dismissConfigNotice()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("关闭公告")
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(Color.orange.opacity(0.12))
-        }
     }
 
     @ViewBuilder private var contentBody: some View {
