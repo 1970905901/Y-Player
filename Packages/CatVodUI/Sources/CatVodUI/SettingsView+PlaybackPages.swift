@@ -33,7 +33,10 @@ struct SettingsPlayerView: View {
                     }
                 } label: {
                     HStack {
+                        // 显式定色：Menu 会把自己的 tint 刷到整个 label 上 —— 不加这一句，
+                        // 左半边「默认播放器」也会变蓝（用户截图指出，只有右侧的值该是蓝的）。
                         Text("默认播放器")
+                            .foregroundStyle(Color.primary)
                         Spacer()
                         Text(model.preferredEngine.displayName)
                             .foregroundStyle(PlatformShims.accent)
