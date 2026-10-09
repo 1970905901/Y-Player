@@ -86,6 +86,50 @@ extension HomeView {
         await loadHome()
     }
 
+    /// 横向展示的数据：为每个分区（分类）各取一页。
+    ///
+    /// 为什么要并发：一个接口常有十来个分类，串行取完要等十几次往返、首屏长时间空白。
+    /// 这里只取**前几个**（`HomeView.sectionCategoryLimit`，参考图第一屏可见的就三四个），
+    /// 用 `TaskGroup` 并发；回来的顺序是乱的，所以最后**按分类原顺序排回去** ——
+    /// 分区顺序跟分类条不一致，会让人以为串台了。
+    ///
+    /// 失败或空的分区**不占位**（跳过），也不弹错误：横向模式本来就是「看个大概」，
+    /// 某个分类挂了不该把整页变红。
+    func loadSections() async {
+        guard sections.isEmpty, !isLoadingSections, let site = selectedSite else {
+            return
+        }
+        let targets = Array(result.categories.prefix(Self.sectionCategoryLimit))
+        guard !targets.isEmpty else {
+            return
+        }
+        isLoadingSections = true
+        defer { isLoadingSections = false }
+        let client = model.makeSiteClient()
+        var loaded: [DiscoverSection] = []
+        await withTaskGroup(of: DiscoverSection?.self) { group in
+            for category in targets {
+                group.addTask {
+                    guard let page = try? await client.category(site: site, categoryID: category.typeID, page: 1) else {
+                        return nil
+                    }
+                    guard !page.list.isEmpty else {
+                        return nil
+                    }
+                    return DiscoverSection(id: category.typeID, title: category.typeName, items: page.list)
+                }
+            }
+            for await section in group {
+                if let section {
+                    loaded.append(section)
+                }
+            }
+        }
+        sections = targets.compactMap { target in
+            loaded.first { $0.id == target.typeID }
+        }
+    }
+
     /// 作废「与当前站点绑定」的界面状态：换接口 / 换站点后必须整体重来。
     ///
     /// 只改界面状态、不发请求：请求由调用方决定走 `loadHome(force:)`

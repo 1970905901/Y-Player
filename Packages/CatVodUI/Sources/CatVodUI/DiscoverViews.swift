@@ -86,6 +86,43 @@ struct DiscoverFilterChip: View {
     }
 }
 
+/// 横向展示里的一个分区（＝ 一个分类的一页内容）。
+///
+/// 与 `HomeLayout` 的「横向展示」配套：图 1 里每个分区就是「一个分类 + 它的一页海报」。
+struct DiscoverSection: Identifiable, Equatable {
+    /// 分类 ID（用它排回原顺序、也用它做 `>` 的跳转目标）。
+    let id: String
+    /// 分区标题（分类名）。
+    let title: String
+    let items: [VodItem]
+}
+
+/// 分区标题：分类名 + 右侧 `>`（参考图 1）。
+///
+/// `>` 的行为是「选中这个分类并切到**纵向展示**」—— 图 1 里点它，要看的就是那个分类的
+/// 完整列表，而完整列表正是纵向模式（分类 + 筛选 + 网格 + 翻页）。不另造一个「分类详情页」：
+/// 两者要显示的东西完全一样，多一层就多一处会走样的地方。
+struct DiscoverSectionHeader: View {
+    let title: String
+    let onOpen: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.title3.weight(.semibold))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Button(action: onOpen) {
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+    }
+}
+
 /// 海报卡：封面 + 右上角角标 + 居中片名（参考视频的网格单元）。
 struct DiscoverPosterCard: View {
     let item: VodItem

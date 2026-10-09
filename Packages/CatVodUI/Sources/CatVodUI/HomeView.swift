@@ -4,7 +4,9 @@ import SwiftUI
 
 /// 发现页：选站点 → 分类 / 筛选 → 内容 → 进入详情。
 ///
-/// 版式对齐用户提供的参考录屏（`RPReplay_Final1791437934`）：
+/// 版式对齐用户提供的两张参考图（`发现页横向显示.jpg` / `发现页纵向显示.jpg`）：
+/// **横向展示**＝按分类分区、每区一行横滑（图 1）；**纵向展示**＝分类 + 筛选 + 3 列网格（图 2）。
+/// 两种模式的对应关系与历史坑见 ``HomeLayout`` 的注释 —— 注意别按名字猜。
 /// 左上角是**站点切换**（「切换」字形 + 当前站点名，点开贴左的站点面板；⚠️ 站点名里的
 /// 「☁️」是上游名字自带的表情，不是按钮图标），右上角是刷新与搜索；下面依次是横向滚动的分类条、
 /// 逐行筛选胶囊，内容是 3 列海报网格（封面右上角带更新角标、片名居中一行），
@@ -34,6 +36,9 @@ public struct HomeView: View {
     /// 与 `selectedSiteKey` 一起构成「这份内容属于哪个接口」的判断：
     /// 版本对不上就说明接口换过（或宿主刷新过），旧站点/分类/筛选/列表全部作废。
     @State var loadedCatalogRevision = -1
+    /// 横向展示的分区数据（每个分类一页）。只在这个模式下加载，见 `posterSections`。
+    @State var sections: [DiscoverSection] = []
+    @State var isLoadingSections = false
 
     public init(model: AppModel) {
         self.model = model
@@ -148,28 +153,75 @@ public struct HomeView: View {
         } else {
             switch model.homeLayout {
             case .vertical:
-                verticalList
-            case .horizontal:
                 posterGrid
+            case .horizontal:
+                posterSections
             }
             loadMoreFooter
         }
     }
 
-    private var verticalList: some View {
-        LazyVStack(spacing: 12) {
-            ForEach(result.list) { item in
-                NavigationLink {
-                    VodDetailView(model: model, site: selectedSite, vodID: item.vodID)
-                } label: {
-                    VodRow(item: item)
+    /// 横向展示：每个分类一个分区（标题 + `>` + 一行横滑海报），对齐参考图 1。
+    ///
+    /// 数据只在这个模式加载（`.task` 挂在 `ScrollView` 上）：纵向模式不需要它，
+    /// 而它要为每个分区各发一次请求 —— 没必要让只切进来一次的布局也付这份开销。
+    private var posterSections: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                ForEach(sections) { section in
+                    VStack(alignment: .leading, spacing: 10) {
+                        DiscoverSectionHeader(title: section.title) {
+                            openSection(section)
+                        }
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(spacing: 10) {
+                                ForEach(section.items) { item in
+                                    NavigationLink {
+                                        VodDetailView(model: model, site: selectedSite, vodID: item.vodID)
+                                    } label: {
+                                        DiscoverPosterCard(item: item)
+                                            .frame(width: Self.sectionCardWidth)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                        }
+                    }
                 }
-                .buttonStyle(.plain)
+                if sections.isEmpty {
+                    placeholder(isLoadingSections ? "加载中…" : "暂无内容")
+                }
             }
+            .padding(.vertical, 12)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .task(id: sectionLoadKey) {
+            // 站点或接口版本变了：旧分区作废（key 变了 `.task` 会重跑）。
+            sections = []
+            await loadSections()
+        }
     }
+
+    /// 分区数据的「属于哪个接口」标识。
+    ///
+    /// 与 `loadedCatalogRevision` 同一套思路：单靠站点 key 不够 —— js2p 宿主刷新后站点 key 不变、
+    /// 内容却全换了，所以把 `siteCatalogRevision` 也带上。
+    private var sectionLoadKey: String {
+        "\(selectedSiteKey)#\(model.siteCatalogRevision)"
+    }
+
+    /// 分区标题上的 `>`：选中这个分类并切到纵向展示（那个分类的完整列表就是纵向模式）。
+    private func openSection(_ section: DiscoverSection) {
+        selectCategory(section.id)
+        model.homeLayout = .vertical
+    }
+
+    /// 分区里每张海报的宽度：参考图 1 里一屏约看到三张半。
+    static let sectionCardWidth: CGFloat = 112
+
+    /// 横向展示最多取几个分区：接口常有十来个分类，全取等于首屏发十几次请求。
+    /// 参考图第一屏可见的就是三四个分区，所以截前几个。
+    static let sectionCategoryLimit = 5
 
     private var posterGrid: some View {
         LazyVGrid(columns: posterColumns, spacing: 14) {
