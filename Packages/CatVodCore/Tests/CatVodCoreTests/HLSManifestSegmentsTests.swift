@@ -67,7 +67,10 @@ struct HLSManifestSegmentsTests {
         """, baseURL: base)
         #expect(manifest.isMaster)
         #expect(manifest.variants.map(\.bandwidth) == [800_000, 2_400_000])
-        #expect(manifest.variants.map(\.url) == [
+        // 先绑变量再断言：`#expect` 对「map + 多行数组字面量」的宏展开在个别工具链版本上会失败，
+        // 绑成局部 let 之后断言的是普通值，稳。
+        let variantURLs = manifest.variants.map(\.url)
+        #expect(variantURLs == [
             "https://cdn.example/v/movie/low/index.m3u8",
             "https://cdn.example/v/movie/high/index.m3u8",
         ])

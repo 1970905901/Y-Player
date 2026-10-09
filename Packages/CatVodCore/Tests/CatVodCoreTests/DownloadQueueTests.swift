@@ -143,7 +143,9 @@ struct DownloadQueueTests {
             now: base
         )
         #expect(added.map(\.episode) == ["第 3 集", "第 4 集"])
-        #expect(added.allSatisfy { $0.status == .waiting })
+        // 闭包先挪到 `#expect` 外面：宏里带闭包容易展开失败，绑成 Bool 再断言。
+        let allWaiting = added.allSatisfy { $0.status == .waiting }
+        #expect(allWaiting)
     }
 
     @Test("批量加：同一批的时间逐个错开，队列顺序才稳定")

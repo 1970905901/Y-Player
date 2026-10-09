@@ -50,7 +50,9 @@ struct ConfigCoverageTests {
         )
         let ignored = ConfigCoverage.ignored(in: filled)
         #expect(ignored.map(\.key) == ["wallpaper", "logo", "notice"])
-        #expect(ignored.map(\.reason) == [
+        // 先绑变量再断言：`#expect` 里「map + 多行数组字面量」的宏展开在个别工具链版本上会失败。
+        let reasons = ignored.map(\.reason)
+        #expect(reasons == [
             ConfigCoverage.wallpaperReason,
             ConfigCoverage.logoReason,
             ConfigCoverage.noticeReason,
@@ -61,7 +63,9 @@ struct ConfigCoverageTests {
     func flagsIsNoLongerReported() {
         let withFlags = config(flags: ["youku", "qq"])
         #expect(ConfigCoverage.ignored(in: withFlags).isEmpty)
-        #expect(withFlags.validationWarnings.allSatisfy { !$0.contains("`flags`") })
+        // 闭包先挪到 `#expect` 外面：宏里带闭包容易展开失败，绑成 Bool 再断言。
+        let hasFlagsWarning = withFlags.validationWarnings.allSatisfy { !$0.contains("`flags`") }
+        #expect(hasFlagsWarning)
     }
 
     @Test("字段存在但是空（`[]` / `\"\"`）：不算「填了」，不报")
