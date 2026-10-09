@@ -1,4 +1,5 @@
 @testable import CatVodCore
+import Foundation
 import Testing
 
 @Suite("下载队列：并发 / 进度推进 / 失败重试 / 批量加任务")

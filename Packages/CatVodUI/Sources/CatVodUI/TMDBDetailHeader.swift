@@ -118,7 +118,11 @@ struct TMDBDetailHeader: View {
                 return
             }
             metadata = found
-            let backdrops = (try? await client.backdrops(kind: found.kind, id: found.id)) ?? []
+            // 拆成两句：SwiftFormat 的 `hoistAwait` 不接受 `await` 嵌在括号里
+            // （`(try? await f()) ?? []` 正是它要改的形态）。分成两句后 `await` 落在调用表达式开头，
+            // 与上一行 `try await client.search(...)` 同一形态。
+            let fetched = try? await client.backdrops(kind: found.kind, id: found.id)
+            let backdrops = fetched ?? []
             posterSet = TMDBPosterSet(
                 metadata: found,
                 backdrops: backdrops,
