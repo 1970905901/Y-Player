@@ -73,7 +73,7 @@ struct AggregateSearchTests {
             hits: hits,
             names: ["a": "甲站", "c": "丙站"]
         )
-        #expect(sections.map(\.siteKey) == ["a", "c"])
+        #expect(sections.map(\.site.key) == ["a", "c"])
         #expect(sections.map(\.siteName) == ["甲站", "丙站"])
         #expect(sections.map(\.count) == [1, 1])
     }
@@ -83,7 +83,7 @@ struct AggregateSearchTests {
         let sites = [site(key: "a"), site(key: "b"), site(key: "c")]
         // b 搜到了但是空的、c 整个没进 hits（= 请求失败被跳过）。
         let hits = ["a": [VodItem(vodID: "1")], "b": []]
-        #expect(AggregateSearchRules.sections(sites: sites, hits: hits).map(\.siteKey) == ["a"])
+        #expect(AggregateSearchRules.sections(sites: sites, hits: hits).map(\.site.key) == ["a"])
     }
 
     @Test("展示名缺失时回落站点原名；名字也空就回落 key")
