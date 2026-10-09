@@ -44,69 +44,59 @@ struct TMDBDetailHeader: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            heroImage
-            // 底部渐变压暗：图与页面的黑底无缝衔接，标题直接叠在图上。
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0),
-                    .init(color: .black.opacity(0.65), location: 0.55),
-                    .init(color: .black, location: 1),
-                ],
-                startPoint: .center,
-                endPoint: .bottom
-            )
-            VStack(spacing: 6) {
-                Text(displayTitle)
-                    .font(.title2.bold())
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                if !lineName.isEmpty {
-                    Text(lineName)
-                        .font(.footnote)
-                        .foregroundStyle(.white.opacity(0.85))
+        // GeometryReader + 显式宽高：先前把 AsyncImage 交给 frame(maxHeight: .infinity)
+        // 时它塌成了 0 高（顶部只剩一块黑），这里给死宽高，不给它自由发挥的机会。
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                // 底：深灰。异步图没来时也有形状（与骨架同色），不会是一块纯黑。
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.2))
+                if let url = posterURL, let imageURL = URL(string: url) {
+                    AsyncImage(url: imageURL) { phase in
+                        if case let .success(image) = phase {
+                            image.resizable().scaledToFill()
+                        }
+                    }
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .clipped()
                 }
-                if !noticeText.isEmpty {
-                    Text(noticeText)
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.6))
+                // 底部渐变压暗：图与页面的黑底无缝衔接，标题直接叠在图上。
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .black.opacity(0.65), location: 0.55),
+                        .init(color: .black, location: 1),
+                    ],
+                    startPoint: .center,
+                    endPoint: .bottom
+                )
+                VStack(spacing: 6) {
+                    Text(displayTitle)
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
+                    if !lineName.isEmpty {
+                        Text(lineName)
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                    if !noticeText.isEmpty {
+                        Text(noticeText)
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.6))
+                            .multilineTextAlignment(.center)
+                    }
                 }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 16)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 16)
         }
         .frame(height: Self.heroHeight)
-        .frame(maxWidth: .infinity)
         .clipped()
         .task(id: loadKey) {
             await load()
             await rotate()
         }
-    }
-
-    /// 大图：拿到哪张显示哪张（TMDB 取图集 → 站点海报兜底）；没有就是深灰底。
-    @ViewBuilder
-    private var heroImage: some View {
-        if let url = posterURL, let imageURL = URL(string: url) {
-            AsyncImage(url: imageURL) { phase in
-                switch phase {
-                case let .success(image):
-                    image.resizable().scaledToFill()
-                default:
-                    skeleton
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            skeleton
-        }
-    }
-
-    /// 深灰占位：加载中与「一张图都没有」都用它 —— 形状先立住，不跳版。
-    private var skeleton: some View {
-        Rectangle()
-            .fill(Color.secondary.opacity(0.2))
     }
 
     /// 现在该显示哪张：TMDB 图集优先，其次站点海报。
