@@ -93,7 +93,10 @@ struct GRDBDownloadTaskStoreTests {
     @Test("往返：写一条读回来逐字段相等（含 header 里的中文）")
     func roundTrip() async throws {
         let store = try makeStore()
-        let item = task(status: .running, received: 300, expected: 1000)
+        // 往返用 `.finished` 而不是 `.running`：`running` 会被**刻意**降级成 `waiting`
+        // （见 `runningIsRecoveredAsWaiting`：重启后没有任务真在跑），
+        // 拿它做「逐字段相等」的样本必然对不上。这里要验的是**其余字段无损**。
+        let item = task(status: .finished, received: 300, expected: 1000)
         await store.save(item)
 
         let loaded = await store.all()
