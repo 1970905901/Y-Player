@@ -6,12 +6,12 @@ options:
   deploymentTarget:
     iOS: "15.0"
     macOS: "13.0"
-  xcodeVersion: "16.4"
+  xcodeVersion: "26.6"
   minimumXcodeGenVersion: "2.38.0"
 
 attributes:
   ORGANIZATIONNAME: YPlayer
-  LastUpgradeCheck: "1640"
+  LastUpgradeCheck: "2660"
 
 settings:
   base:

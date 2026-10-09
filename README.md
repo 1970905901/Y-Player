@@ -35,7 +35,7 @@ ThirdParty/           原生依赖锁定与许可证清单
 
 ## 环境要求
 
-- **Xcode 16.4**（本仓库与 CI 使用同一版本）
+- **Xcode 26.6**（本仓库与 CI 使用同一版本）
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen)：`brew install xcodegen`
 - SwiftLint / SwiftFormat（CI 镜像已预装）
 - 目标平台：iOS/iPadOS 15.0、macOS 13.0

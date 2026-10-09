@@ -13,7 +13,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../CatVodCore"),
-        // GRDB 7.11.1（MIT）。要求 Swift 6.1 / Xcode 16.3+，与本仓库基线（Xcode 16.4）一致。
+        // GRDB 7.11.1（MIT）。要求 Swift 6.1 / Xcode 16.3+，与本仓库基线（Xcode 26.6）一致。
         .package(url: "https://github.com/groue/GRDB.swift.git", exact: "7.11.1"),
     ],
     targets: [

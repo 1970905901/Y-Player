@@ -23,14 +23,14 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  XCODE_VERSION: "16.4"
+  XCODE_VERSION: "26.6"
   SCHEME_IOS: YPlayer-iOS
   TEST_TARGET: YPlayer-iOSTests
 
 jobs:
   simulator-tests:
     name: iOS simulator tests
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode

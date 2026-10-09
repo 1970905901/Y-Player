@@ -12,14 +12,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  XCODE_VERSION: "16.4"
+  XCODE_VERSION: "26.6"
   SCHEME_IOS: YPlayer-iOS
   SCHEME_MACOS: YPlayer-macOS
 
 jobs:
   lint:
     name: Lint (SwiftLint / SwiftFormat)
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
@@ -46,7 +46,7 @@ jobs:
 
   core-tests:
     name: SwiftPM tests
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode
@@ -80,7 +80,7 @@ jobs:
 
   build:
     name: Build apps (unsigned)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: [core-tests]
     steps:
       - uses: actions/checkout@v4
@@ -125,7 +125,7 @@ jobs:
   # 而在 Windows 上用 Sideloadly / AltStore 侧载不需要 Mac（见 docs/构建与分发.md 第四节）。
   ipa:
     name: Unsigned IPA (sideload artifact)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: [core-tests]
     steps:
       - uses: actions/checkout@v4
@@ -164,7 +164,7 @@ jobs:
   release:
     name: Release (unsigned ipa / mac app)
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: macos-15
+    runs-on: macos-26
     needs: [build]
     permissions:
       contents: write
