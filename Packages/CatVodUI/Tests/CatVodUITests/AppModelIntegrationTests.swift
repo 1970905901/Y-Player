@@ -228,7 +228,8 @@ struct AppModelIntegrationTests {
         // 告警里要说清「不支持多配置入口」——否则用户只会看到「没有可用站点」
         let warned = fixture.model.warnings.contains { $0.contains("多配置入口") }
         #expect(warned)
-        // 没有自己去把子配置加载进来（状态仍是这份配置）
-        #expect(fixture.model.state.loadedSource?.config.urls.count == 2)
+        // 没有自己去把子配置加载进来（状态仍是这份配置）。
+        // 注意：原始数组就是 3 条（含那条空白）—— 过滤只发生在 `configSubURLs` 那一层。
+        #expect(fixture.model.state.loadedSource?.config.urls.count == 3)
     }
 }
