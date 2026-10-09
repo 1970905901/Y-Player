@@ -11,6 +11,7 @@ import SwiftUI
 /// 「☁️」是上游名字自带的表情，不是按钮图标），右上角是刷新与搜索；下面依次是横向滚动的分类条、
 /// 逐行筛选胶囊，内容是 3 列海报网格（封面右上角带更新角标、片名居中一行），
 /// 滚动到底部**自动接着加载**下一页（参考版式里没有分页按钮）。
+/// 分类条 / 筛选胶囊 / 网格同处**一个滚动区**：上滑时连在一起滚出屏幕（整屏滑动）。
 ///
 /// 站点来源：CMS（`type 0/1/2/4`）与 CatSpider HTTP（`type 3`，js2p 宿主）都能浏览，
 /// 由 `AppModel.makeSiteClient()` 按类型分发；JS 源的站点清单来自内嵌 Node 宿主（macOS 进程 / iOS libnode，见 M16P4）。
@@ -128,6 +129,22 @@ public struct HomeView: View {
             if browsableSites.isEmpty {
                 placeholder(emptyHint)
             } else {
+                contentScroll
+            }
+            if !errorText.isEmpty {
+                errorBanner
+            }
+        }
+    }
+
+    /// 内容区：横向展示是 3 列海报网格（参考视频的版式），纵向展示是内容行（M2 的原观感）。
+    /// 两种展示方式共用同一份数据与同一条翻页路径，只有排布不同。
+    ///
+    /// 分类条 / 筛选行 / 列表**同处一个滚动区**：上滑时三块一起滚出屏幕（整屏滑动，
+    /// 「封面列表和分组分类连着」）。
+    private var contentScroll: some View {
+        ScrollView {
+            VStack(spacing: 0) {
                 if !result.categories.isEmpty {
                     DiscoverCategoryStrip(
                         categories: result.categories,
@@ -140,19 +157,8 @@ public struct HomeView: View {
                         applyFilter(row, value: value)
                     }
                 }
-                contentScroll
+                contentBody
             }
-            if !errorText.isEmpty {
-                errorBanner
-            }
-        }
-    }
-
-    /// 内容区：横向展示是 3 列海报网格（参考视频的版式），纵向展示是内容行（M2 的原观感）。
-    /// 两种展示方式共用同一份数据与同一条翻页路径，只有排布不同。
-    private var contentScroll: some View {
-        ScrollView {
-            contentBody
         }
         // 「手指碰到屏幕」和「向上滑」是两个不同信号，各挂一个**旁听**手势：
         // 前者用零时长长按（成功即触屏），后者用零距离拖动（读位移方向）。
