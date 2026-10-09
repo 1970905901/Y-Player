@@ -88,13 +88,27 @@ struct SitePlayEpisodeView: View {
                 ProgressView("正在向站点请求播放地址…")
                     .navigationTitle(episode.displayName)
             } else {
-                UnsupportedPlaybackView(reason: errorText)
+                UnsupportedPlaybackView(
+                    reason: errorText,
+                    onRetry: { Task { await retryLoad() } },
+                    hint: Self.hostHint
+                )
             }
         }
         .immersiveTabBarPage()
         .task {
             await loadResource()
         }
+    }
+
+    /// 宿主类失败时的排查指引（宿主就在本机，日志与重启入口都在「接口管理」里）。
+    static let hostHint = "宿主细节在「设置 → 源地址 → Node 宿主 → 查看宿主输出」；宿主卡住可以在那里重启，回来点「重试」。"
+
+    /// 重试一次换地址（M16P8）：清掉上一次的错误与结论，再走同一条路。
+    private func retryLoad() async {
+        errorText = ""
+        parseFallback = nil
+        await loadResource()
     }
 
     /// 调站点的 play 接口并构造可播放资源。

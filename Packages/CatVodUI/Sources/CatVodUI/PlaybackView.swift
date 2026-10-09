@@ -196,6 +196,9 @@ public struct PlaybackView: View {
                         Text(errorText)
                             .font(.footnote)
                             .foregroundStyle(.red)
+                        Button("重试") {
+                            Task { await retryPlayback() }
+                        }
                     }
                 }
             }
@@ -752,6 +755,16 @@ extension PlaybackView {
             onDanmaku?(DanmakuRequest(name: danmaku.name, episode: playlist.episodeName(at: index)))
         }
         await loadActiveResource()
+    }
+
+    /// 重试一次播放（M16P8）：引擎已经建起来就重新 load，没建起来就整条 `start()` 重走。
+    func retryPlayback() async {
+        errorText = ""
+        if engine == nil {
+            await start()
+        } else {
+            await loadActiveResource()
+        }
     }
 
     /// 让当前引擎加载 `activeResource`（换集走这里；首播走 `start()`）。

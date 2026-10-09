@@ -316,9 +316,17 @@ extension VodDetailView {
 @MainActor
 public struct UnsupportedPlaybackView: View {
     let reason: String
+    /// 重试动作：给了就显示「重试」按钮（M16P8）。
+    ///
+    /// 只给**瞬态**失败挂它（宿主 / 网络 / 解析失败）；「站点类型不支持」这种再试也没用的不挂。
+    let onRetry: (() -> Void)?
+    /// 补充提示（例如宿主日志与重启入口在哪）。
+    let hint: String?
 
-    public init(reason: String) {
+    public init(reason: String, onRetry: (() -> Void)? = nil, hint: String? = nil) {
         self.reason = reason
+        self.onRetry = onRetry
+        self.hint = hint
     }
 
     public var body: some View {
@@ -329,9 +337,18 @@ public struct UnsupportedPlaybackView: View {
                 Text(reason)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                if let onRetry {
+                    Button("重试") {
+                        onRetry()
+                    }
+                }
             }
-            Section("相关计划") {
-                Text("M5：解析链（parse/jx、Web 嗅探、聚合解析）")
+            if let hint {
+                Section("排查") {
+                    Text(hint)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .adaptiveListStyle()

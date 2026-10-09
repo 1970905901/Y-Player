@@ -63,7 +63,11 @@ struct ParsePlaybackView: View {
                 }
                 .navigationTitle(episode.displayName)
             } else {
-                UnsupportedPlaybackView(reason: errorText)
+                UnsupportedPlaybackView(
+                    reason: errorText,
+                    onRetry: { Task { await retryResolve() } },
+                    hint: "解析依赖本机宿主与网络，瞬态失败值得再试一次；宿主细节看「设置 → 源地址 → Node 宿主 → 查看宿主输出」。"
+                )
             }
         }
         .immersiveTabBarPage()
@@ -77,6 +81,14 @@ struct ParsePlaybackView: View {
             ))
             await resolve()
         }
+    }
+
+    /// 重试一次解析（M16P8）：把上一次的结论与错误清干净，再走同一条通道。
+    private func retryResolve() async {
+        errorText = ""
+        jsonFailure = ""
+        webFailure = ""
+        await resolve()
     }
 
     /// 解析中的提示文案：走 Web 嗅探时要说清「在等页面」而不是笼统的「正在解析」。
