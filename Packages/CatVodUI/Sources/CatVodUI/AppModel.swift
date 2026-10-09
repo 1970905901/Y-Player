@@ -34,6 +34,7 @@ public final class AppModel: ObservableObject {
         static let autoPlayFirstEpisode = "yplayer.autoPlayFirstEpisode"
         static let danmakuAPI = "yplayer.danmakuAPI"
         static let danmakuDisplay = "yplayer.danmakuDisplay"
+        static let subtitleDisplay = "yplayer.subtitleDisplay"
         static let engineLogEnabled = "yplayer.engineLogEnabled"
         static let searchHistory = "yplayer.searchHistory"
         static let liveSource = "yplayer.liveSource"
@@ -154,6 +155,18 @@ public final class AppModel: ObservableObject {
     @Published public var danmakuDisplay: DanmakuDisplayConfig {
         didSet {
             defaults.set(danmakuDisplay.persistenceValue, forKey: StorageKey.danmakuDisplay)
+        }
+    }
+
+    // MARK: - 字幕显示（设置 → 播放 → 字幕显示）
+
+    /// 字幕显示设置：显示开关 / 字号 / 位置 / 背景（M09g）。
+    ///
+    /// 与弹幕显示同一套结构、两把键：字幕与弹幕的显示参数完全独立，
+    /// 改一个不该动到另一个。
+    @Published public var subtitleDisplay: SubtitleDisplayConfig {
+        didSet {
+            defaults.set(subtitleDisplay.persistenceValue, forKey: StorageKey.subtitleDisplay)
         }
     }
 
@@ -512,6 +525,8 @@ public final class AppModel: ObservableObject {
         danmakuAPI = DanmakuAPIConfig.decode(defaults.string(forKey: StorageKey.danmakuAPI))
         // 弹幕显示：默认值 = M08h 的行为（字号 0.8 / 不透明 / 中速 / 全屏）。
         danmakuDisplay = DanmakuDisplayConfig.decode(defaults.string(forKey: StorageKey.danmakuDisplay))
+        // 字幕显示：默认值 = M09f 的行为（显示 / 基准字号 / 贴底 / 半透明底）。
+        subtitleDisplay = SubtitleDisplayConfig.decode(defaults.string(forKey: StorageKey.subtitleDisplay))
 
         // 搜索历史：默认空（搜索页据此决定显示历史胶囊还是「还没有搜索记录」）。
         searchHistory = SearchHistory.decode(defaults.string(forKey: StorageKey.searchHistory) ?? "")

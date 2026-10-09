@@ -26,6 +26,11 @@ struct SubtitleDisplayStyle: Equatable {
     var bottomInset: Double = 16
     /// 整条不透明度。
     var opacity: Double = 1
+    /// 字号倍率（设置页给的用户偏好，默认 1 = 不额外缩放）。
+    ///
+    /// 与「按画面高度缩放」分开：那一个是**为了不同设备上观感一致**的必要修正，
+    /// 这一个是用户自己的偏好 —— 两者相乘，各自的默认值都不影响对方。
+    var fontScale: Double = 1
     /// 文字背后那层深色底的不透明度。0 = 不要底（只靠白字加深色阴影）。
     ///
     /// 为什么默认给一层底而不是纯描边：字幕常常压在人脸或亮色画面上，
@@ -42,7 +47,8 @@ struct SubtitleDisplayStyle: Equatable {
     /// 只按**高度**缩放：宽度不参与字号计算 —— 换行与左右留白是 `Text` 与 `.padding` 的事，
     /// 硬把宽度塞进字号换算反而会在窄窗口上把字压小。
     func resolved(height: Double) -> SubtitleResolvedStyle {
-        let scale = min(max(height / max(referenceHeight, 1), minFontScale), maxFontScale)
+        let heightScale = min(max(height / max(referenceHeight, 1), minFontScale), maxFontScale)
+        let scale = heightScale * fontScale
         return SubtitleResolvedStyle(
             fontSize: baseFontSize * scale,
             lineSpacing: lineSpacing * scale,

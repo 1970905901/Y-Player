@@ -163,12 +163,14 @@ public struct PlaybackView: View {
                         )
                         .clipped()
                     }
-                    // 字幕层（M09f）：与弹幕同一套 —— 没有 cue 时整层不存在。
+                    // 字幕层（M09f）：与弹幕同一套 —— 没有 cue、或用户关掉了字幕时，整层不存在。
                     // 放在弹幕**之后**（= 画在弹幕上层）：字幕是要读的，不该被弹幕盖住。
-                    if let subtitleTimeline, !subtitleTimeline.isEmpty {
+                    // 显示设置不参与时间轴的构建（没有几何烘进去），所以改字号 / 位置不用重排 ——
+                    // 这点与弹幕相反（弹幕的字号会影响计划里量出来的文本宽度）。
+                    if model.subtitleDisplay.isVisible, let subtitleTimeline, !subtitleTimeline.isEmpty {
                         SubtitleOverlay(
                             timeline: subtitleTimeline,
-                            style: Self.subtitleStyle.resolved(height: Double(proxy.size.height)),
+                            style: model.subtitleDisplay.style.resolved(height: Double(proxy.size.height)),
                             clock: playbackClock
                         )
                         .clipped()
@@ -192,10 +194,8 @@ public struct PlaybackView: View {
 
     // MARK: - 覆盖层（弹幕 M08h / 字幕 M09f）
 
-    /// 字幕显示参数。M09f 用默认值；设置页（字号 / 位置 / 背景）是下一步。
-    private static let subtitleStyle = SubtitleDisplayStyle()
-
-    /// 字幕时间轴的重排键：**只看 cue 本身**（不像弹幕还要带尺寸 —— 字幕没有几何烘进时间轴）。
+    /// 字幕时间轴的重排键：**只看 cue 本身**（不像弹幕还要带尺寸与显示设置 —— 字幕没有几何
+    /// 烘进时间轴，字号与位置只在画的时候用）。
     ///
     /// 与 `danmakuPlanKey` 同一套理由：用「条数 + 首末开始时间」代表整份数组，
     /// 每帧都要算的键不该是 O(n)。

@@ -164,6 +164,11 @@ public struct SettingsView: View {
                 InfoRow(title: "弹幕显示", value: danmakuDisplaySummary)
             }
             NavigationLink {
+                SettingsSubtitleDisplayView(model: model)
+            } label: {
+                InfoRow(title: "字幕显示", value: subtitleDisplaySummary)
+            }
+            NavigationLink {
                 HLSAdRulesView(model: model)
             } label: {
                 InfoRow(title: "广告清理规则", value: adRuleSummary)
@@ -175,6 +180,15 @@ public struct SettingsView: View {
     private var danmakuDisplaySummary: String {
         let display = model.danmakuDisplay
         return "\(String(format: "%.1f×", display.fontScale)) · \(display.speed.title) · \(display.area.title)"
+    }
+
+    /// 字幕显示那一行的摘要：关掉时直说「已关闭」，否则给出三档当前值。
+    private var subtitleDisplaySummary: String {
+        let display = model.subtitleDisplay
+        guard display.isVisible else {
+            return "已关闭"
+        }
+        return "\(String(format: "%.1f×", display.fontScale)) · \(display.position.title) · \(display.background.title)"
     }
 
     /// 广告清理那一行的摘要：内置 + 接口各几条、当前几条生效。
