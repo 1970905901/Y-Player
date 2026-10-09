@@ -124,11 +124,10 @@ public struct DownloadRunner: Sendable {
     }
 
     /// 一次执行写下的结果。
-    private struct Written {
-        var received: Int64
-        var expected: Int64
-        var fileURL: URL
-    }
+    // `Written` 曾是与 `FetchDone` **字段完全相同**的孪生结构（M10 写下时两处各自定义）。
+    // 结果 `download` 的 HLS 分支返回 `Written`、声明却是 `FetchDone` —— 编译不过，
+    // 而 CatVodSource 直到 2026-10-09 才第一次被编译（CI 的 build 作业一直 needs core-tests 而 skipped）。
+    // 合并成一个 `FetchDone`，两处都用它：字段一样的两个类型，迟早会对不上。
 
     private func fetch(_ url: String, task: DownloadTask) async throws -> Fetch {
         // `URL(string:)` 对任意文本都可能返回非 nil，必须自己查 scheme/host（M06c 踩过一次）。
@@ -168,7 +167,7 @@ public struct DownloadRunner: Sendable {
         to fileURL: URL,
         task: DownloadTask,
         onProgress: (@Sendable (Int64, Int64) -> Void)?
-    ) async throws -> Written {
+    ) async throws -> FetchDone {
         var received: Int64 = 0
         var expected: Int64 = 0
         var expectedKnown = true
@@ -190,7 +189,7 @@ public struct DownloadRunner: Sendable {
             throw error
         }
         try handle.close()
-        return Written(received: received, expected: expectedKnown ? expected : 0, fileURL: fileURL)
+        return FetchDone(received: received, expected: expectedKnown ? expected : 0, fileURL: fileURL)
     }
 
     /// 建一个空文件并返回位置。
