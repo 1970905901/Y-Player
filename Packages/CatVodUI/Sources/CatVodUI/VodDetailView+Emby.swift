@@ -44,10 +44,19 @@ extension VodDetailView {
 
     /// 图标行（M11 参考图：🔍 聚合搜索 / ♡ 收藏 / ⋯ 更多）。
     ///
-    /// 🔍 的落点（多站点聚合搜索海报墙）是独立的一片，**先不放空按钮**：
-    /// 按下去没反应比没有这个按钮更糟。♡ 与 ⋯ 都接真实动作。
+    /// 🔍 的落点是 ``AggregateSearchView``（M11 片 5）：按片名并发搜各站点、按站点分组的海报墙。
+    /// ♡ 与 ⋯ 各自接真实动作。
     var iconRow: some View {
         HStack(spacing: 64) {
+            NavigationLink {
+                AggregateSearchView(model: model, keyword: vod?.vodName ?? "")
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.title3)
+                    .foregroundStyle(.primary)
+            }
+            .buttonStyle(.plain)
+
             Button {
                 Task { await toggleFavorite() }
             } label: {
