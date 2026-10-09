@@ -215,6 +215,39 @@ extension VodDetailView {
         return true
     }
 
+    /// 向站点 / 宿主换一集的播放地址（与 ``SitePlayEpisodeView`` 同一条路）。
+    ///
+    /// 与那条路的**唯一区别**：这里不处理「站点说还要再解析一次」—— 那种集播放页不自己换，
+    /// 返回 nil 让界面提示回详情页（解析链要换页面、要等 Web 嗅探，不适合在播放页里悄悄切）。
+    func siteResource(site: Site, episode: PlaylistParser.Episode) async -> MediaResource? {
+        guard let result = try? await model.makeSiteClient().play(
+            site: site,
+            flag: currentLine?.name ?? "",
+            id: episode.url
+        ) else {
+            return nil
+        }
+        model.notePlaybackInfo(from: result)
+        await model.loadSubtitles(SubtitleRequest(
+            sources: result.subs,
+            headers: HTTPHeaderMerger.merge([site.header, result.header])
+        ))
+        guard let playURL = result.primaryPlaybackURL,
+              !playURL.isEmpty,
+              !result.requiresParsing
+        else {
+            return nil
+        }
+        return model.playbackResource(MediaResource(
+            url: playURL,
+            headers: HTTPHeaderMerger.merge([site.header, result.header]),
+            startPosition: 0,
+            format: result.format,
+            title: episode.displayName,
+            artwork: result.artwork
+        ))
+    }
+
     /// 该集是否应该交给解析链（M5b/M5c）。
     ///
     /// 判定条件与 ``PlayRequestBuilder`` 一致：`type 0/1/2/4` 的站点、地址非空、且 `parse/jx = 1`
