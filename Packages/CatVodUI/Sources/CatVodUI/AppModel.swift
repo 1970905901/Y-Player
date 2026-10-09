@@ -446,6 +446,12 @@ public final class AppModel: ObservableObject {
     /// 站点传输的缓存（接口换过才重建，见 ``AppModel/transportForConfiguration()``）。
     var cachedTransport: HTTPTransport?
 
+    /// 下载任务的落地目录（离线下载；默认在 Application Support 下，见 ``AppModel/downloadDirectory``
+    /// 的静态默认）。做成实例属性是为了**测试能注入临时目录** —— 与 `cacheDirectory` 同一个理由。
+    let downloadDirectory: URL
+    /// 测试注入的下载传输（`nil` = 用 ``AppModel/transportForConfiguration()``）。
+    let downloadTransportOverride: HTTPTransport?
+
     /// 已载入的弹幕行（M08c）：渲染层要用的原始数据（搜索与下载在 `CatVodSource.DanmakuService`）。
     @Published public internal(set) var danmakuLines: [DanmakuLine] = []
 
@@ -459,6 +465,20 @@ public final class AppModel: ObservableObject {
 
     /// 播放页显示的「字幕：源 · N 条」状态行。
     @Published public internal(set) var subtitleStatus: SubtitleStatus = .idle
+
+    // MARK: - 离线下载（M10e）
+
+    /// 下载任务清单。
+    ///
+    /// 是**库的镜像**：任何写入都先落库再刷新（与收藏 / 播放进度同一套），
+    /// 这样界面读到的永远是「库里的样子」，不会出现「界面上有、重启就没了」。
+    @Published public internal(set) var downloadTasks: [DownloadTask] = []
+
+    /// 队列驱动是否在跑（界面据此显示「正在下载」）。
+    @Published public internal(set) var isDownloading = false
+
+    /// 下载任务存储（GRDB；打开失败时降级为内存实现，与进度 / 收藏同一套）。
+    public let downloadStore: DownloadTaskStore
 
     // MARK: - 播放信息（解析来源 / 描述）
 
@@ -480,9 +500,16 @@ public final class AppModel: ObservableObject {
     /// 这个是「刚刚发生了什么」，前者常驻、后者跟着清理结果变。
     @Published public internal(set) var adSkipNotice: String = ""
 
-    public init(cacheDirectory: URL? = nil, defaults: UserDefaults = .standard) {
+    public init(
+        cacheDirectory: URL? = nil,
+        defaults: UserDefaults = .standard,
+        downloadDirectory: URL? = nil,
+        downloadTransport: HTTPTransport? = nil
+    ) {
         let base = cacheDirectory ?? Self.defaultCacheDirectory()
         self.cacheDirectory = base
+        self.downloadDirectory = downloadDirectory ?? Self.downloadDirectory
+        downloadTransportOverride = downloadTransport
         self.defaults = defaults
         sessionTransport = URLSessionTransport()
         // 存储：优先 GRDB 落库（M08b）；打开失败退回内存实现并如实说明（不许静默）。
@@ -492,9 +519,11 @@ public final class AppModel: ObservableObject {
         if let storage {
             progressStore = GRDBPlaybackProgressStore(database: storage)
             favoriteStore = GRDBFavoriteStore(database: storage)
+            downloadStore = GRDBDownloadTaskStore(database: storage)
         } else {
             progressStore = InMemoryPlaybackProgressStore()
             favoriteStore = InMemoryFavoriteStore()
+            downloadStore = InMemoryDownloadTaskStore()
             storageNotice = "打开本地数据库失败：本次运行的收藏与播放进度只存在内存里，重启即丢。"
         }
 

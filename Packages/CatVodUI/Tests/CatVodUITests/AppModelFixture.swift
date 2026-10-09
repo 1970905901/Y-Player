@@ -1,4 +1,5 @@
 @testable import CatVodCore
+import CatVodNet
 @testable import CatVodUI
 import Foundation
 import Testing
@@ -19,18 +20,32 @@ final class AppModelFixture {
     /// 临时目录（缓存 / 数据库都在这里）。
     let directory: URL
 
-    init() throws {
+    init(downloadTransport: HTTPTransport? = nil) throws {
         suiteName = "yplayer-tests-\(UUID().uuidString)"
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(suiteName, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let defaults = try #require(UserDefaults(suiteName: suiteName))
-        model = AppModel(cacheDirectory: directory, defaults: defaults)
+        model = AppModel(
+            cacheDirectory: directory,
+            defaults: defaults,
+            downloadDirectory: Self.downloadDirectory(in: directory),
+            downloadTransport: downloadTransport
+        )
+    }
+
+    /// 下载目录放在夹具的临时目录里：测试之间不串味，也不会写进真机的 Application Support。
+    static func downloadDirectory(in directory: URL) -> URL {
+        directory.appendingPathComponent("Downloads", isDirectory: true)
     }
 
     /// 用**同一份存档**再起一个模型 —— 用来验「写进去的偏好，重开还在」。
     func reopenedModel() throws -> AppModel {
-        try AppModel(cacheDirectory: directory, defaults: #require(UserDefaults(suiteName: suiteName)))
+        try AppModel(
+            cacheDirectory: directory,
+            defaults: #require(UserDefaults(suiteName: suiteName)),
+            downloadDirectory: Self.downloadDirectory(in: directory)
+        )
     }
 
     /// 载入一份内联配置（不联网）。默认给一条能出分组的站点。
