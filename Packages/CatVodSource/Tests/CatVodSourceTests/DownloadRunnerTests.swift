@@ -5,7 +5,7 @@ import Foundation
 import Testing
 
 /// 按地址回内容的假传输：记录每次请求，用来断言「每一片都带了同一套 header」。
-private actor StubTransport: HTTPTransport {
+private actor DownloadStubTransport: HTTPTransport {
     private let responses: [String: HTTPResponse]
     private var requests: [HTTPRequest] = []
 
@@ -67,7 +67,7 @@ struct DownloadRunnerTests {
         let directory = try makeDirectory("direct")
         let url = "https://cdn.example/movie.mp4"
         let payload = String(repeating: "A", count: 512)
-        let transport = StubTransport([url: HTTPResponse(
+        let transport = DownloadStubTransport([url: HTTPResponse(
             status: 200,
             headers: ["Content-Length": "512"],
             body: payload.data(using: .utf8) ?? Data()
@@ -90,7 +90,7 @@ struct DownloadRunnerTests {
     func hlsConcatenatesSegments() async throws {
         let directory = try makeDirectory("hls")
         let index = "https://cdn.example/v/index.m3u8"
-        let transport = StubTransport([
+        let transport = DownloadStubTransport([
             index: playlist("#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-2.ts\n#EXT-X-ENDLIST"),
             "https://cdn.example/v/seg-1.ts": segment("AAA"),
             "https://cdn.example/v/seg-2.ts": segment("BBBB"),
@@ -118,7 +118,7 @@ struct DownloadRunnerTests {
     func fmp4UsesMP4Suffix() async throws {
         let directory = try makeDirectory("fmp4")
         let index = "https://cdn.example/v/index.m3u8"
-        let transport = StubTransport([
+        let transport = DownloadStubTransport([
             index: playlist("#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:4,\nseg-1.m4s"),
             "https://cdn.example/v/init.mp4": segment("INIT"),
             "https://cdn.example/v/seg-1.m4s": segment("DATA"),
@@ -140,7 +140,7 @@ struct DownloadRunnerTests {
     func followsBestVariant() async throws {
         let directory = try makeDirectory("master")
         let index = "https://cdn.example/v/index.m3u8"
-        let transport = StubTransport([
+        let transport = DownloadStubTransport([
             index: playlist("""
             #EXT-X-STREAM-INF:BANDWIDTH=800000
             low.m3u8
@@ -165,7 +165,7 @@ struct DownloadRunnerTests {
     func refusesEncrypted() async throws {
         let directory = try makeDirectory("encrypted")
         let index = "https://cdn.example/v/index.m3u8"
-        let transport = StubTransport([
+        let transport = DownloadStubTransport([
             index: playlist("#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n#EXTINF:4,\nseg.ts"),
         ])
         let runner = DownloadRunner(transport: transport, directory: directory)
@@ -181,7 +181,7 @@ struct DownloadRunnerTests {
     func removesPartialFileOnFailure() async throws {
         let directory = try makeDirectory("failure")
         let index = "https://cdn.example/v/index.m3u8"
-        let transport = StubTransport([
+        let transport = DownloadStubTransport([
             index: playlist("#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-missing.ts"),
             "https://cdn.example/v/seg-1.ts": segment("AAA"),
         ])
@@ -199,7 +199,7 @@ struct DownloadRunnerTests {
     func fileNameIncludesSiteKey() async throws {
         let directory = try makeDirectory("naming")
         let url = "https://cdn.example/movie.mp4"
-        let transport = StubTransport([url: HTTPResponse(status: 200, body: Data([0x1]))])
+        let transport = DownloadStubTransport([url: HTTPResponse(status: 200, body: Data([0x1]))])
         let runner = DownloadRunner(transport: transport, directory: directory)
 
         let outcome = await runner.run(makeTask(url))
