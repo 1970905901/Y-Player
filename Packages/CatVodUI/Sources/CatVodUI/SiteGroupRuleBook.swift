@@ -14,6 +14,21 @@ struct SiteGroupRuleSettings: Codable, Sendable, Equatable {
     var disabledIDs: [String] = []
     /// 用户自建规则（`source` 会被当成 user）。
     var userRules: [GroupRule] = []
+
+    enum CodingKeys: String, CodingKey {
+        case disabledIDs
+        case userRules
+    }
+}
+
+extension SiteGroupRuleSettings {
+    /// 宽容解码：**缺字段按空表**（老版本 / 手改过的存档可能只有一个键）——
+    /// 整包判死会把别的桶一起丢掉；类型不对仍会抛，由 `decode` 的「坏数据当空」兜底。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        disabledIDs = try container.decodeIfPresent([String].self, forKey: .disabledIDs) ?? []
+        userRules = try container.decodeIfPresent([GroupRule].self, forKey: .userRules) ?? []
+    }
 }
 
 /// 规则设置的存档（与界面无关的纯数据变换）。

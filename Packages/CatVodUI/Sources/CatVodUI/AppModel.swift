@@ -508,11 +508,15 @@ public final class AppModel: ObservableObject {
     /// 这个是「刚刚发生了什么」，前者常驻、后者跟着清理结果变。
     @Published public internal(set) var adSkipNotice: String = ""
 
+    /// 构造；测试可注入缓存目录 / 存档 / 下载目录 / 传输层 / 本地库路径。
+    /// - Parameter storageURL: 本地库路径；nil = 默认的 `Application Support/YPlayer/YPlayer.sqlite`。
+    ///   测试把库放进夹具自己的临时目录 —— 否则并行用例共用一个库、互相写对方的数据。
     public init(
         cacheDirectory: URL? = nil,
         defaults: UserDefaults = .standard,
         downloadDirectory: URL? = nil,
-        downloadTransport: HTTPTransport? = nil
+        downloadTransport: HTTPTransport? = nil,
+        storageURL: URL? = nil
     ) {
         let base = cacheDirectory ?? Self.defaultCacheDirectory()
         self.cacheDirectory = base
@@ -522,7 +526,7 @@ public final class AppModel: ObservableObject {
         sessionTransport = URLSessionTransport()
         // 存储：优先 GRDB 落库（M08b）；打开失败退回内存实现并如实说明（不许静默）。
         // 这里只替换构造：两个 store 都是协议类型，详情页 / 追剧页 / 播放页一行都不用改。
-        let storage = Self.openStorageDatabase()
+        let storage = Self.openStorageDatabase(at: storageURL)
         storageDatabase = storage
         if let storage {
             progressStore = GRDBPlaybackProgressStore(database: storage)

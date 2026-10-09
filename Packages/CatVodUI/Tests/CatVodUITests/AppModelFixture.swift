@@ -30,7 +30,8 @@ final class AppModelFixture {
             cacheDirectory: directory,
             defaults: defaults,
             downloadDirectory: Self.downloadDirectory(in: directory),
-            downloadTransport: downloadTransport
+            downloadTransport: downloadTransport,
+            storageURL: Self.storageURL(in: directory)
         )
     }
 
@@ -39,12 +40,22 @@ final class AppModelFixture {
         directory.appendingPathComponent("Downloads", isDirectory: true)
     }
 
+    /// 本地库也放进夹具目录（默认布局的缩小版：`Downloads` 旁边就是 `YPlayer.sqlite`）。
+    ///
+    /// 为什么必须注入：不注入时所有夹具都开真机 / runner 上的
+    /// `Application Support/YPlayer/YPlayer.sqlite` —— 并行跑的用例共用一个库，
+    /// 互相写对方的下载任务表（CI 首跑就栽在这）。
+    static func storageURL(in directory: URL) -> URL {
+        directory.appendingPathComponent("YPlayer.sqlite")
+    }
+
     /// 用**同一份存档**再起一个模型 —— 用来验「写进去的偏好，重开还在」。
     func reopenedModel() throws -> AppModel {
         try AppModel(
             cacheDirectory: directory,
             defaults: #require(UserDefaults(suiteName: suiteName)),
-            downloadDirectory: Self.downloadDirectory(in: directory)
+            downloadDirectory: Self.downloadDirectory(in: directory),
+            storageURL: Self.storageURL(in: directory)
         )
     }
 
@@ -60,8 +71,10 @@ final class AppModelFixture {
         try? FileManager.default.removeItem(at: directory)
     }
 
+    /// 站点 api 用**完整回环地址**：`/spider/x` 这种相对写法会被可用性判定判成
+    /// 「无法识别的 Spider api」，站点全部不可见 —— 夹具要的是「真能用的站点」。
     static let defaultConfig = """
-    {"sites":[{"key":"a","name":"[主力]甲站|4K","type":3,"api":"/spider/a"},
-              {"key":"b","name":"乙站|首页","type":3,"api":"/spider/b"}]}
+    {"sites":[{"key":"a","name":"[主力]甲站|4K","type":3,"api":"http://127.0.0.1:9988/spider/a"},
+              {"key":"b","name":"乙站|首页","type":3,"api":"http://127.0.0.1:9988/spider/b"}]}
     """
 }

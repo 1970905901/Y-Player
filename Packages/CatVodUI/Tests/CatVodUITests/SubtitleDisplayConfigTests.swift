@@ -77,9 +77,10 @@ struct SubtitleDisplayConfigTests {
 
     @Test("位置与字号一起作用：改字号不该把位置档位吃掉")
     func positionAndFontScaleCombine() {
-        let config = SubtitleDisplayConfig(fontScale: 2, position: .middle)
+        // 用户倍率上限是 1.6（fontScaleRange），测试值必须落在范围内 —— 2 会被夹成 1.6。
+        let config = SubtitleDisplayConfig(fontScale: 1.5, position: .middle)
         let style = config.style.resolved(height: 220)
-        #expect(style.fontSize == 40) // 20 × 1（高度）× 2（用户）
-        #expect(style.bottomInset == SubtitleDisplayStyle().bottomInset * SubtitlePosition.middle.insetScale * 2)
+        #expect(style.fontSize == 30) // 20 × 1（高度）× 1.5（用户）
+        #expect(style.bottomInset == SubtitleDisplayStyle().bottomInset * SubtitlePosition.middle.insetScale * 1.5)
     }
 }

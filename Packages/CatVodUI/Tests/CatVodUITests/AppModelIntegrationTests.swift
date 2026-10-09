@@ -169,8 +169,9 @@ struct AppModelIntegrationTests {
     func hlsAdRuleWiring() async throws {
         let fixture = try AppModelFixture()
         defer { fixture.tearDown() }
+        // 配置必须至少有一个站点：`decodeConfig` 把「没有站点」当配置错误（configHasNoUsableSite）。
         await fixture.load("""
-        {"sites":[],
+        {"sites":[{"key":"a","name":"甲站","type":3,"api":"http://127.0.0.1:9988/spider/a"}],
          "hlsRules":[{"id":"builtin.test.v1","name":"示例","enabled":true,
                       "playlistHostSuffixes":["video.example.com"],
                       "hostSuffixes":["ads.example.com"],"minimumSignals":1}]}

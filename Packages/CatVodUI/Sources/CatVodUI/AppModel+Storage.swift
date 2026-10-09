@@ -44,10 +44,10 @@ public extension AppModel {
 
     /// 存储状态说明：落库路径 / 内存降级原因。
     var storageSummary: String {
-        guard storageDatabase != nil else {
+        guard let storageDatabase else {
             return "内存（未落库）：\(storageNotice)"
         }
-        return "已落库：\(Self.storageDatabaseURL().path)"
+        return "已落库：\(storageDatabase.path)"
     }
 
     /// 下载目录（离线下载的落地位置）。
