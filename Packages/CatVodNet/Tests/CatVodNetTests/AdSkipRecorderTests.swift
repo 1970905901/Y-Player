@@ -1,5 +1,6 @@
 @testable import CatVodCore
 @testable import CatVodNet
+import Foundation
 import Testing
 
 /// 广告跳过统计（M06k）—— 一个锁保护的小盒子。
@@ -15,7 +16,9 @@ struct AdSkipRecorderTests {
             fallback: false,
             removedSegments: removed,
             removedDurationSec: duration,
-            removedSegmentDetails: []
+            removedSegmentDetails: [],
+            // 逐条规则的命中次数（M06k 起的统计字段，无默认值）。这个测试不关心命中明细，给空。
+            ruleCounts: [:]
         )
     }
 

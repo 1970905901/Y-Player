@@ -70,7 +70,8 @@ struct LocalM3U8RouteTests {
         )
 
         let response = try await handler.handleRequest(makeRequest(query: urlQuery(playlistURL)))
-        let data = try #require(response.body)
+        // `HTTPResponse` 的这个字段已改名为 `bodyData`（`body` 被别处语义占用了）。
+        let data = try #require(response.bodyData)
         let body = String(data: data, encoding: .utf8) ?? ""
 
         #expect(!body.contains("ad.ts"))
