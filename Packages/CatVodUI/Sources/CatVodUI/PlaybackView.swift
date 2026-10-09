@@ -58,6 +58,8 @@ public struct PlaybackView: View {
     @State private var mpvSurface: MpvVideoSurface?
     /// 正在拖进度条：拖动期间不采纳内核报回的位置，否则滑杆会被顶回去。
     @State private var isScrubbing = false
+    /// 最近一次读到的播放信息（M4 前置）：只有报得出来的内核（当前是 MPV）才有这一块。
+    @State private var playbackStats: PlaybackStats?
     /// 内核上报的轨道（系统内核现在不上报，只有 MPV 会报，见 M03P3/M03P5）。
     @State private var audioTracks: [Int] = []
     @State private var subtitleTracks: [Int] = []
@@ -151,6 +153,9 @@ public struct PlaybackView: View {
                     if !engineText.isEmpty {
                         InfoRow(title: "内核", value: engineText)
                     }
+                }
+                if supportsPlaybackStats {
+                    statsSection
                 }
                 if !audioTracks.isEmpty || !subtitleTracks.isEmpty {
                     tracksSection
@@ -622,6 +627,14 @@ extension PlaybackView {
             case let .stateChanged(state):
                 stateText = describe(state)
                 playerState = state
+                if state == .playing {
+                    // 起播后读一次播放信息（M4 前置）：等一小会儿 —— `video-params` 是 file-loaded
+                    // 之后才填上的，立刻读会拿到一排空。
+                    Task {
+                        try? await Task.sleep(nanoseconds: 800_000_000)
+                        await refreshPlaybackStats()
+                    }
+                }
                 // 覆盖层：暂停 / 缓冲 / 结束都停表，继续播放再走（先外推再改速率，见 ``PlaybackClock``）。
                 playbackClock.setRate(clockRate(), at: Date())
                 if state == .ended {
@@ -781,6 +794,60 @@ extension PlaybackView {
         } catch {
             errorText = error.localizedDescription
         }
+    }
+
+    /// 「播放信息」（M4 前置）：**只有报得出来的内核才显示**（当前是 MPV）—— 与「轨道」同一口径，
+    /// 拿不到就不显示，不放一排「未知」。
+    ///
+    /// 一行行照抄内核报的值，不做换算以外的加工：「设置里选了硬解、实际到底是不是硬解」
+    /// 「看着不流畅，是丢帧还是网络」这类问题，屏幕上得有据可查。
+    private var statsSection: some View {
+        Section("播放信息") {
+            if let stats = playbackStats, !stats.isEmpty {
+                statsRow("画面", stats.resolutionText)
+                statsRow("编码", stats.codecText)
+                statsRow("帧率", stats.fpsText)
+                statsRow("色彩", stats.dynamicRangeText)
+                statsRow("解码", stats.decodeText)
+                statsRow("码率", stats.bitrateText)
+                statsRow("丢帧", stats.dropText)
+            } else {
+                Text("还没读到 —— 起播后点「刷新」。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Button("刷新") {
+                Task { await refreshPlaybackStats() }
+            }
+        }
+    }
+
+    /// 当前内核报不报得出播放信息（MPV 报得出、系统内核报不出）—— 决定那一块显不显示。
+    ///
+    /// 用「引擎认不认这个协议」判，而不是写死 `kind == .mpv`：自研 FFmpeg 内核接进来时
+    /// 它同样会认这个协议，界面这行不用改。
+    private var supportsPlaybackStats: Bool {
+        guard let engine else {
+            return false
+        }
+        return engine is PlaybackStatsProviding
+    }
+
+    /// 只画非空行（没读到的属性不占一行）。
+    @ViewBuilder
+    private func statsRow(_ title: String, _ value: String) -> some View {
+        if !value.isEmpty {
+            InfoRow(title: title, value: value)
+        }
+    }
+
+    /// 读一次播放信息：内核不支持就清空（那一块本来也不会显示）。
+    func refreshPlaybackStats() async {
+        guard let engine, let provider = engine as? PlaybackStatsProviding else {
+            playbackStats = nil
+            return
+        }
+        playbackStats = await provider.playbackStats()
     }
 
     /// 音轨 / 字幕轨选择。

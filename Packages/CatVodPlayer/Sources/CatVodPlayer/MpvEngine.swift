@@ -13,7 +13,7 @@ import Foundation
 /// **并发**：按 `PlayerEngine` 的约定，纯 C-API 内核用 `actor`（无主线程约束）。
 /// 事件循环在 actor 内跑：每轮 `mpv_wait_event` 最多阻塞 ``MpvEventMapping/eventWaitTimeout`` 秒，
 /// 因此 `pause()` / `seek()` 这类命令最坏等这么久（取值理由写在超时常量上）。
-public actor MpvEngine: PlayerEngine {
+public actor MpvEngine: PlayerEngine, PlaybackStatsProviding {
     nonisolated public let kind: PlayerEngineKind = .mpv
     nonisolated public let events: AsyncStream<PlayerEvent>
     /// 用户选的解码方式：`.hardware` → `hwdec=auto-safe`，`.software` → `hwdec=no`。
@@ -242,6 +242,41 @@ public actor MpvEngine: PlayerEngine {
             break
         }
     }
+
+    /// 读一次播放信息（M4 前置）：**属性名是 mpv 的**，拼装规则在 ``PlaybackStats``（纯逻辑，有单测）。
+    ///
+    /// 走 `propertyString` 逐个读、不用属性观察：这是**按需快照**（起播后自动读一次、用户也能点「刷新」），
+    /// 不是逐帧较劲的实时面板。属性不存在（本地文件没有码率等）就当没读到。
+    public func playbackStats() async -> PlaybackStats {
+        guard let session else {
+            return PlaybackStats()
+        }
+        var raw: [String: String] = [:]
+        for name in Self.statsPropertyNames {
+            if let value = session.propertyString(name) {
+                raw[name] = value
+            }
+        }
+        return PlaybackStats(rawValues: raw)
+    }
+
+    /// 要读的属性（名字对齐 mpv 的 property list）。
+    ///
+    /// 只收「回答一个具体问题」的那些：这一路是什么（分辨率 / 编码 / 色彩）、
+    /// 硬解到底生效没有（`hwdec-current`）、跑得好不好（码率 / 丢帧）。
+    private static let statsPropertyNames = [
+        "video-params/w",
+        "video-params/h",
+        "video-format",
+        "video-params/pixelformat",
+        "container-fps",
+        "video-params/primaries",
+        "video-params/gamma",
+        "hwdec-current",
+        "video-bitrate",
+        "frame-drop-count",
+        "decoder-frame-drop-count",
+    ]
 
     /// 轨道选择 → mpv 的值（禁用是 `no`，自动是 `auto`，指定轨道是轨道 id）。
     static func trackValue(_ selection: TrackSelection) -> String {
