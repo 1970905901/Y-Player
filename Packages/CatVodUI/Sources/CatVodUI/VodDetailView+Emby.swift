@@ -53,7 +53,7 @@ extension VodDetailView {
             } label: {
                 Image(systemName: isFavorite ? "heart.fill" : "heart")
                     .font(.title3)
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(.primary)
             }
             .buttonStyle(.plain)
 
@@ -63,7 +63,7 @@ extension VodDetailView {
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .font(.title3)
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(.primary)
             }
         }
         .frame(maxWidth: .infinity)
@@ -92,17 +92,18 @@ extension VodDetailView {
                 destination(for: slot.episode, at: slot.index)
             } label: {
                 VStack(spacing: 8) {
-                    // 白色大按钮（参考图）：黑字白底、整行宽。
+                    // 大按钮：**主色底 + 反白字** —— 深色下就是参考图的白色按钮，
+                    // 浅色下自动变成黑底白字，跟随系统外观（不写死白底）。
                     Label(actionTitle, systemImage: "play.fill")
                         .font(.headline)
-                        .foregroundStyle(Color.black)
+                        .foregroundStyle(.background)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 10))
+                        .background(Color.primary, in: RoundedRectangle(cornerRadius: 10))
                     if !subtitle(of: slot.episode).isEmpty {
                         Text(subtitle(of: slot.episode))
                             .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.85))
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                 }
@@ -183,9 +184,8 @@ extension VodDetailView {
                 }
             }
         }
-        // 沉浸版：整页黑底 + 深色外观（参考图就是深色；标题 / 图标都是白字白图标）。
-        .background(Color.black.ignoresSafeArea())
-        .preferredColorScheme(.dark)
+        // 外观跟随应用 / 系统：浅色时页面就是系统底（用户口径：深色模式跟随系统，不强制）。
+        // 只有头图上的叠字保持白色 —— 它压在图与黑色渐变上，两套外观下都该是白的。
         .background(autoPlayLink)
         // 页面级拉取：取图集 + 元信息（顶部与卡片共用同一次刮削；键变了才重拉）。
         .task(id: episodePosterLoadKey) {
@@ -213,7 +213,7 @@ extension VodDetailView {
         if !text.isEmpty {
             Text(text)
                 .font(.footnote)
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(.primary)
                 .lineLimit(4)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -239,7 +239,7 @@ extension VodDetailView {
                     Image(systemName: "chevron.down")
                         .font(.caption.weight(.semibold))
                 }
-                .foregroundStyle(Color.white)
+                .foregroundStyle(.primary)
             }
 
             Spacer(minLength: 0)
@@ -251,7 +251,7 @@ extension VodDetailView {
             } label: {
                 Image(systemName: "backward.end.fill")
                     .font(.title3)
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(.primary)
             }
             .buttonStyle(.plain)
             .disabled(previousEpisodeIndex == nil)
@@ -264,7 +264,7 @@ extension VodDetailView {
             } label: {
                 Image(systemName: "forward.end.fill")
                     .font(.title3)
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(.primary)
             }
             .buttonStyle(.plain)
             .disabled(nextEpisodeIndex == nil)
@@ -275,7 +275,7 @@ extension VodDetailView {
             } label: {
                 Text("更多")
                     .font(.subheadline)
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(.primary)
             }
             .buttonStyle(.plain)
         }
