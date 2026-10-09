@@ -11,12 +11,11 @@ import SwiftUI
 
 // MARK: - 播放器
 
-/// 播放器：默认播放器 + 三个子页（内核 / 播放界面 / 播放控制）。
+/// 播放器：默认播放器（点开是内核菜单，就地切换）+ 三个子页（内核 / 播放界面 / 播放控制）。
 ///
-/// 结构对齐参考图：第一行是「默认播放器 + 当前值」，下面三行都是导航行。
-/// 参考图第一行下面那个 `KPlayer` 是它自带的第三方内核名；我们这里第一行就是**当前内核**的名字
-/// （系统播放器 / MPV / 自研 FFmpeg），点进去是内核与解码设置 —— 与「源地址 → 接口管理」
-/// 共用 ``PlaybackSettingsSection``，不会出现两处显示不一致。
+/// 结构对齐参考图：第一行是「默认播放器 + 当前值（蓝字）」，**点它出内核菜单** ——
+/// 此前这里只是个死标签（点蓝字没反应，真正的入口是下面一行重名的内核名），用户报过这一处。
+/// 第二行「内核」进去是内核与解码设置 —— 与「源地址 → 接口管理」共用 ``PlaybackSettingsSection``。
 @MainActor
 struct SettingsPlayerView: View {
     @ObservedObject var model: AppModel
@@ -24,16 +23,27 @@ struct SettingsPlayerView: View {
     var body: some View {
         List {
             Section {
-                HStack {
-                    Text("默认播放器")
-                    Spacer()
-                    Text(model.preferredEngine.displayName)
-                        .foregroundStyle(PlatformShims.accent)
+                // 第一行既是「当前值」，也是切换入口：点它出内核菜单（此前是个死标签 ——
+                // 点蓝字没反应，真正的入口是下面一行重名的内核名；用户报过这一处）。
+                Menu {
+                    Picker("默认播放器", selection: $model.preferredEngine) {
+                        ForEach(PlayerEngineKind.allCases, id: \.self) { kind in
+                            Text(kind.settingsTitle).tag(kind)
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Text("默认播放器")
+                        Spacer()
+                        Text(model.preferredEngine.displayName)
+                            .foregroundStyle(PlatformShims.accent)
+                    }
+                    .contentShape(Rectangle())
                 }
                 NavigationLink {
                     SettingsPlayerEngineView(model: model)
                 } label: {
-                    Text(model.preferredEngine.displayName)
+                    Text("内核")
                 }
                 NavigationLink {
                     SettingsPlayerUISettingsView(model: model)

@@ -16,7 +16,7 @@ struct PlaybackSettingsSection: View {
         Section("播放设置") {
             Picker("播放内核", selection: $model.preferredEngine) {
                 ForEach(PlayerEngineKind.allCases, id: \.self) { kind in
-                    Text(kind.displayName + (kind.isAvailable ? "" : "（未接入）")).tag(kind)
+                    Text(kind.settingsTitle).tag(kind)
                 }
             }
             Picker("解码方式", selection: $model.decoderMode) {
@@ -75,5 +75,13 @@ struct PlaybackSettingsSection: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// 内核选项行的文字：**两处共用这一句**（播放器页第一行的快捷菜单与 ``PlaybackSettingsSection``
+/// 的内核 Picker）——「未接入」的标注只写在这里，不两处各拼一遍。
+extension PlayerEngineKind {
+    var settingsTitle: String {
+        displayName + (isAvailable ? "" : "（未接入）")
     }
 }
