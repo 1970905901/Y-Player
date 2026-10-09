@@ -49,6 +49,7 @@ public final class AppModel: ObservableObject {
         static let discoverSiteKey = "yplayer.discoverSiteKey"
         static let searchSiteKey = "yplayer.searchSiteKey"
         static let searchExcludedSites = "yplayer.searchExcludedSites"
+        static let configNoticeDismissed = "yplayer.configNoticeDismissed"
         static let hlsAdRuleOverrides = "yplayer.hlsAdRuleOverrides"
     }
 
@@ -428,6 +429,20 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    /// 已被用户关掉的那条**配置公告**（`SourceConfig.notice`）的原文。
+    ///
+    /// 存文字而不是存布尔：配置换了新公告（文字变了）就该再出现一次；
+    /// 空串时删键（与其它偏好一致），不留「有键但没值」的状态。
+    @Published public internal(set) var dismissedConfigNotice: String {
+        didSet {
+            if dismissedConfigNotice.isEmpty {
+                defaults.removeObject(forKey: StorageKey.configNoticeDismissed)
+            } else {
+                defaults.set(dismissedConfigNotice, forKey: StorageKey.configNoticeDismissed)
+            }
+        }
+    }
+
     /// 站点面板**分组条**的顺序：**接口地址 → 分组名数组**（上游 `SiteGroupOrderStore`，键 `site_group_order_<cid>`）。
     ///
     /// 按接口分桶的理由同直播那些书：换接口时分组名整套换掉，混在一起会互相污染。
@@ -626,6 +641,8 @@ public final class AppModel: ObservableObject {
         searchSiteKey = defaults.string(forKey: StorageKey.searchSiteKey) ?? ""
         // 聚合搜索关掉的站点：默认空（= 只要能搜的站点都参与）。
         searchExcludedSiteKeys = Set(defaults.stringArray(forKey: StorageKey.searchExcludedSites) ?? [])
+        // 关掉的配置公告：默认空（= 配置里若有公告就显示）。
+        dismissedConfigNotice = defaults.string(forKey: StorageKey.configNoticeDismissed) ?? ""
 
         // 站点分组规则的本地设置：默认空（= 四条内置全开、没有自建规则）。
         siteGroupRuleSettings = SiteGroupRuleBook.decode(defaults.string(forKey: StorageKey.siteGroupRules))
