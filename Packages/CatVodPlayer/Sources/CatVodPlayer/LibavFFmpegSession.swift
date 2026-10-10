@@ -1,17 +1,16 @@
 import AVFoundation
 import Foundation
 
-/// 自研 FFmpeg 内核的**真实会话**（M04P12 起：音视频 + seek 都接上）：
-/// 统一 demux（`LibavInput.nextPacket`）→ 视频走 VT 硬解进显示层、
+/// 自研 FFmpeg 内核的**真实会话**（M04P14 起：音视频 + seek + 软解兜底都接上）：
+/// 统一 demux（`LibavInput.nextPacket`）→ 视频走解码器进显示层（硬解优先、软解兜底）、
 /// 音频走 libavcodec + swresample 进音频渲染器；两者挂**同一条** synchronizer。
 ///
 /// 当前已知缺口（**如实说，别让界面以为它全能**；M04P13 已把它接进界面）：
-/// - **软解**：`decoderMode == .software` 直接拒绝（不假装生效）；
 /// - **音轨切换**：`selectTrack` 是空操作（只有默认轨）；
 /// - 网络读阻塞期间 `close()` 不保证立刻收线程 —— 在没有 interrupt callback 之前，
 ///   宁可让线程自然退出，也不释放它可能正在读的上下文；
-/// - `stats()` 给的是**打开时读到的事实**（分辨率 / 编码 / 容器 / 硬解），
-///   不是 mpv 那种逐帧快照。
+/// - `stats()` 里画面那几行是**打开时读到的事实**（分辨率 / 编码 / 容器），不是 mpv 那种逐帧快照；
+///   「解码」那行例外 —— 它是第一帧实测出来的（硬解还是软解）。
 ///
 /// 分层：C 调用全在 `LibavInput` / 两个解码器 / 两个渲染器里，本类只管
 /// 线程、状态与背压。一个会话只服务一次打开（引擎换片会新建会话）。
@@ -50,6 +49,9 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     private var audioSamplesEnqueued = 0
     private var loopStartedAt = Date()
     private var loggedVideoSilence = false
+    /// 实际跑起来的解码路径（第一帧定）：解码线程写、控制路径（`stats()`）读 —— 用 `lock` 串。
+    private var actualDecodeIsHardware: Bool?
+    private var loggedSoftwareFallback = false
 
     /// 生产入口：给画面层 —— 音视频挂**同一条** synchronizer（音画同步结构自带）。
     ///
@@ -75,13 +77,10 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     // MARK: - FFmpegSession
 
     func open(_ resource: MediaResource, decoderMode: DecoderMode) async -> String? {
-        guard decoderMode == .hardware else {
-            return "自研内核第一版只有硬解（软解在后面），先把设置换成硬件解码"
-        }
         if let failure = input.open(url: resource.url, headers: resource.headers) {
             return failure
         }
-        if let failure = videoDecoder.open(input: input) {
+        if let failure = videoDecoder.open(input: input, decoderMode: decoderMode) {
             return failure
         }
         // 有音轨就得能解：解不了直接报错，不悄悄变成默片
@@ -180,8 +179,14 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         if !info.containerName.isEmpty {
             raw["file-format"] = info.containerName
         }
-        // 打开时 VT 设备已经建成功（建不出会直接报错），所以这里不是猜。
-        raw["hwdec-current"] = "videotoolbox"
+        // 「解码」那行说实话：实际拿到的是哪种帧（硬解不可用时 libav 会自己掉回软解）。
+        // 一帧都还没到就先不写 —— 宁可这行空着，也不猜。
+        lock.lock()
+        let isHardware = actualDecodeIsHardware
+        lock.unlock()
+        if let isHardware {
+            raw["hwdec-current"] = isHardware ? "videotoolbox" : "no"
+        }
         return PlaybackStats(rawValues: raw)
     }
 
@@ -323,7 +328,8 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
             }
         }
         let summary = "读到尾：视频包=\(routedVideoPackets) 帧入层=\(videoFramesAccepted) "
-            + "解出=\(videoDecoder.decodedFrameCount) 丢非VT=\(videoDecoder.droppedNonVTCount) "
+            + "硬解帧=\(videoDecoder.hardwareFrameCount) 软解帧=\(videoDecoder.softwareFrameCount) "
+            + "丢帧=\(videoDecoder.droppedFrameCount) "
             + "解码错误=\(videoDecoder.decodeErrorCount) 音频样本=\(audioSamplesEnqueued)"
         LibavTrace.logger.notice("\(summary, privacy: .public)")
         emitEndedOnce()
@@ -331,6 +337,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
 
     /// 收一帧视频：先发上一帧（现在知道它的时长了），把这一帧留成 pending。
     private func consume(_ frame: LibavVideoDecoder.Frame) {
+        noteDecodePath(isHardware: frame.isHardware)
         if let pending = pendingFrame {
             let delta = frame.seconds - pending.seconds
             let duration = delta > 0.001 ? delta : lastFrameDelta
@@ -367,6 +374,26 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         }
     }
 
+    /// 记下这一帧走的哪条路（播放信息的「解码」行说实话用）。
+    ///
+    /// 为什么得由第一帧来定：libav 会在硬解不可用时**自己掉回软解**，设置里选了什么不算数。
+    private func noteDecodePath(isHardware: Bool) {
+        lock.lock()
+        let previous = actualDecodeIsHardware
+        if previous == nil || (previous == true && !isHardware) {
+            actualDecodeIsHardware = isHardware
+        }
+        let firstFallback = previous == true && !isHardware && !loggedSoftwareFallback
+        if firstFallback {
+            loggedSoftwareFallback = true
+        }
+        lock.unlock()
+        if firstFallback {
+            let note = "硬解没生效（libav 掉回软解）：改用软件解码继续 —— 播放信息的「解码」行会写软解"
+            LibavTrace.logger.error("\(note, privacy: .public)")
+        }
+    }
+
     /// 「有声音没画面」的取证（M04P13）：解码跑起来 3 秒还是一帧没进显示层，就把两侧计数打出来。
     ///
     /// 放在这条循环里是因为：这些计数只有解码线程在碰，读它们不用锁；
@@ -376,7 +403,8 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         guard Date().timeIntervalSince(loopStartedAt) >= 3 else { return }
         loggedVideoSilence = true
         let silence = "解码 3 秒后仍没有一帧进显示层：视频包=\(routedVideoPackets) "
-            + "解出=\(videoDecoder.decodedFrameCount) 丢非VT=\(videoDecoder.droppedNonVTCount) "
+            + "硬解帧=\(videoDecoder.hardwareFrameCount) 软解帧=\(videoDecoder.softwareFrameCount) "
+            + "丢帧=\(videoDecoder.droppedFrameCount) "
             + "解码错误=\(videoDecoder.decodeErrorCount) "
             + "最后一次=\(videoDecoder.lastDecodeErrorText ?? "无") 音频样本=\(audioSamplesEnqueued)"
         LibavTrace.logger.error("\(silence, privacy: .public)")

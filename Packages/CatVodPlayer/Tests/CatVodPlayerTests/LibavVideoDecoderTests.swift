@@ -11,7 +11,7 @@ struct LibavVideoDecoderTests {
     @Test("没打开的输入：明确报错")
     func openWithoutInput() {
         let decoder = LibavVideoDecoder()
-        let failure = decoder.open(input: LibavInput())
+        let failure = decoder.open(input: LibavInput(), decoderMode: .hardware)
         #expect(failure != nil)
     }
 
@@ -35,6 +35,35 @@ struct LibavVideoDecoderTests {
         #expect(LibavVideoDecoder.fourCC(0) == "0x0")
     }
 
+    @Test("软解：sws 把 yuv420p 转成 BGRA 的 CVPixelBuffer（M04P14）")
+    func softwareDecodePath() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("libavsoft-\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await TinyMP4Fixture.write(to: url, width: 320, height: 240, fps: 30, frames: 30)
+
+        let input = LibavInput()
+        defer { input.close() }
+        #expect(input.open(url: url.path, headers: [:]) == nil)
+
+        let decoder = LibavVideoDecoder()
+        defer { decoder.close() }
+        #expect(decoder.open(input: input, decoderMode: .software) == nil)
+
+        let frames = decoder.decodeFrames(5)
+        #expect(frames.count == 5)
+        let allSoftware = frames.allSatisfy { !$0.isHardware }
+        #expect(allSoftware)
+        let first = try #require(frames.first)
+        // 软解统一转 BGRA：到了显示层那边，硬解帧与软解帧走的是同一条路
+        #expect(CVPixelBufferGetPixelFormatType(first.pixelBuffer) == kCVPixelFormatType_32BGRA)
+        #expect(CVPixelBufferGetWidth(first.pixelBuffer) == 320)
+        #expect(CVPixelBufferGetHeight(first.pixelBuffer) == 240)
+        #expect(abs(first.seconds) < 0.001)
+        let second = try #require(frames.dropFirst().first)
+        #expect(abs(second.seconds - 1.0 / 30.0) < 0.002)
+    }
+
     @Test("VideoToolbox 硬解：前 5 帧 CVPixelBuffer，尺寸与时间戳对得上")
     func decodeFirstFrames() async throws {
         let url = FileManager.default.temporaryDirectory
@@ -49,11 +78,14 @@ struct LibavVideoDecoderTests {
 
         let decoder = LibavVideoDecoder()
         defer { decoder.close() }
-        let openFailure = decoder.open(input: input)
+        let openFailure = decoder.open(input: input, decoderMode: .hardware)
         #expect(openFailure == nil)
 
         let frames = decoder.decodeFrames(5)
         #expect(frames.count == 5)
+        // 硬解模式下这里必须是 VT 直出的帧（软解帧现在也收，别让它把这条断言糊过去）
+        let allHardware = frames.allSatisfy { $0.isHardware }
+        #expect(allHardware)
         let first = try #require(frames.first)
         #expect(CVPixelBufferGetWidth(first.pixelBuffer) == 320)
         #expect(CVPixelBufferGetHeight(first.pixelBuffer) == 240)

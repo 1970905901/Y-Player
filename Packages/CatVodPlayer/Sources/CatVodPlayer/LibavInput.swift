@@ -221,7 +221,7 @@ final class LibavInput: @unchecked Sendable {
         #endif
     }
 
-    /// 底层格式上下文的**借用口**（只给同模块的解码层：`LibavVideoDecoder.open(input:)`）。
+    /// 底层格式上下文的**借用口**（只给同模块的解码层：`LibavVideoDecoder.open(input:decoderMode:)`）。
     ///
     /// 句柄仍归本类所有（open / close 管生命周期）—— 借的人**不许**自己关它。
     var rawFormatContext: UnsafeMutablePointer<AVFormatContext>? {

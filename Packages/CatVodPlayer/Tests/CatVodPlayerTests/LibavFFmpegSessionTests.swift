@@ -143,7 +143,7 @@ private final class EventBox: @unchecked Sendable {
     }
 }
 
-/// 真会话（`LibavFFmpegSession`，M04P11 起音视频都接上）：真输入 + 真 VT 解码 + 假渲染器。
+/// 真会话（`LibavFFmpegSession`，M04P11 起音视频都接上）：真输入 + 真解码（硬解优先、软解兜底）+ 假渲染器。
 ///
 /// 用 ``TinyMP4Fixture`` 现场编的小文件当片源（不打网络）；
 /// 「画面 / 声音到底出没出」要等接线后上机看，这里钉的是**喂帧喂块语义与生命周期**。
@@ -187,17 +187,28 @@ struct LibavFFmpegSessionTests {
         await session.close()
     }
 
-    @Test("软解：明确拒绝，不假装生效")
-    func softwareDecoderRejected() async throws {
+    @Test("软解：也能播 —— sws 转 BGRA 后照常喂帧、播放信息如实写「软件解码」（M04P14）")
+    func softwareDecodePath() async throws {
         let url = try await makeFixtureURL()
         defer { try? FileManager.default.removeItem(at: url) }
-        let session = LibavFFmpegSession(
-            videoRenderer: FakeVideoRenderer(),
-            audioRenderer: FakeAudioRenderer()
-        )
+        let renderer = FakeVideoRenderer()
+        let session = LibavFFmpegSession(videoRenderer: renderer, audioRenderer: FakeAudioRenderer())
+        let box = EventBox()
+        let consumer = Task { for await event in session.events {
+            box.append(event)
+        } }
+        defer { consumer.cancel() }
+
         let failure = await session.open(MediaResource(url: url.path), decoderMode: .software)
-        #expect(failure != nil)
-        #expect(failure?.contains("硬解") == true)
+        #expect(failure == nil)
+
+        let ended = await waitUntil { box.all.contains(.state(.ended)) }
+        #expect(ended)
+        #expect(renderer.enqueued.count == 30)
+
+        // 「解码」那行由第一帧实测：软解模式必须写软解，不是照抄设置
+        let stats = await session.stats()
+        #expect(stats.decodeText == "软件解码")
         await session.close()
     }
 
@@ -237,6 +248,9 @@ struct LibavFFmpegSessionTests {
         for (current, next) in zip(frames, frames.dropFirst()) {
             #expect(abs(current.duration - (next.presentation - current.presentation)) < 0.002)
         }
+        // 「解码」那行：硬解模式下这里得是硬解（VT 真生效），而不是被软解兜底悄悄接住
+        let stats = await session.stats()
+        #expect(stats.decodeText == "硬件解码（VideoToolbox）")
         await session.close()
     }
 

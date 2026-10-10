@@ -57,7 +57,7 @@ struct PlaybackSettingsSection: View {
                     .foregroundStyle(.orange)
             }
             if !model.playbackSettings.isDecoderModeEffective {
-                Text("提示：系统播放器不支持强制硬解/软解，该选项对当前内核无效（切到 MPV 内核后生效；自研 FFmpeg 内核目前只支持硬解）。")
+                Text("提示：系统播放器不支持强制硬解/软解，该选项对当前内核无效（切到 MPV / 自研 FFmpeg 内核后生效）。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
