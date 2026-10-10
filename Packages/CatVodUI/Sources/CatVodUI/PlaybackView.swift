@@ -133,6 +133,9 @@ public struct PlaybackView: View {
     /// 而一个全局落盘的值会把下一部片也按上一部选的比例放，所以先不做存档。
     @State private var scaleMode: PlaybackScaleMode = .fit
     @State private var isFinished = false
+    /// 单集循环（M03P20，对齐上游控制条的 `repeat`）：播完（或到片尾标记）回到本集开头，不连播。
+    /// 页面内偏好、不落盘 —— 与上游一样是「本次播放」的开关。
+    @State var isRepeatOne = false
     @State private var lastPersistAt = Date.distantPast
     /// 弹幕上屏的数据（M08h）：计划 + 它用的版面。
     @State var danmakuRender: DanmakuRenderPlan?
@@ -239,6 +242,11 @@ public struct PlaybackView: View {
                 }
                 lineSection
                 openingEndingSection
+                if activeProgressContext != nil {
+                    Section("播放") {
+                        Toggle("单集循环（播完回到本集开头）", isOn: $isRepeatOne)
+                    }
+                }
                 Section("媒体") {
                     Text(activeResource.url)
                         .font(.caption)
@@ -604,11 +612,20 @@ extension PlaybackView {
                 // 覆盖层：暂停 / 缓冲 / 结束都停表，继续播放再走（先外推再改速率，见 ``PlaybackClock``）。
                 playbackClock.setRate(clockRate(), at: Date())
                 if state == .ended {
-                    isFinished = true
-                    await persist(force: true)
-                    // 片尾自动下一集（M12P1）：有下一集才连播；最后一集停在结束态等人。
-                    if let next = nextEpisodeIndex {
-                        await switchEpisode(to: next)
+                    switch Self.endAction(isRepeatOne: isRepeatOne, hasNextEpisode: nextEpisodeIndex != nil) {
+                    case .loop:
+                        // 单集循环（M03P20）：不算「看完」，也不连播 —— 直接回到开头。
+                        await loopCurrentEpisode()
+                    case .nextEpisode:
+                        isFinished = true
+                        await persist(force: true)
+                        // 片尾自动下一集（M12P1）：有下一集才连播；最后一集停在结束态等人。
+                        if let next = nextEpisodeIndex {
+                            await switchEpisode(to: next)
+                        }
+                    case .stop:
+                        isFinished = true
+                        await persist(force: true)
                     }
                 } else if state == .paused {
                     await persist(force: true)
@@ -697,6 +714,37 @@ extension PlaybackView {
                 metadata: activeProgressContext.metadata
             )
         )
+    }
+
+    /// 一集走到头（或到片尾标记）之后该干什么（**纯函数**，有单测）。
+    ///
+    /// 循环**优先于**连播：开了循环就是「这一集重来」，片尾标记不再把人带走
+    /// （上游把循环做在内核层 —— 播完根本不到 `ended`；我们做在播放页这一层，三个内核都吃得到）。
+    enum EndAction: Equatable {
+        case loop
+        case nextEpisode
+        case stop
+    }
+
+    static func endAction(isRepeatOne: Bool, hasNextEpisode: Bool) -> EndAction {
+        if isRepeatOne {
+            return .loop
+        }
+        return hasNextEpisode ? .nextEpisode : .stop
+    }
+
+    /// 单集循环：回到本集开头接着播（不改进度记录里的「看完」，也不动选集下标）。
+    func loopCurrentEpisode() async {
+        // 这一集重新开始：进度条回到 0，结束态、片尾跳集的「跳过」标记、续播文案都清掉。
+        latestPosition = 0
+        isFinished = false
+        didSkipEnding = false
+        resumedFromText = ""
+        guard let engine else {
+            return
+        }
+        await engine.seek(to: 0)
+        await engine.play()
     }
 
     /// 从头播放：清掉进度记录并 seek 到 0。

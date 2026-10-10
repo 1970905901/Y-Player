@@ -91,12 +91,21 @@ extension PlaybackView {
     /// `didSkipEnding` 保证这一集只跳一次（换集会把它清掉）。
     func skipEndingIfNeeded(current: Double, duration: Double) async {
         guard !didSkipEnding,
-              PlaybackOpeningEndingRules.shouldSkipEnding(position: current, duration: duration, ending: endingMark),
-              let next = nextEpisodeIndex
+              PlaybackOpeningEndingRules.shouldSkipEnding(position: current, duration: duration, ending: endingMark)
         else {
             return
         }
         didSkipEnding = true
-        await switchEpisode(to: next)
+        // 与「播到结束」共用同一条规则（M03P20）：开了单集循环就回开头，不再切下一集。
+        switch Self.endAction(isRepeatOne: isRepeatOne, hasNextEpisode: nextEpisodeIndex != nil) {
+        case .loop:
+            await loopCurrentEpisode()
+        case .nextEpisode:
+            if let next = nextEpisodeIndex {
+                await switchEpisode(to: next)
+            }
+        case .stop:
+            break
+        }
     }
 }
