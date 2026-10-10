@@ -23,6 +23,8 @@ public struct LiveView: View {
     @State private var scheduleRow: LiveChannelRow?
     /// 直播设置（直播源 / EPG 地址覆盖）的弹层。
     @State private var isSettingsPresented = false
+    /// 「现在」：由 ``liveClock(_:)`` 按整分钟写回 —— 行上的「正在播」跟着时间走（M07d8）。
+    @State private var now = Date()
 
     /// 本 Tab 的沉浸页登记簿（播放页压上来时收起底部 Tab 栏）。
     @EnvironmentObject private var immersiveTabBar: ImmersiveTabBarState
@@ -33,6 +35,7 @@ public struct LiveView: View {
 
     public var body: some View {
         content
+            .liveClock($now)
             .navigationTitle("直播")
             .adaptiveTabBarHidden(immersiveTabBar.isActive)
             .adaptiveToolbar {
@@ -265,7 +268,7 @@ public struct LiveView: View {
         guard let group = model.selectedLiveGroupObject else {
             return []
         }
-        let now = Date()
+        // `now` 是状态（不是 `Date()`）：整分钟一到就重算一次，见 `LiveClock`。
         let resume = model.liveResumeTarget
         return group.channels.map { channel in
             LiveListLayout.row(channel, guide: model.liveGuide(for: channel), resume: resume, at: now)

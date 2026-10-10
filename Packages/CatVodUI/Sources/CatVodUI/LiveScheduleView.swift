@@ -22,6 +22,10 @@ struct LiveScheduleView: View {
     /// 时移地址按第几条线路拼（直播页带进来）。
     let lineIndex: Int
 
+    /// 「现在」：由 ``liveClock(_:)`` 按整分钟写回 —— 弹层开着不动时，「正在播 / 可回看」
+    /// 也得跟着时间换（M07d8）。
+    @State private var now = Date()
+
     var body: some View {
         List {
             if sections.isEmpty {
@@ -49,6 +53,7 @@ struct LiveScheduleView: View {
             }
         }
         .adaptiveListStyle()
+        .liveClock($now)
         .navigationTitle(channel.name)
         .task { await model.loadLiveGuide(for: channel) }
     }
@@ -63,7 +68,7 @@ struct LiveScheduleView: View {
     }
 
     private func rows(for schedule: EPGSchedule) -> [LiveProgramRow] {
-        LiveListLayout.programRows(channel: channel, schedule: schedule, lineIndex: lineIndex)
+        LiveListLayout.programRows(channel: channel, schedule: schedule, lineIndex: lineIndex, at: now)
     }
 
     // MARK: - 行
