@@ -23,7 +23,17 @@ import SwiftUI
 /// 标注 `@MainActor`：根视图构造 `AppModel`（`@MainActor` 隔离），显式标注可在 Swift 5 / 6 语言模式下都正确编译。
 @MainActor
 public struct RootView: View {
+    /// 四个 Tab 的标识（`TabView` 的 selection 用它；M07d9 的「开机自启」要能切过去）。
+    private enum RootTab: Hashable {
+        case discover
+        case live
+        case library
+        case settings
+    }
+
     @StateObject private var model = AppModel()
+    /// 当前 Tab；启动 `.task` 里按「开机自启」决定初始落在哪个（默认「发现」）。
+    @State private var selectedTab: RootTab = .discover
     /// 四个 Tab **各一份**的沉浸页登记簿（详情 / 播放压上来时收起底部 Tab 栏；
     /// 机制与原因见 `Platform/AdaptiveTabBar.swift`）。一份只服务一个 Tab。
     @StateObject private var discoverImmersiveTabBar = ImmersiveTabBarState()
@@ -36,11 +46,12 @@ public struct RootView: View {
     public init() { }
 
     public var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             AdaptiveNavigationContainer {
                 HomeView(model: model)
             }
             .environmentObject(discoverImmersiveTabBar)
+            .tag(RootTab.discover)
             .tabItem {
                 Label("发现", systemImage: "play.rectangle")
             }
@@ -49,6 +60,7 @@ public struct RootView: View {
                 LiveView(model: model)
             }
             .environmentObject(liveImmersiveTabBar)
+            .tag(RootTab.live)
             .tabItem {
                 Label("直播", systemImage: "dot.radiowaves.left.and.right")
             }
@@ -57,6 +69,7 @@ public struct RootView: View {
                 LibraryView(model: model)
             }
             .environmentObject(libraryImmersiveTabBar)
+            .tag(RootTab.library)
             .tabItem {
                 Label("追剧", systemImage: "heart")
             }
@@ -65,6 +78,7 @@ public struct RootView: View {
                 SettingsView(model: model)
             }
             .environmentObject(settingsImmersiveTabBar)
+            .tag(RootTab.settings)
             .tabItem {
                 Label("设置", systemImage: "gearshape")
             }
@@ -73,6 +87,11 @@ public struct RootView: View {
             // 冷启动恢复：本地保存了接口地址就自动加载一次，不必先去「设置 → 源地址」手动点「加载」；
             // 加载完成会自增 `siteCatalogRevision`，首页/搜索/追剧据此拿到站点（见 M02P9）。
             await model.loadSavedSourceIfNeeded()
+            // 开机自启（M07d9）：当前直播源带 `boot`（或本机开关打开）→ 启动直接落在「直播」Tab
+            // （上游 `ConfigEvent.BOOT` → `LiveActivity.start`）。只是初始 Tab 不同，别的不动。
+            if model.liveBootEnabled {
+                selectedTab = .live
+            }
             // 本机代理服务（M6）：启动时就起来，播放时才有端口可用
             // （`playbackResource(_:)` 是同步判定，不能在那里 await）。
             await model.ensureLocalServer()

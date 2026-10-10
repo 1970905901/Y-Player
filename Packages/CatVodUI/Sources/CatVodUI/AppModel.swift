@@ -43,6 +43,7 @@ public final class AppModel: ObservableObject {
         static let liveFavorites = "yplayer.liveFavorites"
         static let liveEPGSetting = "yplayer.liveEPGSetting"
         static let livePassOverrides = "yplayer.livePassOverrides"
+        static let liveBootOverrides = "yplayer.liveBootOverrides"
         static let siteGroupOrder = "yplayer.siteGroupOrder"
         static let siteNames = "yplayer.siteNames"
         static let siteGroupRules = "yplayer.siteGroupRules"
@@ -466,7 +467,17 @@ public final class AppModel: ObservableObject {
     /// （见 `AppModel+Live` 的 `loadLivePlaylist`），改这个开关会重新拉一次清单。
     @Published public internal(set) var livePassOverrides: [String: Bool] {
         didSet {
-            defaults.set(LivePassBook.encode(livePassOverrides), forKey: StorageKey.livePassOverrides)
+            defaults.set(LiveSourceFlagBook.encode(livePassOverrides), forKey: StorageKey.livePassOverrides)
+        }
+    }
+
+    /// 「开机自启」的本地覆盖：**源名 → 覆盖值**（上游 `Live.boot`）。
+    ///
+    /// 不在表里 = 跟源自己的 `boot` 字段。启动时的判定见 ``liveBootEnabled``（`RootView` 用它决定
+    /// 初始 Tab）；只影响下一次启动，改的时候不用重载任何清单。
+    @Published public internal(set) var liveBootOverrides: [String: Bool] {
+        didSet {
+            defaults.set(LiveSourceFlagBook.encode(liveBootOverrides), forKey: StorageKey.liveBootOverrides)
         }
     }
 
@@ -640,7 +651,10 @@ public final class AppModel: ObservableObject {
         liveEPGSetting = LiveEPGSetting.decode(defaults.string(forKey: StorageKey.liveEPGSetting))
 
         // 「组名里的 `_` 不当密码」的本地覆盖：默认空（跟每个直播源自己的 `pass` 字段）。
-        livePassOverrides = LivePassBook.decode(defaults.string(forKey: StorageKey.livePassOverrides))
+        livePassOverrides = LiveSourceFlagBook.decode(defaults.string(forKey: StorageKey.livePassOverrides))
+
+        // 「开机自启」的本地覆盖：默认空（跟每个直播源自己的 `boot` 字段）。
+        liveBootOverrides = LiveSourceFlagBook.decode(defaults.string(forKey: StorageKey.liveBootOverrides))
 
         // 站点面板分组条的顺序：默认空（= 每个接口都用「按站点顺序首次出现」的默认顺序）。
         siteGroupOrders = SiteGroupOrderBook.decode(defaults.string(forKey: StorageKey.siteGroupOrder))

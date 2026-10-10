@@ -26,6 +26,7 @@ struct LiveSettingsView: View {
         List {
             sourceSection
             groupNameSection
+            bootSection
             addressSection
             historySection
             Section("当前状态") {
@@ -107,6 +108,34 @@ struct LiveSettingsView: View {
         Binding(
             get: { model.liveGroupPassEnabled },
             set: { enabled in Task { await model.setLiveGroupPass(enabled) } }
+        )
+    }
+
+    // MARK: - 启动
+
+    /// 开机自启（上游 `Live.boot`）：打开后**启动 App 直接落在「直播」Tab** ——
+    /// 机顶盒那套「开机就是直播」的用法。默认跟源自己的 `boot`，本地覆盖只对当前源生效；
+    /// 只影响下一次启动（改完不用重载清单）。
+    private var bootSection: some View {
+        Section("启动") {
+            Toggle(isOn: bootBinding) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("开机自启")
+                    Text("打开后，下次启动 App 直接进「直播」Tab。默认跟直播源自己的 `boot` 字段；"
+                        + "本机覆盖只对当前源生效。")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .disabled(model.selectedLiveSource == nil)
+        }
+    }
+
+    /// 两个方向都写进本地覆盖（`setLiveBoot` 负责落盘）。
+    private var bootBinding: Binding<Bool> {
+        Binding(
+            get: { model.liveBootEnabled },
+            set: { enabled in model.setLiveBoot(enabled) }
         )
     }
 

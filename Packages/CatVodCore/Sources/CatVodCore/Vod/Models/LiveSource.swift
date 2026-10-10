@@ -55,7 +55,8 @@ public struct LiveSource: Codable, Sendable, Hashable, Identifiable {
     public var core: AnyJSONValue
     /// 开机自动播放该直播源（上游 `Live.boot`）。
     ///
-    /// 上游在「开机自启」里读它；本项目还没有开机自启入口，字段先按上游补齐（M07c 复核字段表时补）。
+    /// 上游在「开机自启」里读它；本项目 M07d-9 接上：本地开关在「直播设置 → 启动」，
+    /// 启动时由 `RootView` 判定（打开 → 初始落在「直播」Tab）。
     public var boot: Bool
 
     public var id: String { name }

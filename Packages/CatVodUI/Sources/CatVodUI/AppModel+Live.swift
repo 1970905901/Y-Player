@@ -52,9 +52,31 @@ public extension AppModel {
         guard liveGroupPassEnabled != enabled else {
             return
         }
-        livePassOverrides = LivePassBook.setting(enabled, for: name, in: livePassOverrides)
+        livePassOverrides = LiveSourceFlagBook.setting(enabled, for: name, in: livePassOverrides)
         await loadLivePlaylist(force: true)
         await loadLiveFileGuide(force: true)
+    }
+
+    /// 当前源「开机自启」的**有效值**：本地覆盖优先，否则跟源自己的 `boot`（上游同字段）。
+    ///
+    /// 生效点在 `RootView` 的启动 `.task`：打开就直接落在「直播」Tab（上游 `ConfigEvent.BOOT`
+    /// → `LiveActivity.start`）—— 电视机顶盒那套「开机就是直播」的用法。
+    var liveBootEnabled: Bool {
+        guard let source = selectedLiveSource else {
+            return false
+        }
+        return liveBootOverrides[source.name] ?? source.boot
+    }
+
+    /// 拨这个开关：写本地覆盖（两个方向都写）—— 只影响**下一次启动**，不重载任何清单。
+    func setLiveBoot(_ enabled: Bool) {
+        guard let name = selectedLiveSource?.name, !name.isEmpty else {
+            return
+        }
+        guard liveBootEnabled != enabled else {
+            return
+        }
+        liveBootOverrides = LiveSourceFlagBook.setting(enabled, for: name, in: liveBootOverrides)
     }
 
     /// 界面上要显示的分组：**未解锁的加密分组不出现**（上游把它们收在 `mHides` 里）。
