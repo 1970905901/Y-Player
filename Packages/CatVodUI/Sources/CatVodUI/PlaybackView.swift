@@ -59,6 +59,12 @@ public struct PlaybackView: View {
     let danmakuDisplay: DanmakuDisplayConfig
     /// 弹幕总开关的回写口（M03P18）：nil = 上层不给改（那就不摆这个开关）。
     let onToggleDanmaku: ((Bool) -> Void)?
+    /// 这次播放的来源行（「解析：xxx」/ 站点给的 desc，M03P22）：空数组 = 不显示。
+    /// 由上层从 `AppModel.playbackInfoRows` 传进来（播放页不认识 `AppModel`）。
+    let playbackInfoRows: [String]
+    /// 是否已收藏（M03P22）：与 ``onToggleFavorite`` 成对传；没有回写口就不摆这个开关。
+    let isFavorite: Bool
+    let onToggleFavorite: (() -> Void)?
     /// 批量下载：把要下载的集交回上层（只有上层知道站点与 `AppModel`）。
     let onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> DownloadEnqueueOutcome)?
     /// 播放信息回传口（M17P2）：读到一次**非空**的播放信息就回传一次。
@@ -182,7 +188,10 @@ public struct PlaybackView: View {
         onPlaybackStats: ((PlaybackStats) -> Void)? = nil,
         playlist: PlaybackPlaylist? = nil,
         lineSwitcher: PlaybackLineSwitcher? = nil,
-        onStart: (() -> Void)? = nil
+        onStart: (() -> Void)? = nil,
+        playbackInfoRows: [String] = [],
+        isFavorite: Bool = false,
+        onToggleFavorite: (() -> Void)? = nil
     ) {
         _activeResource = State(initialValue: resource)
         _activeTitle = State(initialValue: title)
@@ -203,6 +212,9 @@ public struct PlaybackView: View {
         self.onEnqueueDownloads = onEnqueueDownloads
         self.onPlaybackStats = onPlaybackStats
         self.onStart = onStart
+        self.playbackInfoRows = playbackInfoRows
+        self.isFavorite = isFavorite
+        self.onToggleFavorite = onToggleFavorite
     }
 
     /// 前后台切换：锁屏的自动解锁要用（见 M03P21）。
@@ -212,7 +224,13 @@ public struct PlaybackView: View {
         VStack(spacing: 0) {
             playerArea
             List {
-                Section("离线下载") {
+                Section("追剧与下载") {
+                    if let onToggleFavorite {
+                        Toggle("收藏（加入追剧）", isOn: Binding(
+                            get: { isFavorite },
+                            set: { _ in onToggleFavorite() }
+                        ))
+                    }
                     Button("下载本集") {
                         Task { await enqueueDownload() }
                     }
@@ -256,6 +274,11 @@ public struct PlaybackView: View {
                     }
                 }
                 Section("媒体") {
+                    ForEach(playbackInfoRows, id: \.self) { row in
+                        Text(row)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Text(activeResource.url)
                         .font(.caption)
                         .foregroundStyle(.secondary)

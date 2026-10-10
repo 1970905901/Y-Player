@@ -29,6 +29,9 @@ struct SitePlayEpisodeView: View {
     let playlist: PlaybackPlaylist?
     /// 播放页自己的换线路能力（M03P17）：同上，只转发。
     let lineSwitcher: PlaybackLineSwitcher?
+    /// 收藏状态与开关（M03P22）：详情页包好传进来（它才有完整的收藏元数据），这里只转发。
+    let isFavorite: Bool
+    let onToggleFavorite: (() -> Void)?
 
     @State private var resource: MediaResource?
     /// 站点说「还要再解析一次」时存下 play 的结果，body 里转交给解析链（见 ``loadResource()``）。
@@ -90,7 +93,11 @@ struct SitePlayEpisodeView: View {
                         model.resetAdSkip()
                         model.clearDanmaku()
                         model.clearSubtitles()
-                    }
+                        model.clearPlaybackInfo()
+                    },
+                    playbackInfoRows: model.playbackInfoRows,
+                    isFavorite: isFavorite,
+                    onToggleFavorite: onToggleFavorite
                 )
             } else if let parseFallback {
                 // 站点说要再解析一次：把 play 的结果原样交给解析链 ——

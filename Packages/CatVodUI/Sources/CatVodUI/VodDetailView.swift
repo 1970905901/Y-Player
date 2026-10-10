@@ -436,11 +436,15 @@ public struct VodDetailView: View {
                 playlist: playlist,
                 lineSwitcher: lineSwitcher(currentIndex: index),
                 onStart: {
-                    // 开播先把上一次的残留清掉（M03P18：这两个数组是全局的，不清会串到下一部片）
+                    // 开播先把上一次的残留清掉（M03P18 / M03P22：这些都是全局的，不清会串到下一部片）
                     model.resetAdSkip()
                     model.clearDanmaku()
                     model.clearSubtitles()
-                }
+                    model.clearPlaybackInfo()
+                },
+                playbackInfoRows: model.playbackInfoRows,
+                isFavorite: isFavorite,
+                onToggleFavorite: { Task { await toggleFavorite() } }
             )
         } else if let site, isSpiderPlayable(site) {
             // js2p / CatSpider 站点：播放地址要用 `POST /play` 换，因此走异步入口。
@@ -453,7 +457,9 @@ public struct VodDetailView: View {
                 episodeIndex: index,
                 progressKey: progressKey,
                 playlist: playlist,
-                lineSwitcher: lineSwitcher(currentIndex: index)
+                lineSwitcher: lineSwitcher(currentIndex: index),
+                isFavorite: isFavorite,
+                onToggleFavorite: { Task { await toggleFavorite() } }
             )
         } else if let site, requiresSitePlay(site, episode: episode) {
             // type=4：播放地址要用站点的 `play` 接口换（`play` + `flag`），同样是异步入口（M06n）。
@@ -466,7 +472,9 @@ public struct VodDetailView: View {
                 episodeIndex: index,
                 progressKey: progressKey,
                 playlist: playlist,
-                lineSwitcher: lineSwitcher(currentIndex: index)
+                lineSwitcher: lineSwitcher(currentIndex: index),
+                isFavorite: isFavorite,
+                onToggleFavorite: { Task { await toggleFavorite() } }
             )
         } else if let site, canParse(episode) {
             // 需要解析（`parse/jx = 1`）的集：走解析链（M5b 已支持 type=1 JSON；type=0/4 会给出 M5c 的原因）。
@@ -478,7 +486,9 @@ public struct VodDetailView: View {
                 episode: episode,
                 episodeIndex: index,
                 detail: detail,
-                progressKey: progressKey
+                progressKey: progressKey,
+                isFavorite: isFavorite,
+                onToggleFavorite: { Task { await toggleFavorite() } }
             )
         } else {
             UnsupportedPlaybackView(reason: unsupportedReason(for: episode))

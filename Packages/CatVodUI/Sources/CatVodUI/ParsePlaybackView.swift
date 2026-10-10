@@ -38,6 +38,10 @@ struct ParsePlaybackView: View {
     @State private var jsonPending = false
     /// Web 通道是否还在跑。
     @State private var webPending = false
+    /// 收藏状态与开关（M03P22）：详情页传进来（只有它握有完整的收藏元数据），这里只转发。
+    let isFavorite: Bool
+    let onToggleFavorite: (() -> Void)?
+
     @State private var jsonFailure = ""
     @State private var webFailure = ""
 
@@ -70,7 +74,11 @@ struct ParsePlaybackView: View {
                         model.resetAdSkip()
                         model.clearDanmaku()
                         model.clearSubtitles()
-                    }
+                        model.clearPlaybackInfo()
+                    },
+                    playbackInfoRows: model.playbackInfoRows,
+                    isFavorite: isFavorite,
+                    onToggleFavorite: onToggleFavorite
                 )
             } else if errorText.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
