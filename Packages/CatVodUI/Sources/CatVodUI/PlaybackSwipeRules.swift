@@ -6,7 +6,10 @@ import Foundation
 /// 为什么单独立一条纯规则：SwiftUI 的 `DragGesture` 不给速度（只有位移与预测终点），而纵向拖
 /// 已经被音量 / 亮度占着 —— 「是不是一甩」得自己采样算出来，也就必须能单独测出来。
 /// 采样（``PlaybackSwipeTracker``）与判定（``PlaybackSwipeRules``）都在这儿，视图只管按结果做事。
-enum PlaybackSwipeAction: Equatable {
+///
+/// `public` 的理由同 ``PlaybackPlaylist`` / ``PlaybackLineSwitcher``：`PlaybackView` 是 public，
+/// 它的 init 收 `((PlaybackSwipeAction) -> Void)?` —— 参数类型不能比 init 更内敛。
+public enum PlaybackSwipeAction: Equatable {
     /// 上滑（点播页 = 下一集；直播页 = 上一台 —— 两个页面方向相反，所以这里只报「上 / 下」，含义由页面定）。
     case up
     /// 下滑（点播页 = 上一集；直播页 = 下一台）。

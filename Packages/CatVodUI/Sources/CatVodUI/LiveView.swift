@@ -394,13 +394,13 @@ private struct LiveChannelPlaybackView: View {
             resource: resource,
             title: title,
             settings: model.playbackSettings,
-            onPlaybackStats: { model.notePlaybackStats($0) },
-            onStart: { model.resetAdSkip() },
             onVerticalSwipe: { swipe in
                 // 直播页的纵甩换台（M07d10）：方向由 `LiveSetting.isInvert()` 那套决定 ——
                 // 默认上滑 = 上一台（上游 `LiveActivity.onFlingUp/Down`，与点播页相反）。
                 zap(LiveChannelNavigation.zapStep(swipeUp: swipe == .up, invert: model.liveSwipeInvert))
-            }
+            },
+            onPlaybackStats: { model.notePlaybackStats($0) },
+            onStart: { model.resetAdSkip() }
         )
         // 换频道 / 换线路 = 换资源：`PlaybackView` 自己的 `.task` 只在视图出现时跑一次，
         // 所以用 `id` 让播放页重建（不重建就会继续播旧地址）。
