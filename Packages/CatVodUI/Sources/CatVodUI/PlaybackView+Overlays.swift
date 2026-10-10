@@ -13,14 +13,23 @@ import SwiftUI
 extension PlaybackView {
     // MARK: - 覆盖层（弹幕 M08h / 字幕 M09f）
 
+    /// 现在该显示哪份字幕：**选了内嵌轨（引擎发来的那份非空）就用它**，
+    /// 否则用外部那份（字幕文件 / 字幕服务给的 `subtitleCues`）—— 「选了内嵌轨」就是「我就要这个」。
+    var effectiveSubtitleCues: [SubtitleCue] {
+        engineSubtitleCues.isEmpty ? subtitleCues : engineSubtitleCues
+    }
+
     /// 字幕时间轴的重排键：**只看 cue 本身**（不像弹幕还要带尺寸与显示设置 —— 字幕没有几何
     /// 烘进时间轴，字号与位置只在画的时候用）。
     ///
     /// 与 `danmakuPlanKey` 同一套理由：用「条数 + 首末开始时间」代表整份数组，
     /// 每帧都要算的键不该是 O(n)。
     var subtitleTimelineKey: String {
-        let cues = subtitleCues
+        let cues = effectiveSubtitleCues
+        // 来源也要进键：内嵌 / 外部切换时（哪怕条数碰巧一样）也得重排。
+        let source = engineSubtitleCues.isEmpty ? "external" : "embedded"
         return [
+            source,
             String(cues.count),
             String(cues.first?.start ?? -1),
             String(cues.last?.start ?? -1),
@@ -32,7 +41,7 @@ extension PlaybackView {
     /// 比弹幕的计划便宜得多（排序 + 算最长时长），但仍是 O(n log n)：放进 `.task(id:)` 而不是
     /// 每次 body 都算 —— 播放中 body 会因时钟、状态、进度反复重建。
     func makeSubtitleTimeline() -> SubtitleTimeline? {
-        let cues = subtitleCues
+        let cues = effectiveSubtitleCues
         guard !cues.isEmpty else {
             return nil
         }

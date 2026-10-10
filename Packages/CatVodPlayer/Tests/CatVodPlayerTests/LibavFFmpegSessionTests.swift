@@ -259,6 +259,14 @@ struct LibavFFmpegSessionTests {
         #expect(listed)
         let tracks = listedAudioTracks()
         let second = try #require(tracks.last)
+        // 夹具没有字幕轨：清单里字幕是空数组（只报文本轨，M04P19）
+        let subtitleLists = box.all.compactMap { event -> [Int]? in
+            if case let .tracks(_, _, subtitle) = event {
+                return subtitle
+            }
+            return nil
+        }
+        #expect(subtitleLists.first?.isEmpty == true)
 
         // 2) 切到第二条，等解码线程把请求取走（它卡在背压里也会先处理待办）
         await session.selectTrack(.index(second), for: .audio)
@@ -312,6 +320,9 @@ struct LibavFFmpegSessionTests {
         for (current, next) in zip(frames, frames.dropFirst()) {
             #expect(abs(current.duration - (next.presentation - current.presentation)) < 0.002)
         }
+        // 关字幕（M04P19）：没有内嵌轨时也该是安全的空操作
+        await session.selectTrack(.disabled, for: .subtitle)
+
         // 播放信息那几行（M04P15）：解码实测 + 容器帧率（fixture 是 30fps）+ 输出像素格式
         let stats = await session.stats()
         #expect(stats.decodeText == "硬件解码（VideoToolbox）")

@@ -97,7 +97,8 @@ struct SettingsPlayerUISettingsView: View {
                 Text("系统内核（AVPlayer）的画面控件与手势由系统提供（`docs/UI 规范.md`：不自绘播放控件）；"
                     + "MPV 与自研 FFmpeg 内核共用自绘的最小控制条与手势（双击暂停 / 横拖进度 / 纵拖音量），"
                     + "MPV 的音轨与字幕在播放页选。自研 FFmpeg 内核（M04P13 起可播）严格按设置的解码方式："
-                    + "硬解不可用时播放页会明确提示、让你改成软解（不自动降级）；音轨可在播放页换（M04P16），字幕还没做。")
+                    + "硬解不可用时播放页会明确提示、让你改成软解（不自动降级）；音轨与内嵌文本字幕都能在播放页换"
+                    + "（字幕只出字、样式不还原，位图轨不做，见 M04P19）。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -132,7 +133,7 @@ struct SettingsPlayerControlView: View {
         case .ffmpeg:
             "自研 FFmpeg 的画面由我们自己解码、交给系统渲染管线（硬解走 VideoToolbox、软解走 libswscale，"
                 + "都进 AVSampleBufferDisplayLayer）；解码方式严格按设置来，硬解不可用时播放页会提示改成软解。"
-                + "音轨能在播放页换（从当前位置往后接，不回头对齐）；字幕还没做。"
+                + "音轨能在播放页换（从当前位置往后接，不回头对齐）；内嵌文本字幕能出字（样式不还原，M04P19）。"
         }
     }
 

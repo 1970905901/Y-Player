@@ -231,6 +231,20 @@ final class LibavInput: @unchecked Sendable {
         #endif
     }
 
+    /// 这条流在容器里带不带「默认」标记（`AV_DISPOSITION_DEFAULT` = 0x1）。
+    ///
+    /// 字幕轨的「自动」要按它挑：容器作者通常把该显示的那条标成 default。
+    func hasDefaultDisposition(at index: Int) -> Bool {
+        #if canImport(Libavformat)
+        guard index >= 0, let context, let list = context.pointee.streams else { return false }
+        guard index < Int(context.pointee.nb_streams), let stream = list[index] else { return false }
+        return stream.pointee.disposition & Self.avDispositionDefault != 0
+        #else
+        _ = index
+        return false
+        #endif
+    }
+
     /// 找第一条指定类别的流（按媒体类型字符串判，不比 C 枚举 —— 与 `mediaInfo()` 同一口径）。
     func firstStreamIndex(of kind: StreamInfo.Kind) -> Int? {
         #if canImport(Libavformat) && canImport(Libavcodec) && canImport(Libavutil)
@@ -337,6 +351,10 @@ final class LibavInput: @unchecked Sendable {
     /// `AVERROR(EAGAIN)` = `-EAGAIN`：常规的「这次没得收 / 先收帧腾位置」。
     /// **不写死数字**：`EAGAIN` 是平台常量（Darwin 35、Linux 11），写死就会在其中一个平台上判错。
     static let againCode: Int32 = -EAGAIN
+
+    /// `AV_DISPOSITION_DEFAULT`（宏导不进来，值写死）：容器给这条流的「默认」标记。
+    /// 字幕轨的「自动」要靠它挑（M04P19）。
+    private static let avDispositionDefault: Int32 = 0x1
 
     /// `AVSEEK_FLAG_BACKWARD`（同样是宏，值写死）：跳到目标**之前**最近的关键帧。
     private static let avseekFlagBackward: Int32 = 1

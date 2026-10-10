@@ -1,4 +1,5 @@
 import AVFoundation
+import CatVodCore
 import CoreVideo
 import Foundation
 
@@ -58,11 +59,18 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     private var audioStreamIndex: Int?
     /// 待办的换轨请求（控制线程放、解码线程取；`nil` = 没有待办）。与 seek 同一套：一段读包的人只能有一个。
     private var pendingAudioTrack: PendingAudioTrack?
+    /// 待办的换字幕请求（与换音轨同一套；M04P19）。
+    private var pendingSubtitleTrack: PendingSubtitleTrack?
 
     /// 饥饿看门狗（M04P17）：解码线程喂帧、看门狗线程心跳；状态机与判定是纯逻辑（``FeedStarvationWatchdog``）。
     private var starvationWatchdog = FeedStarvationWatchdog()
     /// 最后一帧的 pts（秒）：解码线程写、看门狗线程读 —— 用 `lock` 串。
     private var lastFedSeconds: Double = 0
+
+    /// 字幕解码器（M04P19）：选了内嵌字幕轨才有；只在解码线程里碰。
+    private var subtitleDecoder: LibavSubtitleDecoder?
+    /// 已解出的内嵌字幕 **全量** 列表：每次变化整份发出去（数组是值语义 + CoW，发全量最不容易出错）。
+    private var subtitleCues: [SubtitleCue] = []
 
     /// 实际跑起来的解码路径（第一帧定）：解码线程写、控制路径（`stats()`）读 —— 用 `lock` 串。
     private var actualDecodeIsHardware: Bool?
@@ -118,10 +126,25 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         info = input.mediaInfo()
         durationSeconds = info?.durationSeconds ?? 0
         // 轨道清单：**开片报一次**（换轨不重报 —— 重报会让界面把用户刚选的那条复位成「自动」）。
-        // 字幕轨我们还没有：报空数组 = 界面不显示字幕选择，如实（M04P16）。
+        // 字幕只报**文本轨**（位图轨出不了字，不摆死选项，M04P19）。
         let videoTracks = info?.streams.filter { $0.kind == .video }.map(\.index) ?? []
         let audioTracks = info?.streams.filter { $0.kind == .audio }.map(\.index) ?? []
-        emit(.tracks(video: videoTracks, audio: audioTracks, subtitle: []))
+        let subtitleTracks = (info?.streams ?? [])
+            .filter { $0.kind == .subtitle && LibavSubtitleDecoder.isTextCodec($0.codecName) }
+            .map(\.index)
+        emit(.tracks(video: videoTracks, audio: audioTracks, subtitle: subtitleTracks))
+        // 字幕默认跟 MPV 的 `sid=auto` 一个口径：优先容器标了 default 的那条，没有就第一条能出字的。
+        // 开不了**不拦路**：字幕是锦上添花，没它也能播。
+        if let defaultSubtitle = defaultSubtitleStreamIndex() {
+            let decoder = LibavSubtitleDecoder()
+            if let failure = decoder.open(input: input, streamIndex: defaultSubtitle) {
+                decoder.close()
+                let note = "默认字幕轨开不了（流 \(defaultSubtitle)）：\(failure) —— 没字幕继续"
+                LibavTrace.logger.error("\(note, privacy: .public)")
+            } else {
+                subtitleDecoder = decoder
+            }
+        }
         // 起点续播就是「打开后先跳一次」：时间轴也挪过去，等第一帧回来自然开播。
         if resource.startPosition > 0 {
             if let failure = input.seek(to: resource.startPosition) {
@@ -198,6 +221,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         if isDecodeFinished() {
             videoDecoder.close()
             audioDecoder?.close()
+            subtitleDecoder?.close()
             input.close()
         }
         continuation?.finish()
@@ -229,6 +253,10 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
             }
             if let request = takePendingAudioTrack() {
                 performAudioSwitch(to: request)
+                continue
+            }
+            if let request = takePendingSubtitleTrack() {
+                performSubtitleSwitch(to: request)
                 continue
             }
             if isFinishedEof() {
@@ -330,6 +358,12 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
                 audioRenderer.enqueue(sample)
                 audioSamplesEnqueued += 1
             }
+            return
+        }
+        if let subtitleDecoder, packet.streamIndex == subtitleDecoder.streamIndex {
+            for cue in subtitleDecoder.feed(packet.pointer) {
+                appendSubtitleCue(cue)
+            }
         }
     }
 
@@ -429,22 +463,45 @@ extension LibavFFmpegSession {
         case disabled
     }
 
-    /// 换音轨（M04P16）：这里只**记账**，真正的切换在解码线程里做（`performAudioSwitch`）。
+    /// 换字幕请求的三种形态（对齐 `TrackSelection`，M04P19）。
+    private enum PendingSubtitleTrack {
+        /// 容器里的默认轨（带 default 标记的那条，没有就第一条能出字的）。
+        case automatic
+        /// 切到指定流下标。
+        case stream(Int)
+        /// 关掉字幕。
+        case disabled
+    }
+
+    /// 换轨（M04P16 音轨 / M04P19 字幕）：这里只**记账**，真正的切换在解码线程里做
+    /// （`performAudioSwitch` / `performSubtitleSwitch`）。
     ///
-    /// - `.auto`：回到容器里的第一条音轨；
-    /// - `.disabled`：把音轨关掉（拆解码器，不是静音假装）；
-    /// - `.index`：切到那条流 —— 不是音频流 / 开不了，会保留旧轨继续响（原因进日志）。
+    /// - `.auto`：音轨回容器第一条；字幕回容器默认轨（带 default 标记的那条，没有就第一条能出字的）；
+    /// - `.disabled`：关掉（音轨拆解码器，不是静音假装；字幕清掉已解出的 cue）；
+    /// - `.index`：切到那条流 —— 不是该类流 / 开不了，会保留旧的（原因进日志）。
     ///
-    /// 字幕轨还没做（轨道清单里也没报出去）：这里如实忽略，不假装生效。
+    /// 视频轨没得选（一个文件一条）：如实忽略，不假装生效。
     func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async {
-        guard kind == .audio else { return }
-        lock.lock()
-        switch selection {
-        case .auto: pendingAudioTrack = .automatic
-        case let .index(index): pendingAudioTrack = .stream(index)
-        case .disabled: pendingAudioTrack = .disabled
+        switch kind {
+        case .audio:
+            lock.lock()
+            switch selection {
+            case .auto: pendingAudioTrack = .automatic
+            case let .index(index): pendingAudioTrack = .stream(index)
+            case .disabled: pendingAudioTrack = .disabled
+            }
+            lock.unlock()
+        case .subtitle:
+            lock.lock()
+            switch selection {
+            case .auto: pendingSubtitleTrack = .automatic
+            case let .index(index): pendingSubtitleTrack = .stream(index)
+            case .disabled: pendingSubtitleTrack = .disabled
+            }
+            lock.unlock()
+        case .video:
+            return
         }
-        lock.unlock()
     }
 
     /// 取走待办换轨（解码线程消费；控制线程只放不快取）。
@@ -676,5 +733,76 @@ extension LibavFFmpegSession {
             videoRenderer.pause()
             emit(.state(.buffering))
         }
+    }
+}
+
+// MARK: - 内嵌字幕（M04P19）
+
+/// 内嵌字幕：清单里只报文本轨；默认启用容器标了 default 的那条；换轨时把旧 cue 清干净再发全量。
+///
+/// 为什么拆成扩展：类型体行数会把 CI 的 lint 顶红（同 M04P16 / M04P17 那两组的理由）。
+extension LibavFFmpegSession {
+    /// 默认字幕轨：带 default 标记的第一条能出字的轨，没有就第一条能出字的；都没有给 nil。
+    func defaultSubtitleStreamIndex() -> Int? {
+        let textTracks = (info?.streams ?? []).filter {
+            $0.kind == .subtitle && LibavSubtitleDecoder.isTextCodec($0.codecName)
+        }
+        guard !textTracks.isEmpty else { return nil }
+        if let flagged = textTracks.first(where: { input.hasDefaultDisposition(at: $0.index) }) {
+            return flagged.index
+        }
+        return textTracks.first?.index
+    }
+
+    /// 取走待办换字幕（解码线程消费；控制线程只放不快取）。
+    func takePendingSubtitleTrack() -> PendingSubtitleTrack? {
+        lock.lock()
+        defer { lock.unlock() }
+        let request = pendingSubtitleTrack
+        pendingSubtitleTrack = nil
+        return request
+    }
+
+    /// 换字幕轨（**只在解码线程里跑**）：新解码器先建好，成了才换；换完清掉旧 cue 再发全量。
+    func performSubtitleSwitch(to request: PendingSubtitleTrack) {
+        let target: Int?
+        switch request {
+        case .automatic:
+            target = defaultSubtitleStreamIndex()
+        case let .stream(index):
+            target = index
+        case .disabled:
+            target = nil
+        }
+        guard let target else {
+            subtitleDecoder?.close()
+            subtitleDecoder = nil
+            clearSubtitleCues()
+            return
+        }
+        guard target != subtitleDecoder?.streamIndex else { return }
+        let candidate = LibavSubtitleDecoder()
+        if let failure = candidate.open(input: input, streamIndex: target) {
+            candidate.close()
+            let note = "换字幕轨失败（流 \(target)）：\(failure) —— 继续用旧的"
+            LibavTrace.logger.error("\(note, privacy: .public)")
+            return
+        }
+        subtitleDecoder?.close()
+        subtitleDecoder = candidate
+        // 旧轨的 cue 不能再显示：界面是「整份替换」语义，先清空，新轨的 cue 慢慢来。
+        clearSubtitleCues()
+    }
+
+    /// 收一条 cue：进全量列表并发出去（整份发，数组 CoW 很便宜）。
+    func appendSubtitleCue(_ cue: SubtitleCue) {
+        subtitleCues.append(cue)
+        emit(.subtitleCues(subtitleCues))
+    }
+
+    /// 清空内嵌字幕（关掉 / 换轨时）：列表清掉，把「空」也发出去 —— 界面整份替换，这就等于关掉了。
+    func clearSubtitleCues() {
+        subtitleCues.removeAll()
+        emit(.subtitleCues([]))
     }
 }

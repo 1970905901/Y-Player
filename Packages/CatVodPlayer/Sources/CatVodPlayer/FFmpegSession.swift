@@ -1,3 +1,4 @@
+import CatVodCore
 import Foundation
 
 /// 自研 FFmpeg 内核（M4）的**会话 seam**。
@@ -48,6 +49,8 @@ public enum FFmpegSessionEvent: Sendable, Equatable {
     case buffered(seconds: Double)
     /// 轨道列表（demux 认全后报一次；换片 / 换轨再报）。
     case tracks(video: [Int], audio: [Int], subtitle: [Int])
+    /// 内嵌字幕（M04P19）：**全量** cue 列表（空数组 = 清空 / 关掉字幕）—— 界面按整份替换用。
+    case subtitleCues([SubtitleCue])
 }
 
 /// 会话工厂：真会话（`LibavFFmpegSession`）从这里建。

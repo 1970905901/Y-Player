@@ -160,6 +160,8 @@ public actor FFmpegEngine: PlayerEngine, PlaybackStatsProviding {
             emit(.bufferedChanged(seconds: seconds))
         case let .tracks(video, audio, subtitle):
             emit(.tracksChanged(video: video, audio: audio, subtitle: subtitle))
+        case let .subtitleCues(cues):
+            emit(.subtitleCues(cues))
         }
     }
 

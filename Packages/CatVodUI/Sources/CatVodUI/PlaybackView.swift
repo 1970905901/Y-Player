@@ -97,6 +97,8 @@ public struct PlaybackView: View {
     @State var danmakuRender: DanmakuRenderPlan?
     /// 字幕的时间轴（M09f）：把 cue 排一次序（查询是二分），别每帧重排。
     @State var subtitleTimeline: SubtitleTimeline?
+    /// 内嵌字幕轨解出来的 cue（M04P19）：引擎发的是**全量**，空数组 = 没选内嵌轨 / 已关掉。
+    @State var engineSubtitleCues: [SubtitleCue] = []
     /// 播放时间的外推：引擎每秒才报一次位置，直接喂给弹幕会一秒跳一格（见 ``PlaybackClock``）。
     /// 弹幕与字幕**共用**这一个时钟 —— 两者都必须按同一刻的时间取内容，各自推一份只会互相错开。
     @State private var playbackClock = PlaybackClock()
@@ -576,6 +578,9 @@ extension PlaybackView {
                 // 变速：**先外推再换速率** —— 直接改会把这一次上报之前已经走过的距离丢掉，弹幕往回跳。
                 playbackRate = Double(rate)
                 playbackClock.setRate(clockRate(), at: Date())
+            case let .subtitleCues(cues):
+                // 内嵌字幕轨（M04P19）：引擎发的是**全量**，这里整份替换。
+                engineSubtitleCues = cues
             case let .tracksChanged(_, audio, subtitle):
                 audioTracks = audio
                 subtitleTracks = subtitle

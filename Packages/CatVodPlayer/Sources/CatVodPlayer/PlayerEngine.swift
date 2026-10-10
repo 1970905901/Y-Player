@@ -1,3 +1,4 @@
+import CatVodCore
 import Foundation
 
 /// 播放内核类型。
@@ -68,6 +69,8 @@ public enum PlayerEvent: Sendable, Equatable {
     case timeChanged(current: Double, duration: Double)
     case bufferedChanged(seconds: Double)
     case tracksChanged(video: [Int], audio: [Int], subtitle: [Int])
+    /// 内嵌字幕（M04P19）：**全量** cue 列表（空数组 = 清空 / 关掉字幕）。
+    case subtitleCues([SubtitleCue])
     case speedChanged(Float)
     case error(String)
 }
