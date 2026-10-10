@@ -8,8 +8,7 @@ import Foundation
 /// 音频走 libavcodec + swresample 进音频渲染器；两者挂**同一条** synchronizer。
 ///
 /// 当前已知缺口（**如实说，别让界面以为它全能**；M04P13 已把它接进界面）：
-/// - 换音轨 v1 **不做重定位**：从当前读包位置往后接（新轨的头几帧可能比画面晚一点点），
-///   不回头把新轨对齐到当前时刻；
+/// - 逐帧步进 / 音频增益还没做（M04P13 / M04P14 记的「内核专属控制」留的口）；
 /// - 字幕只出**文本**轨、样式不还原（位图轨 / ASS 不做；M04P19）；
 /// - 网络读阻塞期间 `close()` 不保证立刻收线程 —— 在没有 interrupt callback 之前，
 ///   宁可让线程自然退出，也不释放它可能正在读的上下文；
@@ -42,6 +41,10 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     /// 第一帧进过显示层没有、读到尾没有：解码线程写，但**看门狗线程会读**（M04P17）—— 读写都走 `lock`。
     private var startedPlaying = false
     private var finishedEof = false
+    /// 这一路真的开播过没有（M04P22）：只有它允许把 `playing` 打开。
+    /// 与 `startedPlaying`（看门狗的门，seek 后会压回去重新等第一帧）是**两件事**，见 `enqueue(_:duration:)`。
+    /// 只在解码线程读写，不用锁。
+    private var hasStartedEver = false
 
     // 以下只在解码线程里碰：不需要锁
     private var pendingFrame: LibavVideoDecoder.Frame?
@@ -53,6 +56,8 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     private var routedVideoPackets = 0
     private var videoFramesAccepted = 0
     private var audioSamplesEnqueued = 0
+    /// 显示侧丢帧（M04P22）：帧**没能进显示层**（转样本失败）的次数 —— 解码线程写、快照时进锁。
+    private var displayDropped = 0
     private var loopStartedAt = Date()
     private var loggedVideoSilence = false
     /// 当前音轨的流下标（`nil` = 没有音轨 / 被关掉）：解码线程写、`stats()` 读 —— 用 `lock` 串。
@@ -80,8 +85,9 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     /// `nil` = 没挂 / 认不出（认不出不猜，播放信息那边空着）。解码线程写、`stats()` 读 —— 走 `lock`。
     private var actualOutputPrimaries: String?
     private var actualOutputGamma: String?
-    /// 解码侧丢帧快照（解码线程写、控制路径读，都走 `lock`）。
+    /// 两侧丢帧快照（解码线程写、控制路径读，都走 `lock`）。
     private var decoderDroppedSnapshot = 0
+    private var displayDroppedSnapshot = 0
     private var reportedHardwareFallback = false
 
     /// 生产入口：给画面层 —— 音视频挂**同一条** synchronizer（音画同步结构自带）。
@@ -510,7 +516,9 @@ extension LibavFFmpegSession {
     /// 换音轨（**只在解码线程里跑**）：新解码器先建好，成了才换、才 flush ——
     /// 换不过去就保留旧轨继续响（不静音、不假装），原因进日志。
     ///
-    /// v1 口径：**不做重定位** —— 新轨从当前读包位置往后接（见类文档的缺口清单）。
+    /// 换完**重定位到当前显示位置**（M04P22，对齐 ExoPlayer 换轨那一套）：读包位置在显示位置前面
+    /// （解码线程总是先读一段缓冲着），不回头对齐的话，新轨会先静一下、再从中途接上 ——
+    /// 用户感觉是「换轨之后声音要等半秒才对得上口型」。
     private func performAudioSwitch(to request: PendingAudioTrack) {
         let target: Int?
         switch request {
@@ -546,6 +554,9 @@ extension LibavFFmpegSession {
         lock.lock()
         audioStreamIndex = target
         lock.unlock()
+        // 重定位（M04P22）：复用整段 seek —— 输入跳关键帧 + 两侧 flush + 时间轴重定位。
+        // 画面有一次很短的补帧（从目标前一个关键帧接上），换来的是新轨与画面重新对齐。
+        performSeek(to: videoRenderer.currentSeconds)
     }
 }
 
@@ -589,7 +600,9 @@ extension LibavFFmpegSession {
         // - 「解码」：实际拿到的是哪种帧（选硬解而硬解不可用时链路会停下报错）；
         // - 「输出」：真正交给显示层的像素格式（硬解是 VT 的 buffer、软解是我们转的 420v）
         //   与色彩标签（M04P20：从那张 buffer 上读回，HDR 有没有送出去看它）；
-        // - 「丢帧」：解码侧丢了多少（转换不出来的帧）—— 显示侧我们没有读法，不替它写 0。
+        // - 「丢帧」：两侧都报（M04P22）—— 显示侧 = 帧没能进显示层（转样本失败；`AVSampleBufferDisplayLayer`
+        //   自己不报丢帧，这是我们的口径），解码侧 = 转换不出来的帧。数字是 0 也写：那说明我们**读到**了 0
+        //   （`PlaybackStats.dropText` 的「无丢帧」只在读到 0 时才是真话，M04P15 定的口径）。
         let snapshot = decodePathSnapshot()
         if let isHardware = snapshot.isHardware {
             raw["hwdec-current"] = isHardware ? "videotoolbox" : "no"
@@ -603,7 +616,8 @@ extension LibavFFmpegSession {
         if let outputGamma = snapshot.gamma {
             raw["video-out-params/gamma"] = outputGamma
         }
-        if snapshot.decoderDropped > 0 {
+        if snapshot.isHardware != nil {
+            raw["frame-drop-count"] = String(snapshot.displayDropped)
             raw["decoder-frame-drop-count"] = String(snapshot.decoderDropped)
         }
         return PlaybackStats(rawValues: raw)
@@ -630,12 +644,17 @@ extension LibavFFmpegSession {
         lock.unlock()
     }
 
-    /// 解码侧丢帧计数进快照（跟 `stats()` 共用一把锁）：只在变化时写，别让它每包都转一次锁。
+    /// 两侧丢帧计数进快照（跟 `stats()` 共用一把锁）：只在变化时写，别让它每包都转一次锁。
+    /// 解码侧来自解码器（转换不出来的帧）；显示侧是本会话数的（帧没能进显示层，M04P22）。
     private func noteDroppedFrames() {
-        let dropped = videoDecoder.droppedFrameCount
-        guard dropped != decoderDroppedSnapshot else { return }
+        let decoderDropped = videoDecoder.droppedFrameCount
+        let displayDroppedNow = displayDropped
+        guard decoderDropped != decoderDroppedSnapshot || displayDroppedNow != displayDroppedSnapshot else {
+            return
+        }
         lock.lock()
-        decoderDroppedSnapshot = dropped
+        decoderDroppedSnapshot = decoderDropped
+        displayDroppedSnapshot = displayDroppedNow
         lock.unlock()
     }
 
@@ -680,23 +699,33 @@ extension LibavFFmpegSession {
             presentationSeconds: frame.seconds,
             durationSeconds: duration
         )
-        guard accepted else { return }
+        guard accepted else {
+            // 显示侧丢帧（M04P22）：这一帧**没能进显示层**（转样本失败）—— 显示侧唯一我们自己
+            // 数得出来的那种。迟到帧**不算**：显示层会把它们立刻补显，表现是短暂追帧而不是丢帧。
+            displayDropped += 1
+            return
+        }
         videoFramesAccepted += 1
-        // 时钟跟着帧走（M04P17）：记下这帧的 pts + 从饥饿里恢复；第一帧真排上了才算「开始播」
-        // （在此之前界面那边还是 loading）。这些值跨线程读，一次锁里办完。
+        // 时钟跟着帧走（M04P17）：记下这帧的 pts + 从饥饿里恢复。这些值跨线程读，一次锁里办完。
+        //
+        // 「第一帧」有两个身份，别再用一个旗标兼职（M04P22 拆的）：
+        // - `startedPlaying`：**看门狗的门** —— 出过帧才谈饥饿；`performSeek` 会把它压回去（seek 后重新等第一帧）；
+        // - `hasStartedEver`：**这一路真的开播过** —— 只有它允许把 `playing` 打开。
+        //   老代码两者共用一个旗标，于是「暂停着拖进度条」会被 seek 后的第一帧按回播放态。
         lock.lock()
         lastFedSeconds = frame.seconds
         let wasStarving = starvationWatchdog.noteFeed()
         let resumeRate = rate
         let isPlayingNow = playing
-        let isFirstFrame = !startedPlaying
-        if isFirstFrame {
-            startedPlaying = true
+        let isFirstFrameEver = !hasStartedEver
+        if isFirstFrameEver {
+            hasStartedEver = true
             playing = true
         }
+        startedPlaying = true
         lock.unlock()
         // 恢复只在「还在播」时做：暂停 / 用户自己停了表的时候，喂帧不许把表接回去。
-        if isFirstFrame || (wasStarving && isPlayingNow) {
+        if isFirstFrameEver || (wasStarving && isPlayingNow) {
             videoRenderer.play(rate: resumeRate)
             emit(.state(.playing))
         }
@@ -882,6 +911,7 @@ extension LibavFFmpegSession {
         pixelFormat: String?,
         primaries: String?,
         gamma: String?,
+        displayDropped: Int,
         decoderDropped: Int
     ) {
         lock.lock()
@@ -891,6 +921,7 @@ extension LibavFFmpegSession {
             actualOutputPixelFormat,
             actualOutputPrimaries,
             actualOutputGamma,
+            displayDroppedSnapshot,
             decoderDroppedSnapshot
         )
     }

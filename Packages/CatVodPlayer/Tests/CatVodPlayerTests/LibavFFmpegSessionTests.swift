@@ -26,6 +26,13 @@ final class FakeVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
     private var ready = true
     private var seconds: Double = 0
     private var resets: [ResetCall] = []
+    /// 让接下来 N 次 `enqueue` 返回 false（模拟「这一帧没能进显示层」，M04P22 的显示侧丢帧）。
+    private var enqueueFailures = 0
+
+    var enqueueFailuresRemaining: Int {
+        get { locked { enqueueFailures } }
+        set { locked { enqueueFailures = newValue } }
+    }
 
     var enqueued: [EnqueuedFrame] {
         locked { frames }
@@ -60,8 +67,16 @@ final class FakeVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
     @discardableResult
     func enqueue(pixelBuffer: CVPixelBuffer, presentationSeconds: Double, durationSeconds: Double) -> Bool {
         _ = pixelBuffer
-        locked { frames.append(EnqueuedFrame(presentation: presentationSeconds, duration: durationSeconds)) }
-        return true
+        var accepted = true
+        locked {
+            if enqueueFailures > 0 {
+                enqueueFailures -= 1
+                accepted = false
+            } else {
+                frames.append(EnqueuedFrame(presentation: presentationSeconds, duration: durationSeconds))
+            }
+        }
+        return accepted
     }
 
     func play(rate: Float) {
@@ -268,9 +283,13 @@ struct LibavFFmpegSessionTests {
         }
         #expect(subtitleLists.first?.isEmpty == true)
 
-        // 2) 切到第二条，等解码线程把请求取走（它卡在背压里也会先处理待办）
+        // 2) 切到第二条，等解码线程把请求取走（它卡在背压里也会先处理待办）。
+        //    顺便把「显示位置」定在 0.5s：换完要按它重定位（M04P22）。
+        video.currentSeconds = 0.5
         await session.selectTrack(.index(second.id), for: .audio)
         try? await Task.sleep(nanoseconds: 200_000_000)
+        let repositioned = video.resetCalls.contains { abs($0.seconds - 0.5) < 0.001 }
+        #expect(repositioned)
 
         // 3) 放行：喂来的样本应该是 48k（第二条轨道的采样率）—— 这就是「真的换了」的证据
         video.isReadyForMoreMediaData = true
@@ -281,6 +300,59 @@ struct LibavFFmpegSessionTests {
         // 4) 播放信息按**当前**音轨报（两条都是 aac，这里顺手确认那一行没断）
         let stats = await session.stats()
         #expect(stats.audioCodec == "aac")
+        await session.close()
+    }
+
+    @Test("显示侧丢帧（M04P22）：帧没能进显示层时，播放信息那行报得出来")
+    func displaySideDropsAreReported() async throws {
+        let url = try await makeFixtureURL(audioSeconds: 0)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let video = FakeVideoRenderer()
+        let audio = FakeAudioRenderer()
+        let session = LibavFFmpegSession(videoRenderer: video, audioRenderer: audio)
+        // 头一帧的样本转换故意失败一次 —— 就是「这一帧没能进显示层」。
+        video.enqueueFailuresRemaining = 1
+
+        let failure = await session.open(MediaResource(url: url.path), decoderMode: .software)
+        #expect(failure == nil)
+        let playedEnough = await waitUntil { video.enqueued.count >= 20 }
+        #expect(playedEnough)
+
+        let stats = await session.stats()
+        #expect(stats.dropText == "显示 1 · 解码 0")
+        await session.close()
+    }
+
+    @Test("暂停时 seek：喂帧不许把播放按回去（M04P22 顺手修的老账）")
+    func seekWhilePausedDoesNotResume() async throws {
+        let url = try await makeFixtureURL(audioSeconds: 0.5)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let video = FakeVideoRenderer()
+        let audio = FakeAudioRenderer()
+        let session = LibavFFmpegSession(videoRenderer: video, audioRenderer: audio)
+        let box = EventBox()
+        let consumer = Task { for await event in session.events {
+            box.append(event)
+        } }
+        defer { consumer.cancel() }
+
+        let failure = await session.open(MediaResource(url: url.path), decoderMode: .software)
+        #expect(failure == nil)
+        let started = await waitUntil { video.playCallCount > 0 }
+        #expect(started)
+
+        await session.pause()
+        let playsBefore = video.playCallCount
+        let playingEventsBefore = box.all.filter { $0 == .state(.playing) }.count
+
+        await session.seek(to: 0.2)
+        let repositioned = await waitUntil { video.resetCalls.contains { abs($0.seconds - 0.2) < 0.001 } }
+        #expect(repositioned)
+        // 给解码线程一点时间把跳转后的帧喂进来 —— 老代码就是在这时把暂停按回播放的。
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        #expect(video.playCallCount == playsBefore)
+        #expect(box.all.filter { $0 == .state(.playing) }.count == playingEventsBefore)
         await session.close()
     }
 
