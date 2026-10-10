@@ -87,9 +87,11 @@ public struct LocalProxyHandler: HTTPHandler {
 
     /// `/proxy`：解析 → 取回 → 过滤响应 header → 回给客户端。
     ///
-    /// GET 走**落盘**那条（M06b 的流式转发）：媒体文件可能几十 GB，缓冲转发会撞 32MB 上限，
-    /// 播放器直接吃 502；现在响应体先落临时文件、再由 FlyingFox 流给它
-    /// （`HTTPBodySequence(file:)`，长度由本机服务按实际字节重算）。
+    /// GET 走**边下边发**（M06p；M06b 那版是「落完盘才发」）：上游响应头一到就回，
+    /// 响应体由 ``LocalProxyFileBuffer`` 边收边写临时文件、FlyingFox 的响应体读**同一份文件** ——
+    /// 几十 GB 的片不用等整份下完才开始播。发给客户端的长度按上游 `Content-Length` 定
+    /// （没有就发 chunked），响应体读完 / 客户端断开时文件随缓冲释放即删。
+    /// 非 2xx 仍走内存那条：错误码与错误页原样回，不该被算成「媒体文件」。
     /// HEAD 保持在内存那条 —— 本来就没有响应体，不值得写盘。
     private func forward(_ request: FlyingFox.HTTPRequest) async -> FlyingFox.HTTPResponse {
         do {
@@ -105,15 +107,31 @@ public struct LocalProxyHandler: HTTPHandler {
                     body: Data()
                 )
             }
-            let fileURL = try LocalProxyTempFiles.makeFileURL()
-            let response = try await upstream.fetchToFile(plan, fileURL: fileURL)
+            // 每次新请求顺手清一遍（M06n 的宽限期 + M06p 的配额）：先清再建，别把这一条自己扫了。
             LocalProxyTempFiles.sweep()
-            let responseHeaders = ProxyForwardingPolicy.clientResponseHeaders(upstream: response.headers)
-            return FlyingFox.HTTPResponse(
-                statusCode: Self.statusCode(response.status),
-                headers: Self.makeHeaders(responseHeaders),
-                body: try HTTPBodySequence(file: response.fileURL)
-            )
+            let buffer = try LocalProxyFileBuffer(fileURL: LocalProxyTempFiles.makeFileURL())
+            do {
+                switch try await upstream.fetchStreamed(plan, buffer: buffer) {
+                case let .streamed(response):
+                    let responseHeaders = ProxyForwardingPolicy.clientResponseHeaders(upstream: response.headers)
+                    return FlyingFox.HTTPResponse(
+                        statusCode: Self.statusCode(response.status),
+                        headers: Self.makeHeaders(responseHeaders),
+                        body: buffer.makeBody()
+                    )
+                case let .buffered(response):
+                    buffer.discard()
+                    let responseHeaders = ProxyForwardingPolicy.clientResponseHeaders(upstream: response.headers)
+                    return FlyingFox.HTTPResponse(
+                        statusCode: Self.statusCode(response.status),
+                        headers: Self.makeHeaders(responseHeaders),
+                        body: response.body
+                    )
+                }
+            } catch {
+                buffer.discard()
+                throw error
+            }
         } catch let error as CatVodError {
             return Self.errorResponse(status: .badGateway, reason: error.errorDescription ?? "转发失败")
         } catch {

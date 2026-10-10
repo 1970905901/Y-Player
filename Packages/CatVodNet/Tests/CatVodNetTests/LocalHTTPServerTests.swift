@@ -139,6 +139,76 @@ struct LocalHTTPServerTests {
         }
     }
 
+    /// 轮询等条件成立（超时即失败）：流式断言要等「客户端收到字节」，别拿 sleep 赌。
+    private func waitUntil(timeout: TimeInterval = 3, _ condition: () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        return condition()
+    }
+
+    @Test("边下边发（M06p）：上游还没写完，客户端就已经拿到第一块")
+    func streamingServesBeforeUpstreamFinishes() async throws {
+        let gate = AsyncGate()
+        let upstream = StubStreamingTransport(
+            pieces: [Data("first-".utf8), Data("second".utf8)],
+            gate: gate
+        )
+        try await withLocalServer(upstream: upstream) { port in
+            let url = try #require(LocalProxyURLBuilder(port: port).proxyURL(for: "https://cdn.example.com/movie.mp4"))
+            let collector = StreamingBodyCollector()
+            let session = URLSession(configuration: .ephemeral, delegate: collector, delegateQueue: nil)
+            let task = session.dataTask(with: URLRequest(url: url))
+            defer { task.cancel() }
+            task.resume()
+
+            // 上游正卡在闸门里：这会儿客户端能拿到第一块，就说明服务端没在等「整份下完」
+            let early = await waitUntil { collector.body.count >= 6 }
+            #expect(early)
+            #expect(collector.body == Data("first-".utf8))
+            #expect(!collector.didFinish)
+
+            gate.open()
+            let finished = await waitUntil { collector.didFinish }
+            #expect(finished)
+            #expect(collector.body == Data("first-second".utf8))
+            #expect(collector.statusCode == 200)
+        }
+    }
+
+    @Test("边下边发：上游给了 Content-Length 就按它发（不知道长度时才走 chunked）")
+    func streamingKeepsContentLength() async throws {
+        let payload = Data(repeating: 0x41, count: 8192)
+        let upstream = StubStreamingTransport(
+            headers: ["Content-Type": "video/mp4", "Content-Length": String(payload.count)],
+            pieces: [payload.prefix(4096), payload.suffix(4096)]
+        )
+        try await withLocalServer(upstream: upstream) { port in
+            let url = try #require(LocalProxyURLBuilder(port: port).proxyURL(for: "https://cdn.example.com/movie.mp4"))
+            let (data, response) = try await fetch(url)
+            #expect(response.statusCode == 200)
+            #expect(response.value(forHTTPHeaderField: "Content-Length") == String(payload.count))
+            #expect(data == payload)
+        }
+    }
+
+    @Test("边下边发：上游非 2xx 走缓冲那条 —— 状态码与错误体原样回")
+    func streamingErrorStatusStaysBuffered() async throws {
+        let upstream = StubStreamingTransport(
+            status: 404,
+            headers: [:],
+            pieces: [Data("not-found".utf8)]
+        )
+        try await withLocalServer(upstream: upstream) { port in
+            let url = try #require(LocalProxyURLBuilder(port: port).proxyURL(for: "https://cdn.example.com/movie.mp4"))
+            let (data, response) = try await fetch(url)
+            #expect(response.statusCode == 404)
+            #expect(String(data: data, encoding: .utf8) == "not-found")
+        }
+    }
+
     @Test("端口搜索：首端口被占用后仍能起来；重复 start 幂等；stop 后状态复位")
     func portFallback() async throws {
         let upstream = StubUpstreamTransport()
@@ -165,5 +235,61 @@ struct LocalHTTPServerTests {
         let secondBase = await second.baseURL
         #expect(firstState == .stopped)
         #expect(secondBase == nil)
+    }
+}
+
+/// 流式收体：`URLSessionDataTask` + 委托把收到的字节与状态记下来，测试轮询读
+/// （`URLSession.bytes` 的迭代器没法在断言里限时中断，这个盒子更顺手）。
+private final class StreamingBodyCollector: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var received = Data()
+    private var response: HTTPURLResponse?
+    private var finished = false
+
+    var body: Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return received
+    }
+
+    var statusCode: Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        return response?.statusCode
+    }
+
+    var didFinish: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return finished
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive data: Data
+    ) {
+        lock.lock()
+        received.append(data)
+        lock.unlock()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        lock.lock()
+        self.response = response as? HTTPURLResponse
+        lock.unlock()
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+        _ = error
+        lock.lock()
+        finished = true
+        lock.unlock()
     }
 }

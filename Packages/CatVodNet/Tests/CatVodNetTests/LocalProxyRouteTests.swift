@@ -214,3 +214,93 @@ struct LocalProxyRouteTests {
         #expect(String(data: body, encoding: .utf8)?.contains("上限") == true)
     }
 }
+
+/// 落盘缓冲与清扫（M06p）：宽限期 + 配额的**纯策略**单测，加上缓冲的生命周期。
+///
+/// 为什么把策略抽出来单测：清扫动的是共享的临时目录，集成测试里没法安全地造「超配额」场面
+/// （并行跑的其他用例也有文件在目录里）—— 策略是纯函数，输入输出直接钉死。
+@Suite("落盘缓冲与清扫：宽限期 + 配额（M06p）")
+struct LocalProxyStorageTests {
+    private let base = Date(timeIntervalSince1970: 1_000_000)
+
+    private func entry(_ name: String, size: Int64, age: TimeInterval, inUse: Bool = false) -> LocalProxySweepEntry {
+        LocalProxySweepEntry(
+            url: URL(fileURLWithPath: "/tmp/YPlayerProxy/\(name)"),
+            size: size,
+            modified: base.addingTimeInterval(-age),
+            inUse: inUse
+        )
+    }
+
+    @Test("宽限期：老的清、新的留（与 M06b 同口径）")
+    func agedOnly() {
+        let entries = [
+            entry("old-a.tmp", size: 10, age: 20 * 60),
+            entry("old-b.tmp", size: 20, age: 16 * 60),
+            entry("fresh.tmp", size: 30, age: 60),
+        ]
+        let doomed = LocalProxyTempFiles.plan(entries: entries, now: base, quota: 1000)
+        #expect(doomed == [entries[0].url, entries[1].url])
+    }
+
+    @Test("配额：超了就按「最旧先清」，清到线内就停")
+    func quotaOldestFirst() {
+        let entries = [
+            entry("newest.tmp", size: 40, age: 10),
+            entry("oldest.tmp", size: 40, age: 300),
+            entry("middle.tmp", size: 40, age: 200),
+        ]
+        // 总 120、配额 80：只清最旧的一个就回到线内
+        let loose = LocalProxyTempFiles.plan(entries: entries, now: base, quota: 80)
+        #expect(loose == [entries[1].url])
+        // 配额压到 40：还得再清一个（第二旧）
+        let tighter = LocalProxyTempFiles.plan(entries: entries, now: base, quota: 40)
+        #expect(tighter == [entries[1].url, entries[2].url])
+    }
+
+    @Test("在用的永不进结果：单个大文件自己超过配额也照发；它照样算进总量")
+    func inUseIsNeverEvicted() {
+        let entries = [
+            entry("playing.tmp", size: 500, age: 300, inUse: true),
+            entry("junk.tmp", size: 500, age: 100),
+        ]
+        let doomed = LocalProxyTempFiles.plan(entries: entries, now: base, quota: 0)
+        #expect(doomed == [entries[1].url])
+    }
+
+    @Test("缓冲生命周期：建出来就登记在册、文件真在；释放即注销 + 删文件（M06p 的「发完即删」）")
+    func bufferReleasesFileOnDeinit() throws {
+        let url = try LocalProxyTempFiles.makeFileURL()
+        var buffer: LocalProxyFileBuffer? = try LocalProxyFileBuffer(fileURL: url)
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        #expect(LocalProxyTempFiles.inUseCount >= 1)
+        buffer = nil
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @Test("上游提前收尾：读侧抛「对不上」，不把短的实体当正常结束（M06p）")
+    func truncatedWriteThrows() async throws {
+        let url = try LocalProxyTempFiles.makeFileURL()
+        let buffer = try LocalProxyFileBuffer(fileURL: url)
+        let stream = HTTPStream(
+            status: 200,
+            headers: ["Content-Length": "100"],
+            chunks: AsyncThrowingStream<Data, Error> { continuation in
+                continuation.yield(Data("short".utf8))
+                continuation.finish()
+            }
+        )
+        buffer.attach(stream)
+        var received = Data()
+        var caught: (any Error)?
+        do {
+            for try await chunk in buffer.makeBody() {
+                received.append(chunk)
+            }
+        } catch {
+            caught = error
+        }
+        #expect(received == Data("short".utf8))
+        #expect(caught is LocalProxyFileBuffer.BufferError)
+    }
+}
