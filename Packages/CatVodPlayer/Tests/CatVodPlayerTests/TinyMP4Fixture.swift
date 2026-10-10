@@ -3,7 +3,6 @@ import AVFoundation
 import CoreMedia
 import CoreVideo
 import Foundation
-import VideoToolbox
 
 /// 生成一个几帧的小 MP4（测试夹具）：给输入层 / demux 类测试一个**离线的确定性输入**。
 ///
@@ -13,8 +12,7 @@ enum TinyMP4Fixture {
     /// 写一个 `frames` 帧（`fps` 帧率）、黑/灰交替的 H.264 MP4；
     /// `audioSeconds > 0` 时再加一条等长的 AAC 静音音轨（M04P10 起）；
     /// `secondAudioSampleRate > 0` 时再加**第二条**不同采样率的音轨（M04P16 换轨测试用
-    /// —— 换过去之后，喂来的样本采样率会变，那就是「真的换了」的证据）；
-    /// `tenBitHEVC = true` 时视频改 **HEVC Main10**（x420 源进去），给软解 10bit 那条路当输入（M04P21）。
+    /// —— 换过去之后，喂来的样本采样率会变，那就是「真的换了」的证据）。
     ///
     /// 失败原因都带着走（writer.error 优先），别让调用方对着一个空文件猜。
     static func write(
@@ -24,29 +22,20 @@ enum TinyMP4Fixture {
         fps: Int = 30,
         frames: Int = 30,
         audioSeconds: Double = 0,
-        secondAudioSampleRate: Double = 0,
-        tenBitHEVC: Bool = false
+        secondAudioSampleRate: Double = 0
     ) async throws {
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-        var videoSettings: [String: Any] = [
-            AVVideoCodecKey: tenBitHEVC ? AVVideoCodecType.hevc : AVVideoCodecType.h264,
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: width,
             AVVideoHeightKey: height,
-        ]
-        if tenBitHEVC {
-            // 不指定 profile 时 VideoToolbox 默认编 8bit Main —— x420 源也会被压下去（M04P21 首轮抓到的）；
-            // Main10 要显式说，编码器才按 10bit 编。
-            videoSettings[AVVideoProfileLevelKey] = kVTProfileLevel_HEVC_Main10_AutoLevel as String
-        }
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        ])
         input.expectsMediaDataInRealTime = false
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: input,
             sourcePixelBufferAttributes: [
-                kCVPixelBufferPixelFormatTypeKey as String: tenBitHEVC
-                    ? kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
-                    : kCVPixelFormatType_32BGRA,
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
                 kCVPixelBufferWidthKey as String: width,
                 kCVPixelBufferHeightKey as String: height,
             ]
@@ -108,11 +97,7 @@ enum TinyMP4Fixture {
             else {
                 throw FixtureError.noPixelBuffer
             }
-            if tenBitHEVC {
-                fillTenBit(pixelBuffer, gray: frame % 2 == 0 ? 64 : 800)
-            } else {
-                fill(pixelBuffer, gray: frame % 2 == 0 ? 32 : 200)
-            }
+            fill(pixelBuffer, gray: frame % 2 == 0 ? 32 : 200)
             let time = CMTime(value: CMTimeValue(frame), timescale: CMTimeScale(fps))
             guard adaptor.append(pixelBuffer, withPresentationTime: time) else {
                 throw writer.error ?? FixtureError.appendFailed
@@ -173,31 +158,45 @@ enum TinyMP4Fixture {
         }
     }
 
-    /// 把整块 x420（10bit 双平面）填成灰度：Y 一个值、CbCr 中性 512（10bit 的中灰）。
-    private static func fillTenBit(_ pixelBuffer: CVPixelBuffer, gray: UInt16) {
-        CVPixelBufferLockBaseAddress(pixelBuffer, [])
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
-        let width = CVPixelBufferGetWidth(pixelBuffer)
-        let height = CVPixelBufferGetHeight(pixelBuffer)
-        if let base = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0) {
-            let rowBytes = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0)
-            for row in 0 ..< height {
-                let samples = (base + row * rowBytes).assumingMemoryBound(to: UInt16.self)
-                for column in 0 ..< width {
-                    samples[column] = gray
-                }
-            }
+    /// 写一个 **10bit** 的 y4m（YUV4MPEG2）原始帧文件：给软解 10bit 那条路当输入（M04P21）。
+    ///
+    /// 为什么不用 AVAssetWriter 编 HEVC Main10：这台 SDK 的 AVAssetWriter 把
+    /// `AVVideoProfileLevelKey` 判成非法 key，直接抛 NSException
+    /// （`Output settings dictionary contains one or more invalid keys: ProfileLevel`）；
+    /// 不给 profile 又只编 8bit。y4m 是 FFmpeg 原生的裸帧容器：10bit 数据原样进 rawvideo 解码器，
+    /// 走的还是同一条「源格式 → sws → x420」—— 要测的东西一模一样，还不用求编码器。
+    static func writeTenBitY4M(
+        to url: URL,
+        width: Int = 320,
+        height: Int = 240,
+        fps: Int = 30,
+        frames: Int = 10
+    ) throws {
+        try? FileManager.default.removeItem(at: url)
+        var data = Data()
+        data.append(Data("YUV4MPEG2 W\(width) H\(height) F\(fps):1 Ip A1:1 C420p10\n".utf8))
+        // 每帧 = `FRAME\n` + Y 平面（width×height 个 16bit 样本）+ U / V 平面（各一半边长）。
+        let chromaWidth = width / 2
+        let chromaHeight = height / 2
+        for frame in 0 ..< frames {
+            data.append(Data("FRAME\n".utf8))
+            appendSamples(&data, value: frame % 2 == 0 ? 64 : 800, count: width * height)
+            appendSamples(&data, value: 512, count: chromaWidth * chromaHeight)
+            appendSamples(&data, value: 512, count: chromaWidth * chromaHeight)
         }
-        if let base = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 1) {
-            let rowBytes = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 1)
-            let chromaColumns = (width + 1) / 2 * 2
-            for row in 0 ..< ((height + 1) / 2) {
-                let samples = (base + row * rowBytes).assumingMemoryBound(to: UInt16.self)
-                for column in 0 ..< chromaColumns {
-                    samples[column] = 512
-                }
-            }
+        try data.write(to: url)
+    }
+
+    /// 往 y4m 里填一段**小端** 16bit 样本（y4m 的 10bit 就是「16bit 字里放 10bit 值」）。
+    private static func appendSamples(_ data: inout Data, value: UInt16, count: Int) {
+        let low = UInt8(value & 0xFF)
+        let high = UInt8(value >> 8)
+        var bytes = [UInt8](repeating: 0, count: count * 2)
+        for index in 0 ..< count {
+            bytes[index * 2] = low
+            bytes[index * 2 + 1] = high
         }
+        data.append(contentsOf: bytes)
     }
 
     /// 把整块 BGRA 填成一个灰度值（不用 CoreGraphics 画，省一层依赖）。

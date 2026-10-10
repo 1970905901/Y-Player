@@ -138,19 +138,12 @@ struct LibavVideoDecoderTests {
         #expect(LibavVideoDecoder.transferName("Unknown") == nil)
     }
 
-    @Test("软解 10bit：HEVC Main10 源 → x420 输出，不压成 8bit（M04P21）")
-    func softwareDecodeTenBitPath() async throws {
+    @Test("软解 10bit：10bit 源（y4m 原始帧）→ x420 输出，不压成 8bit（M04P21）")
+    func softwareDecodeTenBitPath() throws {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("libavsoft10-\(UUID().uuidString).mp4")
+            .appendingPathComponent("libavsoft10-\(UUID().uuidString).y4m")
         defer { try? FileManager.default.removeItem(at: url) }
-        try await TinyMP4Fixture.write(
-            to: url,
-            width: 320,
-            height: 240,
-            fps: 30,
-            frames: 30,
-            tenBitHEVC: true
-        )
+        try TinyMP4Fixture.writeTenBitY4M(to: url, width: 320, height: 240, fps: 30, frames: 10)
 
         let input = LibavInput()
         defer { input.close() }
