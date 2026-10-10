@@ -197,20 +197,39 @@ struct HLSManifestSegmentsTests {
         #expect(manifest.segments.isEmpty)
     }
 
-    @Test("字节范围清单（`#EXT-X-BYTERANGE`）标出来：不认它会「同一个文件下 N 遍」")
-    func detectsByteRange() {
+    @Test("字节范围清单：按片段存 offset / length，缺 offset 时接上一段的结尾（M10l）")
+    func parsesByteRanges() {
         let ranged = media("""
         #EXTINF:4,
         #EXT-X-BYTERANGE:1000@0
         all.ts
         #EXTINF:4,
-        #EXT-X-BYTERANGE:1000@1000
+        #EXT-X-BYTERANGE:500
         all.ts
         """)
         #expect(ranged.isRangeBased)
-        #expect(!ranged.isDownloadable)
-        // 明文、不带范围的普通清单就能下
+        #expect(ranged.segmentRanges.count == 2)
+        #expect(ranged.segmentRanges[0] == HLSManifest.SegmentRange(offset: 0, length: 1000))
+        // 第二段没写 offset：按 RFC 8216 = 上一段的结尾
+        #expect(ranged.segmentRanges[1] == HLSManifest.SegmentRange(offset: 1000, length: 500))
+        #expect(!ranged.hasUnresolvableRange)
+        #expect(ranged.isDownloadable)
+
+        // 明文、不带范围的普通清单照旧能下（范围那一列是 nil）
         #expect(media("#EXTINF:4,\nseg.ts").isDownloadable)
+    }
+
+    @Test("字节范围：第一段就没写 offset（不合 RFC）→ 整份如实拒绝，不猜（M10l）")
+    func unresolvableByteRange() {
+        let broken = media("""
+        #EXTINF:4,
+        #EXT-X-BYTERANGE:500
+        all.ts
+        """)
+        #expect(broken.isRangeBased)
+        #expect(broken.hasUnresolvableRange)
+        #expect(broken.segmentRanges == [nil])
+        #expect(!broken.isDownloadable)
     }
 
     @Test("注释、CRLF、多余空行都不影响解析")

@@ -50,6 +50,22 @@ public struct HLSManifest: Sendable, Equatable {
         }
     }
 
+    /// 一个片段取哪一段字节（`#EXT-X-BYTERANGE`；M10l）。
+    ///
+    /// 同一条 URI 上的多个片段靠范围区分 —— `offset` 缺省时按 RFC 8216 接**上一段的结尾**，
+    /// 这个兜底在解析时就做掉（下载器只管发 `Range` 头）。
+    public struct SegmentRange: Sendable, Equatable {
+        /// 起始字节。
+        public var offset: Int
+        /// 长度（字节）。
+        public var length: Int
+
+        public init(offset: Int, length: Int) {
+            self.offset = offset
+            self.length = length
+        }
+    }
+
     /// 是不是主清单。
     public var isMaster: Bool
     /// 主清单的变体（按清单里的顺序）。
@@ -62,12 +78,20 @@ public struct HLSManifest: Sendable, Equatable {
     /// （`#EXT-X-KEY` 作用到下一段 KEY 之前），而 IV 缺省时要用**该片段自己的媒体序号**推 ——
     /// 两件事都只有解析时知道，解密方（`DownloadRunner`）不该再猜。
     public var segmentKeys: [SegmentKey?]
-    /// 有片段是按**字节范围**取的（`#EXT-X-BYTERANGE`）。
+    /// 与 ``segments`` **一一对应**的字节范围（`nil` = 整段取；M10l）。
+    ///
+    /// 与 ``segmentKeys`` 同一套并行数组的写法：三个数组都在解析的同两处一起填，
+    /// 错位的风险由单测钉住（「谁在第几片」永远只按位置对应）。
+    public var segmentRanges: [SegmentRange?]
+    /// 有片段是**按字节范围**取的（`#EXT-X-BYTERANGE`）。
     ///
     /// 单列一个标记而不是默默忽略：那类清单里多个片段共用**同一个 URI**、靠范围区分，
     /// 不认它会下出「同一个文件下 N 遍」，还看不出哪里错。调用方据此如实拒绝（沿用本平台
     /// 对加密片段的那套：不支持的就说清楚，不猜）。
     public var isRangeBased: Bool
+    /// 有字节范围**推不出来起点**（第一段就没写 `@offset`，不合 RFC 8216 的写法）——
+    /// 这种清单不敢猜着下（猜错的后果是拼出一个错位的文件，还看不出来）。
+    public var hasUnresolvableRange: Bool
     /// 清单里有 `#EXT-X-MAP`（fMP4 的初始化片，已作为第一个元素放进 `segments`）。
     ///
     /// 下载侧靠它决定落盘的**后缀**：有 init 片 = 拼接出来是 MP4 分段流（`.mp4`），
@@ -81,7 +105,9 @@ public struct HLSManifest: Sendable, Equatable {
         variants: [Variant] = [],
         segments: [String] = [],
         segmentKeys: [SegmentKey?] = [],
+        segmentRanges: [SegmentRange?] = [],
         isRangeBased: Bool = false,
+        hasUnresolvableRange: Bool = false,
         hasInitializationSegment: Bool = false,
         totalDuration: Double = 0
     ) {
@@ -89,7 +115,9 @@ public struct HLSManifest: Sendable, Equatable {
         self.variants = variants
         self.segments = segments
         self.segmentKeys = segmentKeys
+        self.segmentRanges = segmentRanges
         self.isRangeBased = isRangeBased
+        self.hasUnresolvableRange = hasUnresolvableRange
         self.hasInitializationSegment = hasInitializationSegment
         self.totalDuration = totalDuration
     }
@@ -109,9 +137,9 @@ public struct HLSManifest: Sendable, Equatable {
         }
     }
 
-    /// 能不能照着这份清单把内容拼出来：字节范围不支持；加密只支持 `AES-128`（见各自说明）。
+    /// 能不能照着这份清单把内容拼出来：加密只支持 `AES-128`；字节范围要推得出起点（见各自说明）。
     public var isDownloadable: Bool {
-        !isRangeBased && !hasUnsupportedEncryption
+        !hasUnsupportedEncryption && !hasUnresolvableRange
     }
 
     /// 有没有可下的东西。
@@ -155,6 +183,9 @@ public enum HLSManifestParser {
         var currentKey: HLSManifest.SegmentKey?
         var mediaSequence = 0
         var segmentSequence = 0
+        // 字节范围（M10l）：`#EXT-X-BYTERANGE` 作用到下一个片段；缺 offset 时接上一段的结尾。
+        var pendingRange: HLSManifest.SegmentRange?
+        var lastRangeEnd: Int?
 
         for line in lines {
             if line.isEmpty {
@@ -175,6 +206,18 @@ public enum HLSManifestParser {
                     mediaSequence = Int(payload.trimmingCharacters(in: .whitespaces)) ?? 0
                 } else if line.hasPrefix("#EXT-X-BYTERANGE:") {
                     manifest.isRangeBased = true
+                    pendingRange = nil
+                    let payload = line.dropFirst("#EXT-X-BYTERANGE:".count)
+                        .trimmingCharacters(in: .whitespaces)
+                    let parts = payload.split(separator: "@", maxSplits: 1)
+                    let length = Int(parts.first ?? "") ?? 0
+                    let offset = parts.count == 2 ? Int(parts[1]) : lastRangeEnd
+                    if length > 0, let offset {
+                        pendingRange = HLSManifest.SegmentRange(offset: offset, length: length)
+                    } else {
+                        // 推不出起点：记下来，整份清单如实拒绝（M10l）。
+                        manifest.hasUnresolvableRange = true
+                    }
                 } else if line.hasPrefix("#EXT-X-MAP:") {
                     mapURI = attribute("URI", in: line) ?? ""
                 }
@@ -194,12 +237,18 @@ public enum HLSManifestParser {
                     manifest.segments.append(absolute(mapURI, base: baseURL))
                     // init 片不吃媒体序号、也不带 KEY（它是开头，不是加密序列的一段）。
                     manifest.segmentKeys.append(nil)
+                    manifest.segmentRanges.append(nil)
                 }
                 manifest.segments.append(resolved)
                 manifest.segmentKeys.append(
                     Self.resolvedKey(currentKey, sequence: mediaSequence + segmentSequence)
                 )
                 segmentSequence += 1
+                manifest.segmentRanges.append(pendingRange)
+                if let pendingRange {
+                    lastRangeEnd = pendingRange.offset + pendingRange.length
+                }
+                pendingRange = nil
                 pendingIsSegment = false
             }
         }

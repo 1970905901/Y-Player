@@ -15,7 +15,33 @@ private actor DownloadStubTransport: HTTPTransport {
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         requests.append(request)
-        return responses[request.url.absoluteString] ?? HTTPResponse(status: 404)
+        guard let response = responses[request.url.absoluteString] else {
+            return HTTPResponse(status: 404)
+        }
+        // 带 Range 的请求按真服务器那样切片回 206（M10l 的字节范围夹具要用）。
+        guard let rangeHeader = request.headers["Range"], let range = Self.parseRange(rangeHeader) else {
+            return response
+        }
+        guard range.lowerBound >= 0, range.upperBound <= response.body.count else {
+            return HTTPResponse(status: 416)
+        }
+        return HTTPResponse(
+            status: 206,
+            headers: ["Content-Range": "bytes \(range.lowerBound)-\(range.upperBound - 1)/\(response.body.count)"],
+            body: response.body.subdata(in: range)
+        )
+    }
+
+    /// `bytes=a-b` → 半开区间（`b` 含）。
+    private static func parseRange(_ text: String) -> Range<Int>? {
+        guard text.hasPrefix("bytes=") else {
+            return nil
+        }
+        let parts = text.dropFirst("bytes=".count).split(separator: "-")
+        guard parts.count == 2, let start = Int(parts[0]), let end = Int(parts[1]), start <= end else {
+            return nil
+        }
+        return start ..< (end + 1)
     }
 
     func requestedURLs() -> [String] {
@@ -24,6 +50,11 @@ private actor DownloadStubTransport: HTTPTransport {
 
     func headers(for url: String) -> [[String: String]] {
         requests.filter { $0.url.absoluteString == url }.map(\.headers)
+    }
+
+    /// 某个地址收到的 `Range` 头（按请求顺序）。
+    func rangeHeaders(for url: String) -> [String] {
+        requests.filter { $0.url.absoluteString == url }.compactMap { $0.headers["Range"] }
     }
 }
 
@@ -194,6 +225,37 @@ struct DownloadRunnerTests {
         // 密钥按 URI 缓存：两片共用一把 key，key 只请求一次
         let requested = await transport.requestedURLs()
         #expect(requested.filter { $0 == keyURL }.count == 1)
+    }
+
+    @Test("字节范围清单（#EXT-X-BYTERANGE）：每片带 Range 取回再拼，缺 offset 的段接上一段尾（M10l）")
+    func downloadsByteRanges() async throws {
+        let directory = try makeDirectory("byterange")
+        let index = "https://cdn.example/v/index.m3u8"
+        let all = "https://cdn.example/v/all.ts"
+        let whole = Data((0 ..< 64).map { UInt8($0) })
+        let transport = DownloadStubTransport([
+            index: playlist("""
+            #EXTINF:4,
+            #EXT-X-BYTERANGE:16@0
+            all.ts
+            #EXTINF:4,
+            #EXT-X-BYTERANGE:16@16
+            all.ts
+            #EXTINF:4,
+            #EXT-X-BYTERANGE:32
+            all.ts
+            """),
+            all: HTTPResponse(status: 200, body: whole),
+        ])
+        let runner = DownloadRunner(transport: transport, directory: directory)
+
+        let outcome = await runner.run(makeTask(index))
+        #expect(outcome.task.status == .finished)
+        let fileURL = try #require(outcome.fileURL)
+        // 16 + 16 + 32 = 64：三段拼回整份文件
+        #expect(try Data(contentsOf: fileURL) == whole)
+        let ranges = await transport.rangeHeaders(for: all)
+        #expect(ranges == ["bytes=0-15", "bytes=16-31", "bytes=32-63"])
     }
 
     @Test("SAMPLE-AES：如实拒绝（按重试规则先回排队），不留下半成品")

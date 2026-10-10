@@ -17,7 +17,9 @@ import Foundation
 /// 4. **重试从头下**：续传要对账「已经下到第几片」，而任务里只存了字节数。这一版不假装支持
 ///    （失败时把半成品删掉），等真有需求再给任务加 `completedSegments`；
 /// 5. **加密片段（AES-128）先解密再写**（M10k）：密钥按 URI 缓存（同一份清单同一把 key 只取一次）、
-///    IV 用解析器兜好的那个；密钥 / IV / 密文任何一步不对就**直接报错**，绝不把密文写进成品。
+///    IV 用解析器兜好的那个；密钥 / IV / 密文任何一步不对就**直接报错**，绝不把密文写进成品；
+/// 6. **字节范围片段发 `Range` 再拼**（M10l）：同一条 URI 上的多段靠范围区分；
+///    上游没按范围回（非 206）或回的字节数对不上就**报错**，不把整段文件当一段拼进去。
 ///
 /// 不持有 `FileManager`：`FileManager` 在 Swift 6 下不是 `Sendable`，各方法内部用 `.default`
 /// 反而更省事（与 ``StorageSpace`` 把 fileManager 当参数传是同一个理由）。
@@ -131,15 +133,23 @@ public struct DownloadRunner: Sendable {
     // 而 CatVodSource 直到 2026-10-09 才第一次被编译（CI 的 build 作业一直 needs core-tests 而 skipped）。
     // 合并成一个 `FetchDone`，两处都用它：字段一样的两个类型，迟早会对不上。
 
-    private func fetch(_ url: String, task: DownloadTask) async throws -> Fetch {
-        // `URL(string:)` 对任意文本都可能返回非 nil，必须自己查 scheme/host（M06c 踩过一次）。
+    private func fetch(
+        _ url: String,
+        task: DownloadTask,
+        range: HLSManifest.SegmentRange? = nil
+    ) async throws -> Fetch {
+        // `URL(string:)` 对任意文本都可能返回 nil 也可能返回非 nil，必须自己查 scheme/host（M06c 踩过一次）。
         guard let target = URL(string: url), target.scheme != nil, target.host != nil else {
             throw CatVodError.parseFailed(
                 flag: task.episode,
                 reason: "下载地址无法构造 URL：\(url.prefix(120))"
             )
         }
-        let request = HTTPRequest(url: target, method: .get, headers: task.headers)
+        var headers = task.headers
+        if let range {
+            headers["Range"] = "bytes=\(range.offset)-\(range.offset + range.length - 1)"
+        }
+        let request = HTTPRequest(url: target, method: .get, headers: headers)
         let response = try await transport.send(request)
         guard response.isSuccess else {
             throw CatVodError.network(
@@ -147,6 +157,22 @@ public struct DownloadRunner: Sendable {
                 url: url,
                 reason: "下载「\(task.episode)」返回非 2xx"
             )
+        }
+        if let range {
+            // 范围请求的两个硬检查：状态必须是 206（不是 206 = 上游忽略了 Range，回来的多半是整段文件），
+            // 回来的字节数必须与范围一致 —— 任一不对就报错，拼错了看不出来。
+            guard response.status == 206 else {
+                throw CatVodError.unsupported(
+                    feature: "离线下载",
+                    reason: "上游不支持按字节范围取片段（返回 \(response.status)，不是 206）"
+                )
+            }
+            guard response.body.count == range.length else {
+                throw CatVodError.parseFailed(
+                    flag: task.episode,
+                    reason: "字节范围片段长度不符：要 \(range.length) 字节，回来 \(response.body.count) 字节"
+                )
+            }
         }
         return Fetch(body: response.body, contentLength: Self.contentLength(response.headers))
     }
@@ -178,7 +204,8 @@ public struct DownloadRunner: Sendable {
         let handle = try FileHandle(forWritingTo: fileURL)
         do {
             for (index, segment) in manifest.segments.enumerated() {
-                let piece = try await fetch(segment, task: task)
+                let range = manifest.segmentRanges.indices.contains(index) ? manifest.segmentRanges[index] : nil
+                let piece = try await fetch(segment, task: task, range: range)
                 var body = piece.body
                 if manifest.segmentKeys.indices.contains(index), let key = manifest.segmentKeys[index] {
                     body = try await decrypt(body, key: key, task: task, cache: &keys)
@@ -267,10 +294,10 @@ public struct DownloadRunner: Sendable {
         return path.lowercased()
     }
 
-    /// 不支持的清单（字节范围 / 非 AES-128 的加密），各自说清为什么（不猜、不静默产出垃圾）。
+    /// 不支持的清单（字节范围推不出起点 / 非 AES-128 的加密），各自说清为什么（不猜、不静默产出垃圾）。
     static func refusalReason(_ manifest: HLSManifest) -> String {
-        if manifest.isRangeBased {
-            return "这条清单按字节范围取片段（#EXT-X-BYTERANGE），本平台暂不支持下载"
+        if manifest.hasUnresolvableRange {
+            return "这条清单的字节范围缺了起始偏移（不合 RFC 8216 的写法），不敢猜着下"
         }
         return "这条清单用了 SAMPLE-AES 加密（本平台只支持 AES-128），暂不支持下载"
     }
