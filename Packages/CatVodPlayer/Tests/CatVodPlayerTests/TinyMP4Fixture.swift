@@ -3,6 +3,7 @@ import AVFoundation
 import CoreMedia
 import CoreVideo
 import Foundation
+import VideoToolbox
 
 /// 生成一个几帧的小 MP4（测试夹具）：给输入层 / demux 类测试一个**离线的确定性输入**。
 ///
@@ -28,11 +29,17 @@ enum TinyMP4Fixture {
     ) async throws {
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+        var videoSettings: [String: Any] = [
             AVVideoCodecKey: tenBitHEVC ? AVVideoCodecType.hevc : AVVideoCodecType.h264,
             AVVideoWidthKey: width,
             AVVideoHeightKey: height,
-        ])
+        ]
+        if tenBitHEVC {
+            // 不指定 profile 时 VideoToolbox 默认编 8bit Main —— x420 源也会被压下去（M04P21 首轮抓到的）；
+            // Main10 要显式说，编码器才按 10bit 编。
+            videoSettings[AVVideoProfileLevelKey] = kVTProfileLevel_HEVC_Main10_AutoLevel as String
+        }
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         input.expectsMediaDataInRealTime = false
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: input,
