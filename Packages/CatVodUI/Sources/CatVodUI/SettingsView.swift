@@ -10,7 +10,7 @@ import SwiftUI
 ///
 /// 诚实原则（`docs/UI 规范.md` + `docs/任务记录/M02P11-设置页与追剧页.md`）：
 /// 有真实数据可接的项就接真实数据（源地址、展示方式、内核/解码、解析器清单、缓存、宿主日志）；
-/// 尚未落地的项（播放页外观、下载管理、iCloud 同步）**保留入口，并在页内写明缺什么、属于哪个里程碑**，
+/// 尚未落地的项（iCloud 同步）**保留入口，并在页内写明缺什么**，
 /// 不做「点了没反应」的假开关。
 @MainActor
 public struct SettingsView: View {
@@ -267,7 +267,7 @@ public struct SettingsView: View {
                     .labelsHidden()
                     .disabled(true)
             }
-            Text("同步未落地：先做本地落库（M8，GRDB），再谈跨设备同步。开关先置灰，避免出现「已经同步了」的错觉。")
+            Text("同步未落地：本地落库（GRDB）已可用，跨设备同步属后续里程碑。开关先置灰，避免出现「已经同步了」的错觉。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

@@ -880,7 +880,7 @@ public final class AppModel: ObservableObject {
 
     /// 本机同步标识（设置 → iCloud 同步 里展示的那一串）。
     ///
-    /// 只是**本机**的稳定标识：iCloud 同步尚未落地（先落库 M8，再谈同步），
+    /// 只是**本机**的稳定标识：iCloud 同步尚未落地（本地落库已完成，跨设备同步属后续），
     /// 但先把它生成并固定下来，将来启用同步时不必再换一套身份。
     public let localSyncIdentifier: String
 

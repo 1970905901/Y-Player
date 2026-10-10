@@ -15,8 +15,7 @@ import UniformTypeIdentifiers
 /// 下面是内容区（参考图是空态卡片「暂无下载内容」）。
 ///
 /// 三个数字都来自真实查询（``StorageSpace``：卷容量 + 下载目录实际占用）；
-/// 离线下载（分片下载 + 任务队列 + 本地播放地址接管）尚未接入，所以空态是**真实状态**，
-/// 卡片下方写明缺什么、属于哪个里程碑 —— 不摆一个空任务列表出来骗人。
+/// 离线下载从 M10 起已可用：这里的列表就是真任务、空态就是真没有（不摆假数据）。
 @MainActor
 struct SettingsDownloadView: View {
     @ObservedObject var model: AppModel
@@ -479,7 +478,7 @@ struct SettingsLogView: View {
                 Text("日志开关控制宿主输出是否落盘：开启后运行日志会写进日志文件，重启应用后仍在；关闭时只在内存里保留最近若干行，进程退出即消失（致命错误无论如何都会落盘，否则崩溃就没有现场）。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                Text("可查的日志目前只有 js2p 宿主（Node 进程 / libnode）的输出；网络请求、解析链与播放器的结构化日志尚未落地（属于 M5/M6 与后续的可观测性工作）。")
+                Text("可查的日志目前只有 js2p 宿主（Node 进程 / libnode）的输出；网络请求与解析链的结构化日志尚未落地 —— 失败会在「诊断」里汇总。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

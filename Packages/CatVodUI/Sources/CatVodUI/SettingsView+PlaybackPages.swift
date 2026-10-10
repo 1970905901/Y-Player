@@ -148,7 +148,7 @@ struct SettingsPlayerControlView: View {
                     .foregroundStyle(.secondary)
             }
             Section("后续") {
-                Text("自研 FFmpeg 内核的专属控制（逐帧步进、音频增益、渲染选项等）等它补齐字幕后再加；"
+                Text("自研 FFmpeg 内核的专属控制（逐帧步进、音频增益、渲染选项等）尚未做；"
                     + "上游的「长按屏幕临时加速」要接管手势、与既有手势冲突，暂不做（见 M02P15）。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
