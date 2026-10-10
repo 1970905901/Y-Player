@@ -149,6 +149,16 @@ final class LibavVideoDecoder: @unchecked Sendable {
         #endif
     }
 
+    /// 跳转后清解码器内部状态（B 帧 / 硬解缓冲）——
+    /// 不清的话，跳完头几帧会把旧位置附近缓存的帧吐出来。
+    func flush() {
+        #if canImport(Libavcodec)
+        if let codecContext {
+            avcodec_flush_buffers(codecContext)
+        }
+        #endif
+    }
+
     /// 收尾：把解码器里还缓着的帧全收出来（EOF 之后调一次）。
     ///
     /// 硬解与 B 帧都会在解码器里留几帧，不冲一下就少画面。

@@ -1,12 +1,11 @@
 import AVFoundation
 import Foundation
 
-/// 自研 FFmpeg 内核的**真实会话**（M04P11 起：音视频都接上）：
+/// 自研 FFmpeg 内核的**真实会话**（M04P12 起：音视频 + seek 都接上）：
 /// 统一 demux（`LibavInput.nextPacket`）→ 视频走 VT 硬解进显示层、
 /// 音频走 libavcodec + swresample 进音频渲染器；两者挂**同一条** synchronizer。
 ///
 /// 还没有的（**接线进界面之前必须补齐**，别让界面以为它全能）：
-/// - **seek / 起点续播**：`startPosition` 被忽略，seek 是空操作（不假装）；
 /// - **软解**：`decoderMode == .software` 直接拒绝（不假装生效）；
 /// - **音轨切换**：`selectTrack` 是空操作（只有默认轨）；
 /// - 网络读阻塞期间 `close()` 不保证立刻收线程 —— 在没有 interrupt callback 之前，
@@ -32,6 +31,8 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     private var playing = false
     private var rate: Float = 1
     private var endedEmitted = false
+    /// 待办的跳转请求（控制线程放、解码线程取 —— 一段读包的人只能有一个）。
+    private var pendingSeek: Double?
     private var durationSeconds: Double = 0
     private var info: LibavInput.MediaInfo?
 
@@ -88,6 +89,16 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         }
         info = input.mediaInfo()
         durationSeconds = info?.durationSeconds ?? 0
+        // 起点续播就是「打开后先跳一次」：时间轴也挪过去，等第一帧回来自然开播。
+        if resource.startPosition > 0 {
+            if let failure = input.seek(to: resource.startPosition) {
+                videoDecoder.close()
+                audioDecoder?.close()
+                input.close()
+                return failure
+            }
+            videoRenderer.reset(to: resource.startPosition, playing: false, rate: 1)
+        }
         startDecodeLoop()
         return nil
     }
@@ -110,8 +121,12 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     }
 
     func seek(to seconds: Double) async {
-        // 还没做（下一片）：**不假装** —— 什么都不动，拖进度条要等真实实现。
-        _ = seconds
+        let target = max(seconds, 0)
+        lock.lock()
+        pendingSeek = target
+        lock.unlock()
+        // 立刻回执：UI 不等内核往返；真正的跳转由解码线程做（见 `performSeek`）。
+        emit(.time(current: target, duration: durationSeconds))
     }
 
     func setRate(_ rate: Float) async {
@@ -192,6 +207,10 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     private func decodeLoop() {
         defer { markDecodeFinished() }
         while isRunning() {
+            if let target = takePendingSeek() {
+                performSeek(to: target)
+                continue
+            }
             if finishedEof {
                 Thread.sleep(forTimeInterval: 0.05)
                 continue
@@ -212,6 +231,41 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
             route(packet)
             emitTimeIfNeeded()
         }
+    }
+
+    /// 真正跳转（**只在解码线程里跑**）：输入跳关键帧 → 两侧解码器 flush →
+    /// 丢 pending 视频帧 → 时间轴重定位（清显示队列 + 挪到目标秒）。
+    ///
+    /// 注意跳的是**目标之前的关键帧**（`AVSEEK_FLAG_BACKWARD`）：跳完会从关键帧开始吐帧，
+    /// 早于目标的那点帧由显示层按时间轴自然丢掉。
+    private func performSeek(to seconds: Double) {
+        if let failure = input.seek(to: seconds) {
+            emit(.state(.failed(failure)))
+            return
+        }
+        videoDecoder.flush()
+        audioDecoder?.flush()
+        pendingFrame = nil
+        finishedEof = false
+        // 第一帧回来后重新报 .playing：从 .ended 跳回来也要能复播。
+        startedPlaying = false
+        lock.lock()
+        endedEmitted = false
+        let playing = playing
+        let rate = rate
+        lock.unlock()
+        lastEmittedSeconds = seconds
+        videoRenderer.reset(to: seconds, playing: playing, rate: rate)
+        audioRenderer.flush()
+    }
+
+    /// 取走待办跳转（解码线程消费；控制线程只放不快取）。
+    private func takePendingSeek() -> Double? {
+        lock.lock()
+        defer { lock.unlock() }
+        let target = pendingSeek
+        pendingSeek = nil
+        return target
     }
 
     /// 背压：有音轨时两侧都要吃得住；只有画面的文件不看音频侧。

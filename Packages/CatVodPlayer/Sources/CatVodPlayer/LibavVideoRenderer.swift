@@ -16,6 +16,8 @@ protocol FFmpegVideoRendering: AnyObject, Sendable {
     func pause()
     /// 清掉已排队未显示的帧。
     func flush()
+    /// 跳转：清显示队列，把时间轴挪到指定秒数（保持播放 / 暂停与倍速）。
+    func reset(to seconds: Double, playing: Bool, rate: Float)
 }
 
 /// 自研内核的**显示渲染器**（M04P8）：把解码帧送进 ``FFmpegVideoSurface`` 的显示层，
@@ -81,5 +83,13 @@ final class LibavVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
     /// 清掉已排队未显示的帧（跳转 / 重开时用）。
     func flush() {
         layer.flush()
+    }
+
+    func reset(to seconds: Double, playing: Bool, rate: Float) {
+        layer.flush()
+        synchronizer.setRate(
+            playing ? rate : 0,
+            time: CMTime(seconds: seconds, preferredTimescale: 1_000_000)
+        )
     }
 }

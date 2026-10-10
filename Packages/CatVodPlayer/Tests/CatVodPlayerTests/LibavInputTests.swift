@@ -79,4 +79,31 @@ struct LibavInputTests {
         #expect(input.isAtEnd)
         #expect(count >= 30)
     }
+
+    @Test("seek：读到尾后跳回起点还能再读，isAtEnd 复位")
+    func seeksBackToStart() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("seek-\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await TinyMP4Fixture.write(to: url, width: 320, height: 240, fps: 30, frames: 30)
+
+        let input = LibavInput()
+        defer { input.close() }
+        #expect(input.open(url: url.path, headers: [:]) == nil)
+
+        var first = 0
+        while input.nextPacket() != nil {
+            first += 1
+        }
+        #expect(input.isAtEnd)
+        #expect(first >= 30)
+
+        #expect(input.seek(to: 0) == nil)
+        #expect(!input.isAtEnd)
+        var second = 0
+        while input.nextPacket() != nil {
+            second += 1
+        }
+        #expect(second >= 25)
+    }
 }

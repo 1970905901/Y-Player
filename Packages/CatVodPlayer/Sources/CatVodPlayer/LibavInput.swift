@@ -176,6 +176,29 @@ final class LibavInput: @unchecked Sendable {
         #endif
     }
 
+    /// 跳转（秒）。跳完 `isAtEnd` 复位、读包缓冲丢掉；失败给错误描述。
+    ///
+    /// 用 `av_seek_frame` 的**回退关键帧**策略（`streamIndex = -1`，时间戳按微秒）：
+    /// 不往前跳的话，关键帧隔得远的片源（HDR 片常 10 秒一个 I 帧）要黑屏等到下一个关键帧。
+    func seek(to seconds: Double) -> String? {
+        #if canImport(Libavformat) && canImport(Libavcodec)
+        guard let context else { return "输入还没打开" }
+        let target = Int64((max(seconds, 0) * 1_000_000).rounded())
+        let code = av_seek_frame(context, -1, target, Self.avseekFlagBackward)
+        guard code >= 0 else {
+            return "跳转失败：\(Self.errorText(code))"
+        }
+        isAtEnd = false
+        if let packet = packetBuffer {
+            av_packet_unref(packet)
+        }
+        return nil
+        #else
+        _ = seconds
+        return "Libav 模块不可用（本构建未链接）"
+        #endif
+    }
+
     /// 找第一条指定类别的流（按媒体类型字符串判，不比 C 枚举 —— 与 `mediaInfo()` 同一口径）。
     func firstStreamIndex(of kind: StreamInfo.Kind) -> Int? {
         #if canImport(Libavformat) && canImport(Libavcodec) && canImport(Libavutil)
@@ -250,6 +273,9 @@ final class LibavInput: @unchecked Sendable {
     /// `AVERROR_EOF`（宏导不进来，值写死）：`FFERRTAG('E','O','F',' ')`。
     /// 读包层与解码层共用这一处定义。
     static let eofCode: Int32 = -541_478_725
+
+    /// `AVSEEK_FLAG_BACKWARD`（同样是宏，值写死）：跳到目标**之前**最近的关键帧。
+    private static let avseekFlagBackward: Int32 = 1
 
     #if canImport(Libavformat) && canImport(Libavutil)
     /// `av_strerror` 的人话版（FFmpeg 惯例缓冲区 256 字节）。

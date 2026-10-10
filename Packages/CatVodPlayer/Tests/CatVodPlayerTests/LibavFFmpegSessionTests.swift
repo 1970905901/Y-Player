@@ -11,6 +11,12 @@ final class FakeVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
         var duration: Double
     }
 
+    struct ResetCall: Equatable {
+        var seconds: Double
+        var playing: Bool
+        var rate: Float
+    }
+
     private let lock = NSLock()
     private var frames: [EnqueuedFrame] = []
     private var playCalls = 0
@@ -18,6 +24,7 @@ final class FakeVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
     private var lastRate: Float = 0
     private var ready = true
     private var seconds: Double = 0
+    private var resets: [ResetCall] = []
 
     var enqueued: [EnqueuedFrame] {
         locked { frames }
@@ -45,6 +52,10 @@ final class FakeVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
         set { locked { seconds = newValue } }
     }
 
+    var resetCalls: [ResetCall] {
+        locked { resets }
+    }
+
     @discardableResult
     func enqueue(pixelBuffer: CVPixelBuffer, presentationSeconds: Double, durationSeconds: Double) -> Bool {
         _ = pixelBuffer
@@ -64,6 +75,10 @@ final class FakeVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
     }
 
     func flush() { }
+
+    func reset(to seconds: Double, playing: Bool, rate: Float) {
+        locked { resets.append(ResetCall(seconds: seconds, playing: playing, rate: rate)) }
+    }
 
     private func locked<T>(_ body: () -> T) -> T {
         lock.lock()
@@ -265,6 +280,51 @@ struct LibavFFmpegSessionTests {
 
         await session.play()
         #expect(renderer.playCallCount == 2)
+        await session.close()
+    }
+
+    @Test("seek：立刻回执、清队重定位、重新读回还能再播到结束")
+    func seeksBackAndReplays() async throws {
+        let url = try await makeFixtureURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let renderer = FakeVideoRenderer()
+        let session = LibavFFmpegSession(videoRenderer: renderer, audioRenderer: FakeAudioRenderer())
+        let box = EventBox()
+        let consumer = Task { for await event in session.events {
+            box.append(event)
+        } }
+        defer { consumer.cancel() }
+
+        let failure = await session.open(MediaResource(url: url.path), decoderMode: .hardware)
+        #expect(failure == nil)
+        let endedOnce = await waitUntil { box.all.contains(.state(.ended)) }
+        #expect(endedOnce)
+        let framesBefore = renderer.enqueued.count
+        #expect(framesBefore == 30)
+
+        await session.seek(to: 0)
+        // 回执立刻发（控制线程做的，不依赖解码循环）
+        let echoed = await waitUntil {
+            box.all.contains { event in
+                if case let .time(current, _) = event {
+                    return current == 0
+                }
+                return false
+            }
+        }
+        #expect(echoed)
+        // 解码线程接上：清队重定位（此时还在播）
+        let reset = await waitUntil { !renderer.resetCalls.isEmpty }
+        #expect(reset)
+        #expect(renderer.resetCalls.first?.seconds == 0)
+        #expect(renderer.resetCalls.first?.playing == true)
+
+        // 重新读回、再次播到结束（ended 事件出现两次）
+        let endedTwice = await waitUntil {
+            box.all.filter { $0 == .state(.ended) }.count >= 2
+        }
+        #expect(endedTwice)
+        #expect(renderer.enqueued.count > framesBefore)
         await session.close()
     }
 

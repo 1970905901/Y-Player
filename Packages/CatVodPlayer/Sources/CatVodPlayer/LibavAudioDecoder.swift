@@ -103,6 +103,19 @@ final class LibavAudioDecoder: @unchecked Sendable {
         #endif
     }
 
+    /// 跳转后清解码器与重采样器：重采样器里还压着几毫秒延迟样本，
+    /// 不清会把这些**旧位置的声音**带到新位置去；清了下次来帧会自动重建。
+    func flush() {
+        #if canImport(Libavcodec) && canImport(Libavutil) && canImport(Libswresample)
+        if let codecContext {
+            avcodec_flush_buffers(codecContext)
+        }
+        swr_free(&resampler)
+        outputChannels = 0
+        outputSampleRate = 0
+        #endif
+    }
+
     /// 收尾：把解码器里还缓着的音频块全收出来（EOF 之后调一次）。
     func drain() -> [CMSampleBuffer] {
         #if canImport(Libavcodec) && canImport(Libavformat) && canImport(Libavutil) && canImport(Libswresample)
