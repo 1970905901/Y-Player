@@ -604,7 +604,7 @@ extension LibavVideoDecoder {
     /// libav 的传输特性 → CoreVideo 的标签（`SMPTE_ST_2084` / `HLG` 就是 HDR 那两种）；认不出给 nil。
     static func transferTag(_ raw: Int32) -> CFString? {
         #if canImport(Libavutil)
-        if raw == Int32(AVCOL_TRC_SMPTE2084.rawValue) { return kCVImageBufferTransferFunction_SMPTE_ST_2084 }
+        if raw == Int32(AVCOL_TRC_SMPTE2084.rawValue) { return kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ }
         if raw == Int32(AVCOL_TRC_ARIB_STD_B67.rawValue) { return kCVImageBufferTransferFunction_ITU_R_2100_HLG }
         if raw == Int32(AVCOL_TRC_BT709.rawValue) { return kCVImageBufferTransferFunction_ITU_R_709_2 }
         if raw == Int32(AVCOL_TRC_LINEAR.rawValue) { return kCVImageBufferTransferFunction_Linear }
@@ -647,7 +647,7 @@ extension LibavVideoDecoder {
     /// CoreVideo 的传输特性标签 → 播放信息用的名字（``transferTag(_:)`` 的反查；`pq` / `hlg` 即 HDR 两种）；
     /// 认不出给 nil。
     static func transferName(_ tag: String) -> String? {
-        if tag == (kCVImageBufferTransferFunction_SMPTE_ST_2084 as String) { return "pq" }
+        if tag == (kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ as String) { return "pq" }
         if tag == (kCVImageBufferTransferFunction_ITU_R_2100_HLG as String) { return "hlg" }
         if tag == (kCVImageBufferTransferFunction_ITU_R_709_2 as String) { return "bt.709" }
         if tag == (kCVImageBufferTransferFunction_Linear as String) { return "linear" }

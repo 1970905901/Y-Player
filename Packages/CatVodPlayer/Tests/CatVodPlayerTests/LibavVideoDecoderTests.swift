@@ -128,7 +128,7 @@ struct LibavVideoDecoderTests {
     func colorTagNames() {
         let tag709 = kCVImageBufferColorPrimaries_ITU_R_709_2 as String
         let tag2020 = kCVImageBufferColorPrimaries_ITU_R_2020 as String
-        let tagPQ = kCVImageBufferTransferFunction_SMPTE_ST_2084 as String
+        let tagPQ = kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ as String
         let tagHLG = kCVImageBufferTransferFunction_ITU_R_2100_HLG as String
         #expect(LibavVideoDecoder.colorPrimariesName(tag709) == "bt.709")
         #expect(LibavVideoDecoder.colorPrimariesName(tag2020) == "bt.2020")
