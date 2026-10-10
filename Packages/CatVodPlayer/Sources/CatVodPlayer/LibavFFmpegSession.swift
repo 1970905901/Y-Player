@@ -7,11 +7,13 @@ import Foundation
 /// 音频走 libavcodec + swresample 进音频渲染器；两者挂**同一条** synchronizer。
 ///
 /// 当前已知缺口（**如实说，别让界面以为它全能**；M04P13 已把它接进界面）：
-/// - **音轨切换**：`selectTrack` 是空操作（只有默认轨）；
+/// - 换音轨 v1 **不做重定位**：从当前读包位置往后接（新轨的头几帧可能比画面晚一点点），
+///   不回头把新轨对齐到当前时刻；
+/// - 字幕轨还没有（轨道清单里不报，界面就不显示那组选择）；
 /// - 网络读阻塞期间 `close()` 不保证立刻收线程 —— 在没有 interrupt callback 之前，
 ///   宁可让线程自然退出，也不释放它可能正在读的上下文；
 /// - `stats()` 里画面那几行是**打开时读到的事实**（分辨率 / 编码 / 容器），不是 mpv 那种逐帧快照；
-///   「解码」那行例外 —— 它是第一帧实测出来的（硬解还是软解）。
+///   「解码 / 输出」两行例外 —— 它们是第一帧实测出来的。
 ///
 /// 分层：C 调用全在 `LibavInput` / 两个解码器 / 两个渲染器里，本类只管
 /// 线程、状态与背压。一个会话只服务一次打开（引擎换片会新建会话）。
@@ -50,6 +52,21 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     private var audioSamplesEnqueued = 0
     private var loopStartedAt = Date()
     private var loggedVideoSilence = false
+    /// 当前音轨的流下标（`nil` = 没有音轨 / 被关掉）：解码线程写、`stats()` 读 —— 用 `lock` 串。
+    private var audioStreamIndex: Int?
+    /// 待办的换轨请求（控制线程放、解码线程取；`nil` = 没有待办）。与 seek 同一套：一段读包的人只能有一个。
+    private var pendingAudioTrack: PendingAudioTrack?
+
+    /// 换轨请求的三种形态（对齐 `TrackSelection`）。
+    private enum PendingAudioTrack {
+        /// 回到容器里的第一条音轨。
+        case automatic
+        /// 切到指定流下标。
+        case stream(Int)
+        /// 关掉音轨。
+        case disabled
+    }
+
     /// 实际跑起来的解码路径（第一帧定）：解码线程写、控制路径（`stats()`）读 —— 用 `lock` 串。
     private var actualDecodeIsHardware: Bool?
     /// 真正交给显示层的像素格式（第一帧的 `CVPixelBuffer` 实测）：播放信息「输出」那行用。
@@ -89,18 +106,25 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
             return failure
         }
         // 有音轨就得能解：解不了直接报错，不悄悄变成默片
-        if input.firstStreamIndex(of: .audio) != nil {
+        let firstAudio = input.firstStreamIndex(of: .audio)
+        if let firstAudio {
             let decoder = LibavAudioDecoder()
-            if let failure = decoder.open(input: input) {
+            if let failure = decoder.open(input: input, streamIndex: firstAudio) {
                 decoder.close()
                 videoDecoder.close()
                 input.close()
                 return failure
             }
             audioDecoder = decoder
+            audioStreamIndex = firstAudio
         }
         info = input.mediaInfo()
         durationSeconds = info?.durationSeconds ?? 0
+        // 轨道清单：**开片报一次**（换轨不重报 —— 重报会让界面把用户刚选的那条复位成「自动」）。
+        // 字幕轨我们还没有：报空数组 = 界面不显示字幕选择，如实（M04P16）。
+        let videoTracks = info?.streams.filter { $0.kind == .video }.map(\.index) ?? []
+        let audioTracks = info?.streams.filter { $0.kind == .audio }.map(\.index) ?? []
+        emit(.tracks(video: videoTracks, audio: audioTracks, subtitle: []))
         // 起点续播就是「打开后先跳一次」：时间轴也挪过去，等第一帧回来自然开播。
         if resource.startPosition > 0 {
             if let failure = input.seek(to: resource.startPosition) {
@@ -162,10 +186,22 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         audioRenderer.setVolume(min(max(volume, 0), 1))
     }
 
+    /// 换音轨（M04P16）：这里只**记账**，真正的切换在解码线程里做（`performAudioSwitch`）。
+    ///
+    /// - `.auto`：回到容器里的第一条音轨；
+    /// - `.disabled`：把音轨关掉（拆解码器，不是静音假装）；
+    /// - `.index`：切到那条流 —— 不是音频流 / 开不了，会保留旧轨继续响（原因进日志）。
+    ///
+    /// 字幕轨还没做（轨道清单里也没报出去）：这里如实忽略，不假装生效。
     func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async {
-        // 轨道选择还没做：现在都只有默认轨。
-        _ = selection
-        _ = kind
+        guard kind == .audio else { return }
+        lock.lock()
+        switch selection {
+        case .auto: pendingAudioTrack = .automatic
+        case let .index(index): pendingAudioTrack = .stream(index)
+        case .disabled: pendingAudioTrack = .disabled
+        }
+        lock.unlock()
     }
 
     func stats() async -> PlaybackStats {
@@ -188,7 +224,10 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
                 raw["video-params/gamma"] = video.gamma
             }
         }
-        if let audio = info.streams.first(where: { $0.kind == .audio }) {
+        // 音轨可能已经换过（M04P16）：按**当前**那条流的编码名报，不照抄打开时的第一条。
+        if let audioIndex = currentAudioIndex(),
+           let audio = info.streams.first(where: { $0.index == audioIndex })
+        {
             raw["audio-codec"] = audio.codecName
         }
         if !info.containerName.isEmpty {
@@ -255,6 +294,10 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
                 performSeek(to: target)
                 continue
             }
+            if let request = takePendingAudioTrack() {
+                performAudioSwitch(to: request)
+                continue
+            }
             if finishedEof {
                 Thread.sleep(forTimeInterval: 0.05)
                 continue
@@ -316,6 +359,63 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         let target = pendingSeek
         pendingSeek = nil
         return target
+    }
+
+    /// 取走待办换轨（解码线程消费；控制线程只放不快取）。
+    private func takePendingAudioTrack() -> PendingAudioTrack? {
+        lock.lock()
+        defer { lock.unlock() }
+        let request = pendingAudioTrack
+        pendingAudioTrack = nil
+        return request
+    }
+
+    /// 当前音轨的流下标（`nil` = 没有音轨 / 被关掉）；解码线程与 `stats()` 都读，走锁。
+    private func currentAudioIndex() -> Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        return audioStreamIndex
+    }
+
+    /// 换音轨（**只在解码线程里跑**）：新解码器先建好，成了才换、才 flush ——
+    /// 换不过去就保留旧轨继续响（不静音、不假装），原因进日志。
+    ///
+    /// v1 口径：**不做重定位** —— 新轨从当前读包位置往后接（见类文档的缺口清单）。
+    private func performAudioSwitch(to request: PendingAudioTrack) {
+        let target: Int?
+        switch request {
+        case .automatic:
+            target = input.firstStreamIndex(of: .audio)
+        case let .stream(index):
+            target = index
+        case .disabled:
+            target = nil
+        }
+        guard let target else {
+            // 关掉音轨（或本来就没有音轨）：拆解码器 + 清掉已排队的样本。
+            audioDecoder?.close()
+            audioDecoder = nil
+            audioRenderer.flush()
+            lock.lock()
+            audioStreamIndex = nil
+            lock.unlock()
+            return
+        }
+        guard target != currentAudioIndex() else { return }
+        let candidate = LibavAudioDecoder()
+        if let failure = candidate.open(input: input, streamIndex: target) {
+            candidate.close()
+            let note = "换音轨失败（流 \(target)）：\(failure) —— 继续放旧轨"
+            LibavTrace.logger.error("\(note, privacy: .public)")
+            return
+        }
+        audioDecoder?.close()
+        audioDecoder = candidate
+        // 清掉旧轨已经排队的样本：不清的话换完还会先响一段旧的。
+        audioRenderer.flush()
+        lock.lock()
+        audioStreamIndex = target
+        lock.unlock()
     }
 
     /// 背压：有音轨时两侧都要吃得住；只有画面的文件不看音频侧。

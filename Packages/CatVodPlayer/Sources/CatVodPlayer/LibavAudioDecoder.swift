@@ -37,18 +37,22 @@ final class LibavAudioDecoder: @unchecked Sendable {
         close()
     }
 
-    /// 从已打开的输入里挑第一条音频流并建解码器。返回错误描述（nil = 成功）。
-    func open(input: LibavInput) -> String? {
+    /// 给**指定的音频流**建解码器（换轨就是换一个下标重开）。返回错误描述（nil = 成功）。
+    ///
+    /// 下标由 `LibavInput.streamKind(at:)` 验一遍再开 —— 界面传回来的可能是任何东西，不是音频流就拦住。
+    func open(input: LibavInput, streamIndex index: Int) -> String? {
         #if canImport(Libavcodec) && canImport(Libavformat) && canImport(Libavutil) && canImport(Libswresample)
         close()
         guard let formatContext = input.rawFormatContext else {
             return "输入还没打开"
         }
-        guard let index = input.firstStreamIndex(of: .audio),
-              let stream = formatContext.pointee.streams?[index],
+        guard input.streamKind(at: index) == .audio else {
+            return "流 \(index) 不是音频流"
+        }
+        guard let stream = formatContext.pointee.streams?[index],
               let parameters = stream.pointee.codecpar
         else {
-            return "没有音频流"
+            return "没有这条音频流：\(index)"
         }
         guard let codec = avcodec_find_decoder(parameters.pointee.codec_id) else {
             let name = String(cString: avcodec_get_name(parameters.pointee.codec_id))
@@ -77,6 +81,7 @@ final class LibavAudioDecoder: @unchecked Sendable {
         return nil
         #else
         _ = input
+        _ = index
         return "Libav 模块不可用（本构建未链接）"
         #endif
     }

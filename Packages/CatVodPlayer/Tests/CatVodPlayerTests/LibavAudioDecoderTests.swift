@@ -9,8 +9,8 @@ import Testing
 /// 用统一 demux（`LibavInput.nextPacket`）喂包 —— 与将来会话的路数一致。
 @Suite("Libav 音频解码（M04P10）")
 struct LibavAudioDecoderTests {
-    @Test("没有音频流的文件：明确报错")
-    func openWithoutAudio() async throws {
+    @Test("拿到的下标不是音频流：明确拦住（M04P16 换轨的入口要靠它）")
+    func rejectsNonAudioStream() async throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("audio-none-\(UUID().uuidString).mp4")
         defer { try? FileManager.default.removeItem(at: url) }
@@ -22,9 +22,11 @@ struct LibavAudioDecoderTests {
 
         let decoder = LibavAudioDecoder()
         defer { decoder.close() }
-        let failure = decoder.open(input: input)
+        // 这个文件只有视频流：把视频流的下标当音轨喂进去，得拦住（会话那边压根不会建解码器）
+        let videoIndex = try #require(input.firstStreamIndex(of: .video))
+        let failure = decoder.open(input: input, streamIndex: videoIndex)
         #expect(failure != nil)
-        #expect(failure?.contains("音频") == true)
+        #expect(failure?.contains("不是音频流") == true)
     }
 
     @Test("带音轨的小文件：解出 44.1kHz / 双声道 PCM，时间戳起步、衔接得上")
@@ -47,8 +49,10 @@ struct LibavAudioDecoderTests {
 
         let decoder = LibavAudioDecoder()
         defer { decoder.close() }
-        let openFailure = decoder.open(input: input)
+        let audioIndex = try #require(input.firstStreamIndex(of: .audio))
+        let openFailure = decoder.open(input: input, streamIndex: audioIndex)
         #expect(openFailure == nil)
+        #expect(decoder.streamIndex == audioIndex)
 
         var samples: [CMSampleBuffer] = []
         while let packet = input.nextPacket() {

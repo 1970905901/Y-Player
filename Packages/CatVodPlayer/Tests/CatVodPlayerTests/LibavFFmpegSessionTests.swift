@@ -1,3 +1,4 @@
+import AudioToolbox
 @testable import CatVodPlayer
 import CoreMedia
 import CoreVideo
@@ -87,15 +88,21 @@ final class FakeVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
     }
 }
 
-/// 假音频渲染器：记下喂了几块、最后的音量，背压可控。
+/// 假音频渲染器：记下喂了几块、每块的采样率、最后的音量，背压可控。
 final class FakeAudioRenderer: FFmpegAudioRendering, @unchecked Sendable {
     private let lock = NSLock()
     private var samples = 0
     private var ready = true
     private var volume: Float = 1
+    /// 喂进来的样本都带什么采样率 —— 换音轨测试拿它当「真的换了」的证据（M04P16）。
+    private var rates: [Double] = []
 
     var enqueuedCount: Int {
         locked { samples }
+    }
+
+    var enqueuedSampleRates: [Double] {
+        locked { rates }
     }
 
     var lastVolume: Float {
@@ -108,7 +115,12 @@ final class FakeAudioRenderer: FFmpegAudioRendering, @unchecked Sendable {
     }
 
     func enqueue(_ sample: CMSampleBuffer) {
-        _ = sample
+        if let format = CMSampleBufferGetFormatDescription(sample),
+           let description = CMAudioFormatDescriptionGetStreamBasicDescription(format)
+        {
+            let rate = description.pointee.mSampleRate
+            locked { rates.append(rate) }
+        }
         locked { samples += 1 }
     }
 
@@ -159,7 +171,7 @@ struct LibavFFmpegSessionTests {
         return condition()
     }
 
-    private func makeFixtureURL(audioSeconds: Double = 0) async throws -> URL {
+    private func makeFixtureURL(audioSeconds: Double = 0, secondAudioSampleRate: Double = 0) async throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("ffmpeg-session-\(UUID().uuidString).mp4")
         try await TinyMP4Fixture.write(
@@ -168,7 +180,8 @@ struct LibavFFmpegSessionTests {
             height: 240,
             fps: 30,
             frames: 30,
-            audioSeconds: audioSeconds
+            audioSeconds: audioSeconds,
+            secondAudioSampleRate: secondAudioSampleRate
         )
         return url
     }
@@ -210,6 +223,56 @@ struct LibavFFmpegSessionTests {
         let stats = await session.stats()
         #expect(stats.decodeText == "软件解码")
         #expect(stats.outputPixelFormat == "BGRA")
+        await session.close()
+    }
+
+    @Test("换音轨：清单报两条；切到第二条之后喂来的样本换了采样率（M04P16）")
+    func audioTrackSwitch() async throws {
+        let url = try await makeFixtureURL(audioSeconds: 1.0, secondAudioSampleRate: 48000)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let video = FakeVideoRenderer()
+        let audio = FakeAudioRenderer()
+        let session = LibavFFmpegSession(videoRenderer: video, audioRenderer: audio)
+        let box = EventBox()
+        let consumer = Task { for await event in session.events {
+            box.append(event)
+        } }
+        defer { consumer.cancel() }
+
+        func listedAudioTracks() -> [Int] {
+            for event in box.all {
+                if case let .tracks(_, audio, _) = event {
+                    return audio
+                }
+            }
+            return []
+        }
+
+        // 把解码循环先卡在背压上：一个包都还没读 —— 换轨发生在「有声音喂进来之前」，
+        // 断言才不会跟解码速度赛跑（假渲染器的背压就是为这种事准备的）。
+        video.isReadyForMoreMediaData = false
+        let failure = await session.open(MediaResource(url: url.path), decoderMode: .software)
+        #expect(failure == nil)
+
+        // 1) 打开就报轨道清单：两条音频、没有字幕（我们还没有字幕轨）
+        let listed = await waitUntil { listedAudioTracks().count == 2 }
+        #expect(listed)
+        let tracks = listedAudioTracks()
+        let second = try #require(tracks.last)
+
+        // 2) 切到第二条，等解码线程把请求取走（它卡在背压里也会先处理待办）
+        await session.selectTrack(.index(second), for: .audio)
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        // 3) 放行：喂来的样本应该是 48k（第二条轨道的采样率）—— 这就是「真的换了」的证据
+        video.isReadyForMoreMediaData = true
+        let heardSecond = await waitUntil(timeout: 4) { audio.enqueuedSampleRates.contains(48000) }
+        #expect(heardSecond)
+        #expect(!audio.enqueuedSampleRates.contains(44100))
+
+        // 4) 播放信息按**当前**音轨报（两条都是 aac，这里顺手确认那一行没断）
+        let stats = await session.stats()
+        #expect(stats.audioCodec == "aac")
         await session.close()
     }
 

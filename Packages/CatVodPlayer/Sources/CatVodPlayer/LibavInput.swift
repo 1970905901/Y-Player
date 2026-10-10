@@ -212,20 +212,31 @@ final class LibavInput: @unchecked Sendable {
         #endif
     }
 
+    /// 某条流的类别（按媒体类型字符串判，与 `mediaInfo()` 同一口径）；下标越界 / 读不到给 nil。
+    ///
+    /// 换音轨时用它把「界面传回来的下标」验一遍：不是音频流就不许当音轨开。
+    func streamKind(at index: Int) -> StreamInfo.Kind? {
+        #if canImport(Libavformat) && canImport(Libavcodec) && canImport(Libavutil)
+        guard index >= 0, let context, let list = context.pointee.streams else { return nil }
+        guard index < Int(context.pointee.nb_streams), let stream = list[index],
+              let parameters = stream.pointee.codecpar,
+              let typePointer = av_get_media_type_string(parameters.pointee.codec_type)
+        else {
+            return nil
+        }
+        return StreamInfo.Kind(typeText: String(cString: typePointer))
+        #else
+        _ = index
+        return nil
+        #endif
+    }
+
     /// 找第一条指定类别的流（按媒体类型字符串判，不比 C 枚举 —— 与 `mediaInfo()` 同一口径）。
     func firstStreamIndex(of kind: StreamInfo.Kind) -> Int? {
         #if canImport(Libavformat) && canImport(Libavcodec) && canImport(Libavutil)
-        guard let context, let list = context.pointee.streams else { return nil }
-        for candidate in 0 ..< Int(context.pointee.nb_streams) {
-            guard let stream = list[candidate], let parameters = stream.pointee.codecpar else {
-                continue
-            }
-            guard let typePointer = av_get_media_type_string(parameters.pointee.codec_type) else {
-                continue
-            }
-            if StreamInfo.Kind(typeText: String(cString: typePointer)) == kind {
-                return candidate
-            }
+        guard let context else { return nil }
+        for candidate in 0 ..< Int(context.pointee.nb_streams) where streamKind(at: candidate) == kind {
+            return candidate
         }
         return nil
         #else

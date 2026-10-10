@@ -10,7 +10,9 @@ import Foundation
 /// M04P7 的 demux 测试可以接着用。
 enum TinyMP4Fixture {
     /// 写一个 `frames` 帧（`fps` 帧率）、黑/灰交替的 H.264 MP4；
-    /// `audioSeconds > 0` 时再加一条等长的 AAC 静音音轨（M04P10 起）。
+    /// `audioSeconds > 0` 时再加一条等长的 AAC 静音音轨（M04P10 起）；
+    /// `secondAudioSampleRate > 0` 时再加**第二条**不同采样率的音轨（M04P16 换轨测试用
+    /// —— 换过去之后，喂来的样本采样率会变，那就是「真的换了」的证据）。
     ///
     /// 失败原因都带着走（writer.error 优先），别让调用方对着一个空文件猜。
     static func write(
@@ -19,7 +21,8 @@ enum TinyMP4Fixture {
         height: Int = 240,
         fps: Int = 30,
         frames: Int = 30,
-        audioSeconds: Double = 0
+        audioSeconds: Double = 0,
+        secondAudioSampleRate: Double = 0
     ) async throws {
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
@@ -38,6 +41,7 @@ enum TinyMP4Fixture {
             ]
         )
         let audioInput: AVAssetWriterInput?
+        let secondAudioInput: AVAssetWriterInput?
         if audioSeconds > 0 {
             let candidate = AVAssetWriterInput(mediaType: .audio, outputSettings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
@@ -51,8 +55,25 @@ enum TinyMP4Fixture {
             }
             writer.add(candidate)
             audioInput = candidate
+            if secondAudioSampleRate > 0 {
+                let second = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+                    AVFormatIDKey: kAudioFormatMPEG4AAC,
+                    AVSampleRateKey: secondAudioSampleRate,
+                    AVNumberOfChannelsKey: 2,
+                    AVEncoderBitRateKey: 64000,
+                ])
+                second.expectsMediaDataInRealTime = false
+                guard writer.canAdd(second) else {
+                    throw FixtureError.writerRejectedInput
+                }
+                writer.add(second)
+                secondAudioInput = second
+            } else {
+                secondAudioInput = nil
+            }
         } else {
             audioInput = nil
+            secondAudioInput = nil
         }
         guard writer.canAdd(input) else {
             throw FixtureError.writerRejectedInput
@@ -87,6 +108,14 @@ enum TinyMP4Fixture {
         if let audioInput, audioSeconds > 0 {
             try await appendSilence(to: audioInput, seconds: audioSeconds)
             audioInput.markAsFinished()
+        }
+        if let secondAudioInput, audioSeconds > 0, secondAudioSampleRate > 0 {
+            try await appendSilence(
+                to: secondAudioInput,
+                seconds: audioSeconds,
+                sampleRate: secondAudioSampleRate
+            )
+            secondAudioInput.markAsFinished()
         }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             writer.finishWriting { continuation.resume() }
