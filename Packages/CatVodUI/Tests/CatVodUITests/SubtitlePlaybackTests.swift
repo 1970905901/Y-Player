@@ -27,6 +27,35 @@ struct SubtitlePlaybackTests {
         #expect(source("https://a/1.srt").displayName == "https://a/1.srt")
     }
 
+    @Test("该显示哪份字幕：内嵌优先 / 关闭谁都不显示 / 其余用外部（M04P19）")
+    @MainActor
+    func effectiveCues() {
+        let embedded = [SubtitleCue(start: 0, end: 1, text: "内嵌")]
+        let external = [SubtitleCue(start: 0, end: 1, text: "外部")]
+
+        // 选了内嵌轨：内嵌优先（外部那份不混进来）
+        let pickEmbedded = PlaybackView.effectiveSubtitleCues(
+            embedded: embedded, external: external, selection: .auto
+        )
+        #expect(pickEmbedded == embedded)
+
+        // 用户明确关掉：谁都不显示（与 MPV 的 sid=no 同口径）
+        let offWithEmbedded = PlaybackView.effectiveSubtitleCues(
+            embedded: embedded, external: external, selection: .disabled
+        )
+        #expect(offWithEmbedded.isEmpty)
+        let offExternalOnly = PlaybackView.effectiveSubtitleCues(
+            embedded: [], external: external, selection: .disabled
+        )
+        #expect(offExternalOnly.isEmpty)
+
+        // 没选内嵌：用外部那份（自动 / 指定外部轨都算）
+        let plain = PlaybackView.effectiveSubtitleCues(embedded: [], external: external, selection: .auto)
+        #expect(plain == external)
+        let byIndex = PlaybackView.effectiveSubtitleCues(embedded: [], external: external, selection: .index(3))
+        #expect(byIndex == external)
+    }
+
     @Test("状态行文案：五种状态各自说清，不混")
     func statusTexts() {
         #expect(SubtitleStatus.idle.text.isEmpty)
