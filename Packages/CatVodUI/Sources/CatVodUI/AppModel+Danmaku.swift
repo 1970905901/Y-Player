@@ -1,4 +1,5 @@
 import CatVodCore
+import CatVodNet
 import CatVodSource
 import Foundation
 
