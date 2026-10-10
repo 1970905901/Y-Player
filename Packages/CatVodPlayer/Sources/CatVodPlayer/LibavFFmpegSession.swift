@@ -38,12 +38,14 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     private var durationSeconds: Double = 0
     private var info: LibavInput.MediaInfo?
 
-    // 以下只在解码线程里碰：不需要锁
+    /// 第一帧进过显示层没有、读到尾没有：解码线程写，但**看门狗线程会读**（M04P17）—— 读写都走 `lock`。
     private var startedPlaying = false
+    private var finishedEof = false
+
+    // 以下只在解码线程里碰：不需要锁
     private var pendingFrame: LibavVideoDecoder.Frame?
     private var lastFrameDelta = 1.0 / 30
     private var lastEmittedSeconds = -10.0
-    private var finishedEof = false
 
     /// 排障计数（M04P13 起，**只在解码线程里读写**）：两侧各喂进去多少、开跑多久。
     /// 「有声音没画面」的判断就靠它们（见 `reportVideoSilenceIfNeeded()`）。
@@ -66,6 +68,11 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         /// 关掉音轨。
         case disabled
     }
+
+    /// 饥饿看门狗（M04P17）：解码线程喂帧、看门狗线程心跳；状态机与判定是纯逻辑（``FeedStarvationWatchdog``）。
+    private var starvationWatchdog = FeedStarvationWatchdog()
+    /// 最后一帧的 pts（秒）：解码线程写、看门狗线程读 —— 用 `lock` 串。
+    private var lastFedSeconds: Double = 0
 
     /// 实际跑起来的解码路径（第一帧定）：解码线程写、控制路径（`stats()`）读 —— 用 `lock` 串。
     private var actualDecodeIsHardware: Bool?
@@ -284,6 +291,37 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         thread.name = "yplayer-ffmpeg-decode"
         thread.qualityOfService = .userInitiated
         thread.start()
+        let watchdog = Thread { [weak self] in self?.watchdogLoop() }
+        watchdog.name = "yplayer-ffmpeg-watchdog"
+        watchdog.qualityOfService = .utility
+        watchdog.start()
+    }
+
+    /// 看门狗线程（M04P17）：每 0.2s 看一眼「时钟是不是跑到数据前面了」。
+    ///
+    /// 为什么非要**另一条线程**：解码线程可能正卡在一次阻塞读里（网络慢 / 掉线），
+    /// 那时它自己没法报「卡住了」，只能从外面看。这条线程只做三件事：
+    /// 读锁里的状态、判饥饿、停表 + 报「缓冲中」—— 恢复由解码线程在喂帧时做（``enqueue(_:duration:)``）。
+    ///
+    /// **时钟跟着帧走**：不停表的话，时钟会一直往前跑，恢复后那批帧全成了「迟到帧」，
+    /// 显示层按规矩丢掉它们 —— 用户看到的就不是「停一下」，而是「卡完突然快进一段」。
+    private func watchdogLoop() {
+        while isRunning() {
+            Thread.sleep(forTimeInterval: 0.2)
+            guard isRunning() else { return }
+            lock.lock()
+            let watching = playing && startedPlaying && !finishedEof
+            let becameStarving = watching
+                ? starvationWatchdog.tick(
+                    clockSeconds: videoRenderer.currentSeconds,
+                    lastFedSeconds: lastFedSeconds
+                )
+                : false
+            lock.unlock()
+            guard becameStarving else { continue }
+            videoRenderer.pause()
+            emit(.state(.buffering))
+        }
     }
 
     /// 解码主循环：背压等 → 取包 → 按流分发给两个解码器 → 喂对应的渲染器。
@@ -298,7 +336,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
                 performAudioSwitch(to: request)
                 continue
             }
-            if finishedEof {
+            if isFinishedEof() {
                 Thread.sleep(forTimeInterval: 0.05)
                 continue
             }
@@ -339,10 +377,10 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         videoDecoder.flush()
         audioDecoder?.flush()
         pendingFrame = nil
-        finishedEof = false
-        // 第一帧回来后重新报 .playing：从 .ended 跳回来也要能复播。
-        startedPlaying = false
         lock.lock()
+        // 第一帧回来后重新报 .playing：从 .ended 跳回来也要能复播。
+        finishedEof = false
+        startedPlaying = false
         endedEmitted = false
         let playing = playing
         let rate = rate
@@ -350,6 +388,19 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         lastEmittedSeconds = seconds
         videoRenderer.reset(to: seconds, playing: playing, rate: rate)
         audioRenderer.flush()
+    }
+
+    /// 读到尾了没有（解码线程写、看门狗线程读 —— 走锁）。
+    private func isFinishedEof() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return finishedEof
+    }
+
+    private func setFinishedEof(_ value: Bool) {
+        lock.lock()
+        finishedEof = value
+        lock.unlock()
     }
 
     /// 取走待办跳转（解码线程消费；控制线程只放不快取）。
@@ -446,7 +497,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
 
     /// 读到尾：两边都冲一次解码器，收干净再报结束。
     private func finishStream() {
-        finishedEof = true
+        setFinishedEof(true)
         for frame in videoDecoder.drain() {
             consume(frame)
         }
@@ -492,14 +543,22 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         )
         guard accepted else { return }
         videoFramesAccepted += 1
-        // 第一帧真的排上了，才算「开始播」—— 在此之前界面那边还是 loading。
-        if !startedPlaying {
+        // 时钟跟着帧走（M04P17）：记下这帧的 pts + 从饥饿里恢复；第一帧真排上了才算「开始播」
+        // （在此之前界面那边还是 loading）。这些值跨线程读，一次锁里办完。
+        lock.lock()
+        lastFedSeconds = frame.seconds
+        let wasStarving = starvationWatchdog.noteFeed()
+        let resumeRate = rate
+        let isPlayingNow = playing
+        let isFirstFrame = !startedPlaying
+        if isFirstFrame {
             startedPlaying = true
-            lock.lock()
             playing = true
-            let rate = rate
-            lock.unlock()
-            videoRenderer.play(rate: rate)
+        }
+        lock.unlock()
+        // 恢复只在「还在播」时做：暂停 / 用户自己停了表的时候，喂帧不许把表接回去。
+        if isFirstFrame || (wasStarving && isPlayingNow) {
+            videoRenderer.play(rate: resumeRate)
             emit(.state(.playing))
         }
     }
@@ -535,7 +594,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     private func failHardwareFallback() {
         guard !reportedHardwareFallback else { return }
         reportedHardwareFallback = true
-        finishedEof = true
+        setFinishedEof(true)
         let reason = "硬解没生效（这台机器没有可用的 VideoToolbox 硬解）："
             + "请到「设置 → 播放 → 解码方式」改成「软件解码」"
         emit(.state(.failed(reason)))
