@@ -58,6 +58,9 @@ struct SettingsPlayerView: View {
                 } label: {
                     Text("播放控制")
                 }
+            } footer: {
+                // 这一页的第一行就是换内核的入口 —— 生效时机那句话在这里也得有（M24P1）。
+                Text(PlaybackSettingsSection.appliesOnNextPlaybackNote)
             }
         }
         .adaptiveListStyle()

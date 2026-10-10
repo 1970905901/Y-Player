@@ -11,6 +11,15 @@ import SwiftUI
 struct PlaybackSettingsSection: View {
     @ObservedObject var model: AppModel
 
+    /// 内核 / 解码 / 本地代理这三项**什么时候生效**：一句话，两处共用（M24P1）。
+    ///
+    /// 为什么值得单独写：播放页是在**进入时**把设置读走并建内核的（此后不换内核 —— 换内核要重建
+    /// 播放器，画面会断），所以「改了设置、当前那一页没变化」是**预期行为**；
+    /// 不写清就一定会被当成「改了没反应」。
+    static let appliesOnNextPlaybackNote =
+        "以上三项在**下次进播放页**时生效：正在播的那一页不会中途换内核（换内核要重建播放器，画面会断）。"
+            + "改完想立刻生效，退出播放页再进一次。"
+
     var body: some View {
         let resolution = model.resolvePlayback()
         Section("播放设置") {
@@ -25,6 +34,9 @@ struct PlaybackSettingsSection: View {
                 }
             }
             Toggle("本地代理注入 header", isOn: $model.isLocalProxyEnabled)
+            Text(Self.appliesOnNextPlaybackNote)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             Text(
                 "开启后，需要 header 的播放地址会改走本机服务（127.0.0.1），"
                     + "由它把 Referer/UA/Cookie 注入到主清单、子清单、分片与密钥请求上——"
