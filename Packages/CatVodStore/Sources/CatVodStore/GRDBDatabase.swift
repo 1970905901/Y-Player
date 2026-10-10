@@ -130,6 +130,12 @@ public final class GRDBDatabase: Sendable {
                 t.add(column: "ending", .double).notNull().defaults(to: 0)
             }
         }
+        // v5：按片记的画面比例（M03P19，对齐上游 `History.scale`）—— 存档位的 rawValue，空串 = 没存过。
+        migrator.registerMigration("v5.playbackScale") { db in
+            try db.alter(table: "playbackProgress") { t in
+                t.add(column: "scale", .text).notNull().defaults(to: "")
+            }
+        }
         try migrator.migrate(queue)
     }
 }

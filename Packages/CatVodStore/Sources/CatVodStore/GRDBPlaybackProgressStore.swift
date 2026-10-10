@@ -9,7 +9,7 @@ import GRDB
 public struct GRDBPlaybackProgressStore: PlaybackProgressStore {
     private static let columns = [
         "vodKey", "siteKey", "vodID", "position", "duration", "isFinished",
-        "opening", "ending", "episodeIndex", "updatedAt", "metadata",
+        "opening", "ending", "scale", "episodeIndex", "updatedAt", "metadata",
     ].joined(separator: ", ")
 
     private let database: GRDBDatabase
@@ -39,8 +39,8 @@ public struct GRDBPlaybackProgressStore: PlaybackProgressStore {
     public func save(_ progress: PlaybackProgress) async {
         let sql = """
         INSERT OR REPLACE INTO playbackProgress
-        (vodKey, siteKey, vodID, position, duration, isFinished, opening, ending, episodeIndex, updatedAt, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (vodKey, siteKey, vodID, position, duration, isFinished, opening, ending, scale, episodeIndex, updatedAt, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         let metadata = Self.encode(progress.metadata)
         database.write { db in
@@ -55,6 +55,7 @@ public struct GRDBPlaybackProgressStore: PlaybackProgressStore {
                     progress.isFinished ? 1 : 0,
                     progress.opening,
                     progress.ending,
+                    progress.scale,
                     progress.episodeIndex,
                     progress.updatedAt.timeIntervalSince1970,
                     metadata,
@@ -96,6 +97,7 @@ public struct GRDBPlaybackProgressStore: PlaybackProgressStore {
         let isFinished: Int = row["isFinished"]
         let opening: Double = row["opening"]
         let ending: Double = row["ending"]
+        let scale: String = row["scale"]
         let episodeIndex: Int = row["episodeIndex"]
         let updatedAt: Double = row["updatedAt"]
         let metadata: String = row["metadata"]
@@ -106,6 +108,7 @@ public struct GRDBPlaybackProgressStore: PlaybackProgressStore {
             isFinished: isFinished != 0,
             opening: opening,
             ending: ending,
+            scale: scale,
             episodeIndex: episodeIndex,
             updatedAt: Date(timeIntervalSince1970: updatedAt),
             metadata: decode(metadata)

@@ -25,6 +25,11 @@ public struct PlaybackProgress: Sendable, Hashable {
     /// 记的是**还剩多久**（上游 `onEnding` 存的是 `duration - position`）：播到
     /// `位置 + ending >= 总时长` 就进下一集（上游 `VodPlaybackController.onTimeChanged` 里那一行）。
     public var ending: Double
+    /// 画面比例的存档串（M03P19，对齐上游 `History.scale`）：空串 = 没存过。
+    ///
+    /// 存**档位的 rawValue**（`PlaybackScaleMode`），读的时候认不出就回落「适应」——
+    /// 按片记的理由与上游同：一个全局值会把下一部片也按上一部选的比例放。
+    public var scale: String
     /// 最近观看的集下标（**当前线路内**，从 0 开始）；`-1` 表示未知。
     ///
     /// 说明：M2 只记录「线路内下标」——跨线路/跨站的集身份对齐（用集名或 url 匹配）留给 M8 一起做。
@@ -54,6 +59,7 @@ public struct PlaybackProgress: Sendable, Hashable {
         isFinished: Bool = false,
         opening: Double = 0,
         ending: Double = 0,
+        scale: String = "",
         episodeIndex: Int = -1,
         updatedAt: Date = Date(),
         metadata: PlaybackEntryMetadata = PlaybackEntryMetadata()
@@ -64,6 +70,7 @@ public struct PlaybackProgress: Sendable, Hashable {
         self.isFinished = isFinished
         self.opening = max(opening, 0)
         self.ending = max(ending, 0)
+        self.scale = scale
         self.episodeIndex = episodeIndex
         self.updatedAt = updatedAt
         self.metadata = metadata

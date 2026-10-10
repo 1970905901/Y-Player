@@ -73,6 +73,20 @@ struct PlaybackProgressStoreTests {
         #expect(dirty.ending == 0)
     }
 
+    @Test("画面比例按片记：随记录保存，默认空串（M03P19）")
+    func playbackScale() async {
+        let store = InMemoryPlaybackProgressStore()
+        let target = key("cat", "12")
+        await store.save(PlaybackProgress(key: target, position: 30, duration: 2700, scale: "crop"))
+
+        let loaded = await store.progress(for: target)
+        #expect(loaded?.scale == "crop")
+
+        // 没存过就是空串（读的时候由界面回落「适应」）
+        let plain = PlaybackProgress(key: key("cat", "13"), position: 10, duration: 100)
+        #expect(plain.scale.isEmpty)
+    }
+
     @Test("all() 按更新时间倒序，不同站点的同一个 vodID 互不覆盖")
     func storeKeysAndOrdering() async {
         let store = InMemoryPlaybackProgressStore()

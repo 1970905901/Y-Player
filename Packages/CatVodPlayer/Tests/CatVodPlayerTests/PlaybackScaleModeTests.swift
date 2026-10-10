@@ -13,6 +13,19 @@ struct PlaybackScaleModeTests {
         #expect(PlaybackScaleMode.supportedModes(by: .system).isEmpty)
     }
 
+    @Test("从存档串还原：认得出就用，空串 / 认不出回落「适应」（M03P19）")
+    func decodeArchive() {
+        #expect(PlaybackScaleMode.decode("crop") == .crop)
+        #expect(PlaybackScaleMode.decode("ratio4x3") == .ratio4x3)
+        #expect(PlaybackScaleMode.decode("") == .fit)
+        #expect(PlaybackScaleMode.decode(nil) == .fit)
+        #expect(PlaybackScaleMode.decode("zoom-in") == .fit)
+        // 每一档都能往返（存档位就是 rawValue）
+        for mode in PlaybackScaleMode.allCases {
+            #expect(PlaybackScaleMode.decode(mode.rawValue) == mode)
+        }
+    }
+
     @Test("档位文案：名字本身就是语义（参考实现的具体档位表没拿到，不猜）")
     func displayNames() {
         #expect(PlaybackScaleMode.fit.displayName == "适应")

@@ -567,6 +567,8 @@ extension PlaybackView {
             // 套用存档里的倍速：必须在加载**之后**设 —— 引擎在 `load` 时会回到正常速度
             // （倍速属「本次播放的偏好」，引擎不跨资源记忆，见 `AVPlayerEngine.requestedRate`）。
             await created.setRate(speed)
+            // 画面比例也要在加载**之后**套：引擎换资源时会把显示方式复位（与倍速同一条理由）。
+            await created.setScaleMode(scaleMode)
         } catch let error as PlayerError {
             errorText = error.message
         } catch {
@@ -655,6 +657,8 @@ extension PlaybackView {
         let resume = saved.resumePosition()
         openingMark = saved.opening
         endingMark = saved.ending
+        // 画面比例按片记忆（M03P19，对齐上游 `History.scale`）：认不出的值回落「适应」。
+        scaleMode = PlaybackScaleMode.decode(saved.scale)
         // 起播位置：片头与上次位置取靠后的那个（上游 `VodHistoryPolicy.startPositionMs`）。
         let start = PlaybackOpeningEndingRules.startPosition(opening: saved.opening, resume: resume)
         guard start > 0 else {
@@ -687,6 +691,7 @@ extension PlaybackView {
                 isFinished: isFinished,
                 opening: openingMark,
                 ending: endingMark,
+                scale: scaleMode.rawValue,
                 episodeIndex: activeProgressContext.episodeIndex,
                 updatedAt: now,
                 metadata: activeProgressContext.metadata
@@ -786,6 +791,7 @@ extension PlaybackView {
             try await engine.load(resumableResource())
             await engine.play()
             await engine.setRate(speed)
+            await engine.setScaleMode(scaleMode)
         } catch let error as PlayerError {
             errorText = error.message
         } catch {
@@ -861,6 +867,8 @@ extension PlaybackView {
                 zoomScale = 1
                 scaleMode = mode
                 Task { await engine?.setScaleMode(mode) }
+                // 按片记下来（M03P19）：下次进这一部片直接用这档。
+                Task { await persist(force: true) }
             }
         )
     }

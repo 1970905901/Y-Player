@@ -34,6 +34,15 @@ public enum PlaybackScaleMode: String, Sendable, CaseIterable, Hashable {
         }
     }
 
+    /// 从进度记录里的存档串还原（M03P19）：空串 / 认不出的值回落 ``fit`` ——
+    /// 坏存档不该让画面变形（与「坏倍速回正常速度」同一口径）。
+    public static func decode(_ raw: String?) -> PlaybackScaleMode {
+        guard let raw, let mode = PlaybackScaleMode(rawValue: raw) else {
+            return .fit
+        }
+        return mode
+    }
+
     /// 某个内核实不实做得到这一档。
     public func isSupported(by engine: PlayerEngineKind) -> Bool {
         switch engine {
