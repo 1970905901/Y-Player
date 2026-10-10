@@ -39,7 +39,7 @@ App 里一个调用点都没有 —— 于是：
 
 | 上游 | 本仓库 | 差异 |
 | --- | --- | --- |
-| `LiveActivity.onLiveParsed` → `LiveApi.parseXml(live)`：清单到手就拉整源文件 | `LiveView.task` → `loadLivePlaylist()` → `loadLiveFileGuide()` | 上游落盘并按「不是今天 / 超过 6 小时」判重下（`EpgParser.refreshReason`）；本项目不落盘，只保留「缺今天」那一半（进程重启内存缓存就没了，6 小时那半没有意义） |
+| `LiveActivity.onLiveParsed` → `LiveApi.parseXml(live)`：清单到手就拉整源文件 | `LiveView.task` → `loadLivePlaylist()` → `loadLiveFileGuide()` | 上游落盘并按「不是今天 / 超过 6 小时」判重下（`EpgParser.refreshReason`）；**M07d7 起本项目也落盘、三条规则逐条对齐**（当时「不落盘、只看缺今天」是这一轮的权宜；逐频道仍只在内存） |
 | 频道切换 → `mViewModel.getEpg(mChannel)` | 打开频道 / 打开节目单 → `loadLiveGuide(for:)` | 多了「今天已有就短路」：文件形态覆盖今天时不必再按频道请求，也就不会走「没有接口地址」那条错 |
 | 上游不预取（只拉选中频道） | 频道行露面即排队预取 | **本项目加的**，所以自带刹车：串行、去重、失败不重试、本次进入封顶 12 个、换分组重置 |
 | — | 封顶到顶时把原因写进 `liveEPGNotice` | 「不静默」：用户看得到「已预取 12 个，其余点开再拉」 |

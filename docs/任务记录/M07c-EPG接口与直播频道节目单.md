@@ -33,7 +33,7 @@
 | `EpgParser.getEpg(xml, key, zone)`：解析单个频道的 XMLTV，键用**传入的 key** | `EPGXMLTVParser.parse(data:key:timeZone:)` = 整文件解析 + `EPGGuide.rekeyed(to:)` |
 | `EpgParser.prepareLiveChannels`：`tvgId` → `tvgName` → `name` 三级映射 | `LiveChannel.epgID`（M07a） |
 | `EpgParser.bindResultsToLive`：`<icon src>` 回填给没写 `logo` 的频道 | `EPGGuide.channelLogos` + `logo(for:fallback:)`（模型不就地改，取值时回填） |
-| `EpgParser.refreshReason`：文件「不是今天 / 超过 6 小时」才重下 | **不做**：本项目不落盘缓存；`existing` 参数就是留给界面做内存缓存的入口 |
+| `EpgParser.refreshReason`：文件「不是今天 / 超过 6 小时」才重下 | **M07d7 已落盘并对齐三条规则**（`EPGFileCachePolicy`）；`existing` 参数仍是接口形态的内存缓存入口 |
 | `EpgData.getRange()`（`clock=…`） | `EPGProgram.clockQuery`（M07a）——**不是 EPG 请求参数**，见下方差异 2 |
 
 ## 三、差异与取舍
@@ -46,8 +46,10 @@
    所以 `clockQuery` 的接线属 M07c-2（直播页的时移播放）。
 3. **请求带源级 header**：上游 `OkHttp.string(url)` 用默认头；本项目沿用 M07b 的口径
    （`LiveSource.headers()` + `timeout`），对需要 UA / Referer 的接口更稳。
-4. **不落盘缓存**：上游把 EPG 落到自己目录并按「跨天 / 6 小时」判定刷新；本项目把「已经拿到的那天」
-   交给调用方（`existing`）在内存里持有，不在沙盒里造第二套缓存目录。缓存策略随界面在 M07c-2 定。
+4. **当时的「不落盘」是有意为之**：上游把 EPG 落到自己目录并按「跨天 / 6 小时」判定刷新；
+   本项目当时把「已经拿到的那天」交给调用方（`existing`）在内存里持有，不在沙盒里造第二套缓存目录。
+   **M07d7 起收回一半**：文件形态（整源 XML / GZ）落了盘、三条规则对齐（见 M07d7）；
+   接口形态（逐频道 × 天）仍只在内存 —— 落盘会变成几百个小文件，淘汰规则得先想清楚。
 5. **接口没给 `date` 时按源时区今天**：上游会把空日期拼进 `date + HH:mm` → 时间退化成 1970；
    `EPGJSONParser` 改成今天，并在代码里记了这一条。
 6. **非 ASCII 编码**：上游只用 `replace`，中文频道名靠 OkHttp 规整 URL；
