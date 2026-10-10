@@ -269,6 +269,10 @@ public final class AppModel: ObservableObject {
     /// 宿主状态：界面据此显示「不可用 / 启动中 / 运行中 / 失败」，而不是一句笼统的占位文案。
     @Published public internal(set) var hostStatus: JS2PHostStatus = .idle
 
+    /// 站点 `POST /init` 的失败清单（M16P10）：进「源地址」页时刷一次，与宿主状态同处显示。
+    /// 不阻断任何动作 —— 只是「某站点动作全失败」时的第一诊断线索。
+    @Published public internal(set) var siteInitFailures: [String] = []
+
     /// 宿主**现探**结果（M22P1）：`hostStatus` 是最近一次刷新的结论，这个是「刚探过」的答案。
     @Published public internal(set) var hostHealth: HostHealth = .unknown
 
@@ -286,7 +290,8 @@ public final class AppModel: ObservableObject {
     /// **必须由 AppModel 持有**：`makeSiteClient()` 每次都会新建一个 `SiteClient`，
     /// 若让每个 `SiteClient` 自带一份记忆，就变成「每次动作都 init」
     /// （参考实现 `CatSpider.java` 是每个 spider 实例只 init 一次）。
-    private let spiderInitializer = CatSpiderInitializer()
+    // （internal：`AppModel+Host.swift` 的 `refreshSiteInitFailures()` 也要用它，不能是 private。）
+    let spiderInitializer = CatSpiderInitializer()
 
     // MARK: - 直播（M07c-2）
 

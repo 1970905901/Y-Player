@@ -62,4 +62,14 @@ public actor CatSpiderInitializer {
     public func failureCount() -> Int {
         failures.count
     }
+
+    /// 诊断：所有 init 失败的一行行「站点 + 原因」（按站点排序，界面直接列出来）。
+    ///
+    /// 为什么给整份而不是只给计数：真机上「某站点动作全失败」时，得先看出**是哪个站点**、
+    /// 失败发生在 init（M16P6 记下的那个口子，M16P10 接到界面）。
+    public func failureNotes() -> [String] {
+        failures
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)：\($0.value)" }
+    }
 }

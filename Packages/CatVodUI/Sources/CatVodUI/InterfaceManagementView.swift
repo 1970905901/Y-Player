@@ -52,6 +52,8 @@ public struct InterfaceManagementView: View {
         .task {
             // 进页面探一次活：`hostStatus` 是旧结论，宿主可能已经崩了（M22P1）。
             await model.refreshHostHealth()
+            // 站点 init 的失败清单（M16P10）：与宿主状态同处显示，省得去别处翻。
+            await model.refreshSiteInitFailures()
         }
     }
 
@@ -202,6 +204,18 @@ public struct InterfaceManagementView: View {
             // 探活（M22P1）：上面那行是**上次刷新**的结论，宿主可能已经崩了 ——
             // 这一行回答「现在这一刻还在不在」。
             InfoRow(title: "探活", value: model.hostHealth.text)
+            if !model.siteInitFailures.isEmpty {
+                // 站点 `POST /init` 失败（M16P10）：不阻断动作，但这是「某站点动作全失败」的
+                // 第一诊断线索 —— 先报是哪个站点、失败在 init，再谈动作本身。
+                Text("有站点初始化失败（不阻断动作，但可能是动作拿不到内容的原因）：")
+                    .font(.caption2)
+                    .foregroundStyle(Color.orange)
+                ForEach(Array(model.siteInitFailures.enumerated()), id: \.offset) { _, note in
+                    Text(note)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Button("检测宿主") {
                 Task { await model.refreshHostHealth() }
             }

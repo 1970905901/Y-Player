@@ -154,6 +154,25 @@ struct CatSpiderInitializerTests {
         #expect(initCount == 1)
     }
 
+    @Test("失败清单：列出**哪个站点**、原因为何（按站点排序）—— M16P10 的界面就是列它")
+    func failureNotesListSites() async throws {
+        let transport = CatSpiderRouteRecorder(
+            responses: ["init": HTTPResponse(status: 404, body: Data("{}".utf8))]
+        )
+        let initializer = CatSpiderInitializer()
+        let client = SiteClient(transport: transport, initializer: initializer)
+
+        // 故意后发 a、先发 b：清单要按站点名排序（界面每次刷新顺序稳定，不跳）。
+        _ = try await client.home(site: spiderSite(key: "b"))
+        _ = try await client.home(site: spiderSite(key: "a"))
+
+        let notes = await initializer.failureNotes()
+        #expect(notes.count == 2)
+        #expect(notes[0].hasPrefix("http://127.0.0.1:9988/spider/a/3："))
+        #expect(notes[1].hasPrefix("http://127.0.0.1:9988/spider/b/3："))
+        #expect(notes.allSatisfy { $0.contains("/init") })
+    }
+
     @Test("CMS 站点不参与 init（它没有这个生命周期）")
     func cmsSiteNeverInitializes() async throws {
         let transport = CatSpiderRouteRecorder()

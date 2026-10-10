@@ -71,6 +71,14 @@ public extension AppModel {
         bumpSiteCatalogRevision()
     }
 
+    /// 刷一次「站点 `POST /init` 失败清单」（M16P10）：接口页进页面时调，展示在「Node 宿主」区块里。
+    ///
+    /// 为什么放在宿主那一段：init 是宿主契约的一步，失败原因跟宿主状态放一起看最省事
+    /// （M16P6 当时留的口子就是这个）。
+    func refreshSiteInitFailures() async {
+        siteInitFailures = await spiderInitializer.failureNotes()
+    }
+
     /// 停止宿主并清空宿主站点。
     func stopHost() async {
         await js2pHost?.stop()
