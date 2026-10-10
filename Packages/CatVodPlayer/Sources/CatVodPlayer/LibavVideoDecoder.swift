@@ -1,5 +1,7 @@
+import CoreMedia
 import CoreVideo
 import Foundation
+import VideoToolbox
 
 #if canImport(Libavcodec)
 import Libavcodec
@@ -16,10 +18,11 @@ import Libswscale
 
 /// 自研 FFmpeg 内核（M4）的**视频解码层**（M04P7）：从已打开的输入里取包 → 喂解码器 → 吐 CVPixelBuffer。
 ///
-/// 路径选择（M04P14 起两条都有）：
+/// 路径选择（M04P14 起两条都有，**严格按设置、不自动降级**）：
 ///
-/// - **硬解优先**：VideoToolbox 设备挂着时，VT 直出 `CVPixelBuffer`（`AVFrame.data[3]`）；
-/// - **软解**：`.software`、或硬解不可用时 libav 自己掉回软解 —— 帧经 libswscale 转成 BGRA。
+/// - `.hardware`：VT 直出 `CVPixelBuffer`（`AVFrame.data[3]`）。本机（或这个编码）硬解不可用时
+///   **明确报错**，让用户去改设置；libav 中途掉回软解也**不算数**（记旗标，由会话停下并提示）；
+/// - `.software`：帧经 libswscale 转成 BGRA。
 ///
 /// 硬解那条：
 /// - M4 的口径是「HDR 与流畅度」，硬解是这两件事的地基；
@@ -64,15 +67,24 @@ final class LibavVideoDecoder: @unchecked Sendable {
     private(set) var decodeErrorCount = 0
     private(set) var lastDecodeErrorText: String?
 
+    /// 本次打开是不是「只认硬解」（`.hardware`）：收到软解帧就记旗标 —— **不自动降级**。
+    private var requiresHardware = false
+    private(set) var hardwareFallbackCount = 0
+
+    /// 硬解模式下 libav 掉回软解过（会话据此停下并提示用户改设置）。
+    var hardwareFallbackDetected: Bool {
+        hardwareFallbackCount > 0
+    }
+
     deinit {
         close()
     }
 
     /// 从已打开的输入里挑**第一条视频流**，按 `decoderMode` 建解码器。返回错误描述（nil = 成功）。
     ///
-    /// 两条路（M04P14）：
-    /// - `.hardware`：给解码器挂 VideoToolbox 设备（硬解优先）。设备建不出来**不拦路** ——
-    ///   继续按软解跑，但要打日志（实际走哪条路由第一帧定，见 ``Frame/isHardware``）；
+    /// 两条路（M04P14，**严格按设置、不自动降级**）：
+    /// - `.hardware`：本机没硬解（`VTIsHardwareDecodeSupported`）或 VT 设备建不出来 → **返回错误**，
+    ///   让用户去把设置改成软解；中途掉回软解也由会话停下报错（见 ``hardwareFallbackCount``）；
     /// - `.software`：不建设备，纯软解（帧由 sws 转成 BGRA）。
     ///
     /// 挑流用的也是「媒体类型字符串」而不是 C 枚举（同 `LibavInput`：少一类互操作坑）。
@@ -88,22 +100,28 @@ final class LibavVideoDecoder: @unchecked Sendable {
         else {
             return "没有视频流"
         }
+        let codecName = String(cString: avcodec_get_name(parameters.pointee.codec_id))
         guard let codec = avcodec_find_decoder(parameters.pointee.codec_id) else {
-            let name = String(cString: avcodec_get_name(parameters.pointee.codec_id))
-            return "没有解码器：\(name)"
+            return "没有解码器：\(codecName)"
         }
 
-        // VideoToolbox 设备（硬解的地基）：只有硬解模式才建；建不出来不报错 —— 软解照样能播。
-        if decoderMode == .hardware {
+        requiresHardware = decoderMode == .hardware
+        // 硬解是**手动选择**：本机（或这个编码）没有硬解就当场说清楚，让用户去改设置 ——
+        // 不自动降级（同 M02P3 对内核选择的纪律）。
+        if requiresHardware {
+            if let codecType = Self.videoToolboxCodecType(codecName: codecName),
+               !VTIsHardwareDecodeSupported(codecType)
+            {
+                return "本机没有可用的 VideoToolbox 硬解（\(codecName)）——"
+                    + "请到「设置 → 播放 → 解码方式」改成「软件解码」"
+            }
             var device: UnsafeMutablePointer<AVBufferRef>?
             let deviceCode = av_hwdevice_ctx_create(&device, AV_HWDEVICE_TYPE_VIDEOTOOLBOX, nil, nil, 0)
-            if deviceCode >= 0, let created = device {
-                self.device = created
-            } else {
-                LibavTrace.logger.error(
-                    "VideoToolbox 设备创建失败（\(LibavInput.errorText(deviceCode), privacy: .public)）—— 先按软解跑"
-                )
+            guard deviceCode >= 0, let created = device else {
+                return "VideoToolbox 设备创建失败（\(LibavInput.errorText(deviceCode))）——"
+                    + "请到「设置 → 播放 → 解码方式」改成「软件解码」"
             }
+            self.device = created
         }
 
         guard let codecContext = avcodec_alloc_context3(codec) else {
@@ -128,7 +146,6 @@ final class LibavVideoDecoder: @unchecked Sendable {
         streamIndex = index
         timeBase = stream.pointee.time_base
         // 硬解有没有真的生效，看这一行：输出不是 VT 帧的话，后面每一帧都会被丢掉（= 有声音没画面）。
-        let codecName = String(cString: avcodec_get_name(parameters.pointee.codec_id))
         let pixelFormat = codecContext.pointee.pix_fmt
         let hasDevice = device != nil
         // 这一行只说明「请求了什么」：硬解到底生不生效，看第一帧那次（`Frame.isHardware`）。
@@ -242,6 +259,8 @@ final class LibavVideoDecoder: @unchecked Sendable {
         swsSourceFormat = -1
         swsWidth = 0
         swsHeight = 0
+        requiresHardware = false
+        hardwareFallbackCount = 0
         codecContext = nil
         device = nil
         formatContext = nil
@@ -273,6 +292,18 @@ final class LibavVideoDecoder: @unchecked Sendable {
         let text = String(decoding: bytes, as: UTF8.self)
         let printable = text.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
         return printable ? text : "0x\(String(type, radix: 16))"
+    }
+
+    /// 编码名 → CoreMedia 的编码类型（给 `VTIsHardwareDecodeSupported` 用来判「本机能不能硬解」）。
+    ///
+    /// 只列**能确证的**两种（H.264 / HEVC）—— 认不出来给 nil：那就不做前置检查，
+    /// 交给第一帧的实测兜底（见 ``hardwareFallbackCount``）。宁可不判，也不猜错。
+    static func videoToolboxCodecType(codecName: String) -> CMVideoCodecType? {
+        switch codecName.lowercased() {
+        case "h264": return kCMVideoCodecType_H264
+        case "hevc": return kCMVideoCodecType_HEVC
+        default: return nil
+        }
     }
 
     /// 软解能转的像素格式 → libav 的枚举值；认不出来给 nil（如实丢帧 + 记账，不硬撑）。
@@ -455,8 +486,18 @@ final class LibavVideoDecoder: @unchecked Sendable {
             frames.append(Frame(pixelBuffer: pixelBuffer, seconds: seconds, isHardware: true))
             return true
         }
-        // 软解帧（`.software` 的常态，也是硬解不可用时 libav 自己掉回来的结果）：
-        // 过 sws 转成 BGRA 再送显示层 —— 以前这里直接丢，界面上就是「有声音没画面」。
+        // 硬解模式却收到软解帧 = libav 自己掉回了软解：**不自动降级** —— 记旗标，
+        // 由会话停下并提示用户去把设置改成「软件解码」。
+        if requiresHardware {
+            hardwareFallbackCount += 1
+            if hardwareFallbackCount == 1 {
+                let note = "硬解没生效：收到软解帧（format=\(Int(frame.pointee.format))）—— 按设置的「硬件解码」这不算数"
+                LibavTrace.logger.error("\(note, privacy: .public)")
+            }
+            return true
+        }
+        // 软解帧（`.software`）：过 sws 转成 BGRA 再送显示层 ——
+        // 以前这里直接丢（只吃 VT 帧），界面上就是「有声音没画面」。
         guard let converted = makeSoftwarePixelBuffer(from: frame) else {
             droppedFrameCount += 1
             if droppedFrameCount <= 3 {

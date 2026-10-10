@@ -1,4 +1,5 @@
 @testable import CatVodPlayer
+import CoreMedia
 import CoreVideo
 import Foundation
 import Testing
@@ -33,6 +34,13 @@ struct LibavVideoDecoderTests {
         #expect(LibavVideoDecoder.fourCC(0x7834_3230) == "x420")
         #expect(LibavVideoDecoder.fourCC(0x4247_5241) == "BGRA")
         #expect(LibavVideoDecoder.fourCC(0) == "0x0")
+    }
+
+    @Test("编码名 → CoreMedia 类型：只认能确证的两种，认不出给 nil")
+    func videoToolboxCodecTypeMapping() {
+        #expect(LibavVideoDecoder.videoToolboxCodecType(codecName: "h264") == kCMVideoCodecType_H264)
+        #expect(LibavVideoDecoder.videoToolboxCodecType(codecName: "HEVC") == kCMVideoCodecType_HEVC)
+        #expect(LibavVideoDecoder.videoToolboxCodecType(codecName: "av1") == nil)
     }
 
     @Test("软解：sws 把 yuv420p 转成 BGRA 的 CVPixelBuffer（M04P14）")

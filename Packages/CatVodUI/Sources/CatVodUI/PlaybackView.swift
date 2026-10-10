@@ -659,6 +659,11 @@ extension PlaybackView {
             case let .stateChanged(state):
                 stateText = describe(state)
                 playerState = state
+                // 失败要同时上那块醒目的提示：只写「状态」行容易让人以为还在转圈
+                // （自研内核「选硬解但这台机器没有硬解」就走这条路，M04P14）。
+                if case let .failed(reason) = state {
+                    errorText = reason
+                }
                 if state == .playing {
                     // 起播后读一次播放信息：等一小会儿 —— MPV 的 `video-params` 是 file-loaded 之后
                     // 才填上的，立刻读会拿到一排空（自研 FFmpeg 打开时就有，等这一下也不亏）。

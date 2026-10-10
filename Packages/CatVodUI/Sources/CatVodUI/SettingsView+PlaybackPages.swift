@@ -96,8 +96,8 @@ struct SettingsPlayerUISettingsView: View {
             Section("说明") {
                 Text("系统内核（AVPlayer）的画面控件与手势由系统提供（`docs/UI 规范.md`：不自绘播放控件）；"
                     + "MPV 与自研 FFmpeg 内核共用自绘的最小控制条与手势（双击暂停 / 横拖进度 / 纵拖音量），"
-                    + "MPV 的音轨与字幕在播放页选。自研 FFmpeg 内核（M04P13 起可播）硬解优先、"
-                    + "硬解不可用时自动走软解（播放信息的「解码」行写明实际走的哪条），音轨切换在后面补。")
+                    + "MPV 的音轨与字幕在播放页选。自研 FFmpeg 内核（M04P13 起可播）严格按设置的解码方式："
+                    + "硬解不可用时播放页会明确提示、让你改成软解（不自动降级）；音轨切换在后面补。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -130,8 +130,8 @@ struct SettingsPlayerControlView: View {
             "MPV 的画面由我们自己渲染（MoltenVK → Metal），只配了一条最小控制条（播放 / 暂停、进度、倍速、音轨 / 字幕）；"
                 + "画面上的手势是自绘的：双击暂停、横向拖进度、纵向拖音量。"
         case .ffmpeg:
-            "自研 FFmpeg 的画面由我们自己解出来交给系统渲染管线（VideoToolbox 硬解优先、"
-                + "不可用时 libswscale 软解兜底，都进 AVSampleBufferDisplayLayer），配同一条最小控制条与自绘手势；"
+            "自研 FFmpeg 的画面由我们自己解码、交给系统渲染管线（硬解走 VideoToolbox、软解走 libswscale，"
+                + "都进 AVSampleBufferDisplayLayer）；解码方式严格按设置来，硬解不可用时播放页会提示改成软解。"
                 + "当前只有默认音轨，音轨切换在后面补。"
         }
     }

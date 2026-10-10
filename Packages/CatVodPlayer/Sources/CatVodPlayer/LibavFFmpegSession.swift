@@ -2,7 +2,7 @@ import AVFoundation
 import Foundation
 
 /// 自研 FFmpeg 内核的**真实会话**（M04P14 起：音视频 + seek + 软解兜底都接上）：
-/// 统一 demux（`LibavInput.nextPacket`）→ 视频走解码器进显示层（硬解优先、软解兜底）、
+/// 统一 demux（`LibavInput.nextPacket`）→ 视频走解码器进显示层（**按设置的解码方式：硬解 / 软解，不自动降级**）、
 /// 音频走 libavcodec + swresample 进音频渲染器；两者挂**同一条** synchronizer。
 ///
 /// 当前已知缺口（**如实说，别让界面以为它全能**；M04P13 已把它接进界面）：
@@ -51,7 +51,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     private var loggedVideoSilence = false
     /// 实际跑起来的解码路径（第一帧定）：解码线程写、控制路径（`stats()`）读 —— 用 `lock` 串。
     private var actualDecodeIsHardware: Bool?
-    private var loggedSoftwareFallback = false
+    private var reportedHardwareFallback = false
 
     /// 生产入口：给画面层 —— 音视频挂**同一条** synchronizer（音画同步结构自带）。
     ///
@@ -248,6 +248,10 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
                 continue
             }
             route(packet)
+            if videoDecoder.hardwareFallbackDetected {
+                failHardwareFallback()
+                continue
+            }
             emitTimeIfNeeded()
             reportVideoSilenceIfNeeded()
         }
@@ -376,22 +380,26 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
 
     /// 记下这一帧走的哪条路（播放信息的「解码」行说实话用）。
     ///
-    /// 为什么得由第一帧来定：libav 会在硬解不可用时**自己掉回软解**，设置里选了什么不算数。
+    /// 为什么得由第一帧来定：硬解到底生不生效只有帧自己知道 —— 解码层收到非 VT 帧时会记旗标，
+    /// 会话这边另查 `hardwareFallbackDetected` 并**停下报错**（不自动降级）。
     private func noteDecodePath(isHardware: Bool) {
         lock.lock()
         let previous = actualDecodeIsHardware
         if previous == nil || (previous == true && !isHardware) {
             actualDecodeIsHardware = isHardware
         }
-        let firstFallback = previous == true && !isHardware && !loggedSoftwareFallback
-        if firstFallback {
-            loggedSoftwareFallback = true
-        }
         lock.unlock()
-        if firstFallback {
-            let note = "硬解没生效（libav 掉回软解）：改用软件解码继续 —— 播放信息的「解码」行会写软解"
-            LibavTrace.logger.error("\(note, privacy: .public)")
-        }
+    }
+
+    /// 硬解模式下 libav 掉回软解：**不自动降级**（用户拍板：硬解 / 软解由人手动选）——
+    /// 停下并让用户去把设置改成「软件解码」。
+    private func failHardwareFallback() {
+        guard !reportedHardwareFallback else { return }
+        reportedHardwareFallback = true
+        finishedEof = true
+        let reason = "硬解没生效（这台机器没有可用的 VideoToolbox 硬解）："
+            + "请到「设置 → 播放 → 解码方式」改成「软件解码」"
+        emit(.state(.failed(reason)))
     }
 
     /// 「有声音没画面」的取证（M04P13）：解码跑起来 3 秒还是一帧没进显示层，就把两侧计数打出来。
