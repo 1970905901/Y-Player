@@ -75,22 +75,36 @@ public struct PlaybackView: View {
     /// 当前选中的轨道（界面态；换片时回到「自动」）。
     @State private var audioSelection: TrackSelection = .auto
     @State var subtitleSelection: TrackSelection = .auto
-    /// MPV 手势：拖动开始时的基准值（手势给的是相对量）。
-    @State private var gestureBasePosition: Double?
-    @State private var gestureBaseVolume: Double?
-    /// 手势提示条（进度预览 / 音量）；空 = 不显示。
-    @State private var gestureHint = ""
-    /// 当前音量（0...1）：MPV 手势改的是它；系统内核不碰（音量交给硬件键）。
-    @State private var volume: Double = 1
+    // 手势那一组（M03P12 起在 `PlaybackView+Gestures.swift` 里用）：**跨文件的扩展看不见 `private`**，
+    // 所以这一组只能是模块内 —— 与 `PlaybackView+Overlays` / `+Stats` 那两次拆分的处理一致。
+    @State var gestureBasePosition: Double?
+    @State var gestureBaseVolume: Double?
+    /// 左半屏亮度拖动：开始时的屏幕亮度（0...1；拿不到 = 这次拖动不做事，见 `PlatformShims.screenBrightness()`）。
+    @State var gestureBaseBrightness: Double?
+    /// 这次拖动在调什么：开始那一刻定，中途不换（横向拐弯也不会跳成调音量）。
+    @State var gestureDrag: DragMode?
+    /// 手势提示条（进度预览 / 音量 / 亮度 / 长按倍速）；空 = 不显示。
+    @State var gestureHint = ""
+    /// 当前音量（0...1）：自绘内核的手势改的是它；系统内核不碰（音量交给硬件键）。
+    @State var volume: Double = 1
+    /// 长按已识别（这次触摸还没松手）：拖动不做事、点按要吞 —— **不管在不在播**
+    /// （上游同款：不在播不加速，但手势照样接管）。
+    @State var isSpeedBoostHolding = false
+    /// 长按这次真的把速度切到长按倍速了（不在播时不切，松手也不用回）。M03P12。
+    @State var isSpeedBoosting = false
+    /// 长按松手的那一刻：松手补发的那次点按要吞掉（只吞一次）。
+    @State var speedBoostEndedAt: Date?
     @State private var stateText = "准备中…"
     @State private var engineText = ""
     @State private var errorText = ""
     @State private var eventTask: Task<Void, Never>?
     @State private var resumedFromText = ""
-    @State private var latestPosition: Double = 0
-    @State private var latestDuration: Double = 0
+    /// 最近一次的位置 / 总时长：手势换算要用（M03P12），跨文件扩展看不见 `private` —— 模块内。
+    @State var latestPosition: Double = 0
+    @State var latestDuration: Double = 0
     /// 当前倍速（初值在 `start()` 里从存档读；范围与预设见 ``SpeedSetting``）。
-    @State private var speed: Float = SpeedSetting.normal
+    /// 长按加速松手后回到的就是它（M03P12）—— 跨文件扩展要读，所以是模块内。
+    @State var speed: Float = SpeedSetting.normal
     /// 画面比例（M03P9）：**页面内偏好**（不落盘）—— 换页回到「适应」。
     /// 上游把 scale 存在 LiveSetting 里（按直播页）；我们没有「按页面分的播放设置」这套容器，
     /// 而一个全局落盘的值会把下一部片也按上一部选的比例放，所以先不做存档。
@@ -343,8 +357,8 @@ public struct PlaybackView: View {
 
     /// 画面本体：系统内核走系统播放器控件；自绘内核（MPV / 自研 FFmpeg）走各自的层宿主视图。
     ///
-    /// 手势**只挂在自绘内核这边**：系统内核的画面是 `VideoPlayer`，它自带一整套手势，
-    /// 我们再叠一层只会互相打架（M02P15 的「长按临时加速」不做，同一条理由）。
+    /// 手势**只挂在自绘内核这边**（`interactiveLayer`，见 `PlaybackView+Gestures.swift`）：
+    /// 系统内核的画面是 `VideoPlayer`，它自带一整套手势，我们再叠一层只会互相打架。
     @ViewBuilder
     private func videoLayer(size: CGSize) -> some View {
         if let player {
@@ -355,75 +369,6 @@ public struct PlaybackView: View {
             interactiveLayer(FFmpegVideoView(surface: ffmpegSurface), size: size)
         }
     }
-
-    /// 自绘内核画面的共同外壳：双击播放 / 暂停、单击显隐控制条、拖动手势。
-    ///
-    /// **单击 / 双击的优先级**（M03P10）：`exclusively(before:)` 让双击先决 —— 单击只在
-    /// 「没有第二下」之后才触发，所以双击播放时控制条不会先闪一下（M03P6 当时担心的正是这个）。
-    private func interactiveLayer(_ content: some View, size: CGSize) -> some View {
-        content
-            .contentShape(Rectangle())
-            .gesture(
-                TapGesture(count: 2)
-                    .onEnded { _ in
-                        // 双击 = 播放 / 暂停。
-                        Task { await togglePlayback() }
-                    }
-                    .exclusively(
-                        before: TapGesture(count: 1)
-                            .onEnded { _ in toggleControlsVisibility() }
-                    )
-            )
-            .gesture(playerGesture(width: size.width))
-    }
-
-    /// 自绘内核画面上的手势：
-    /// - **双击**：播放 / 暂停（上面那条）；
-    /// - **横向拖**：调进度 —— 拖动中只显示预览，**松手才 seek**（一次拖动几十个中间值，
-    ///   逐个 seek 会把内核打爆）；换算固定为「拖满一屏宽 ≈ 120 秒」；
-    /// - **纵向拖**：音量 —— 向上加、向下减，200pt 满量程，松手下发内核。
-    private func playerGesture(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 24)
-            .onChanged { value in
-                let dx = value.translation.width
-                let dy = value.translation.height
-                if abs(dx) > abs(dy) {
-                    let base = gestureBasePosition ?? latestPosition
-                    gestureBasePosition = base
-                    let target = seekTarget(base: base, dx: dx, width: width)
-                    gestureHint = "\(Self.timeText(target)) / \(Self.timeText(latestDuration))"
-                } else {
-                    let base = gestureBaseVolume ?? volume
-                    gestureBaseVolume = base
-                    volume = min(max(base - Double(dy) / Self.volumePointsForFullRange, 0), 1)
-                    gestureHint = "音量 \(Int((volume * 100).rounded()))%"
-                }
-            }
-            .onEnded { value in
-                let dx = value.translation.width
-                let dy = value.translation.height
-                if abs(dx) > abs(dy), let base = gestureBasePosition {
-                    let target = seekTarget(base: base, dx: dx, width: width)
-                    Task { await engine?.seek(to: target) }
-                } else if gestureBaseVolume != nil {
-                    let target = Float(volume)
-                    Task { await engine?.setVolume(target) }
-                }
-                gestureBasePosition = nil
-                gestureBaseVolume = nil
-                gestureHint = ""
-            }
-    }
-
-    /// 把「横向拖了多少」换算成目标秒数（夹在 0...总时长）。
-    private func seekTarget(base: Double, dx: CGFloat, width: CGFloat) -> Double {
-        let delta = Double(dx / max(width, 1)) * Self.seekSecondsPerScreen
-        return min(max(base + delta, 0), max(latestDuration, 0))
-    }
-
-    /// 手势换算常量：拖满一屏宽 ≈ 120 秒；纵向 200pt 满量程音量。
-    static let seekSecondsPerScreen: Double = 120
-    static let volumePointsForFullRange: Double = 200
 
     /// 自绘内核的最小控制条：播放 / 暂停 + 进度 + 时间。
     ///
@@ -517,8 +462,8 @@ public struct PlaybackView: View {
         isControlsVisible = true
     }
 
-    /// 播放 / 暂停（MPV 控制条）。
-    private func togglePlayback() async {
+    /// 播放 / 暂停（自绘控制条与「双击画面」都走它；双击那条在 `PlaybackView+Gestures.swift`）。
+    func togglePlayback() async {
         guard let engine else {
             return
         }
@@ -911,7 +856,8 @@ extension PlaybackView {
     }
 
     /// 改倍速的**唯一出口**：夹紧 → 记进界面 →（可选）落盘 → 下发内核。
-    private func setSpeed(_ value: Float, persist: Bool) {
+    /// 长按加速松手也走这里回到用户那份倍速（M03P12）—— 跨文件扩展要用，所以是模块内。
+    func setSpeed(_ value: Float, persist: Bool) {
         let target = SpeedSetting.clamp(value)
         speed = target
         if persist {

@@ -3,7 +3,8 @@ import Foundation
 /// 播放倍速（逐条对齐上游 FongMi/TV 的 `setting/SpeedSetting.java`）。
 ///
 /// 上游把倍速做成「滑杆 + 8 个预设 + 长按倍速 + 跳过静音」；本轮只做**倍速本身**，
-/// 但范围、步进、预设、夹紧与显示格式**全量对齐**（长按倍速与跳过静音明确未做，见 `M02P15-播放页倍速.md`）。
+/// 但范围、步进、预设、夹紧与显示格式**全量对齐**。长按倍速的目标值在 M03P12 接上（``longPress``）；
+/// 跳过静音仍未做（要内核支持，见 `M02P15-播放页倍速.md`）。
 ///
 /// | 上游 | 这里 |
 /// | --- | --- |
@@ -21,6 +22,12 @@ public enum SpeedSetting {
     public static let step: Float = 0.1
     /// 正常速度（上游 `NORMAL`）。
     public static let normal: Float = 1.0
+
+    /// 长按临时加速的目标速度（上游 `LONG_PRESS = 2.0`）。
+    ///
+    /// 上游把这个值做成可调的（`setupLongPress`：2.0–5.0、步进 0.5、存 `speed_long_press`）；
+    /// 我们还没有对应的设置界面，先按上游默认值用 —— 要做时再补 `clampLongPress` 与存档（M03P12）。
+    public static let longPress: Float = 2.0
     /// 预设档位（上游 `PRESETS`，顺序一致）。
     public static let presets: [Float] = [0.5, 0.8, 1.0, 1.2, 1.5, 2.0, 3.0, 5.0]
     /// 浮点比较容差（上游 `EPSILON = 0.001`）。

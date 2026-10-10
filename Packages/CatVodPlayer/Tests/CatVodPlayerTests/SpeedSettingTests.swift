@@ -10,6 +10,8 @@ struct SpeedSettingTests {
         #expect(SpeedSetting.maximum == 5.0)
         #expect(SpeedSetting.step == 0.1)
         #expect(SpeedSetting.normal == 1.0)
+        // 长按临时加速的目标值（上游 LONG_PRESS；播放页手势那边用它）
+        #expect(SpeedSetting.longPress == 2.0)
         #expect(SpeedSetting.presets == [0.5, 0.8, 1.0, 1.2, 1.5, 2.0, 3.0, 5.0])
         // 每个预设都必须在合法区间里（否则点了会被静默改值）
         let allPresetsClamped = SpeedSetting.presets.allSatisfy { SpeedSetting.clamp($0) == $0 }

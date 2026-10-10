@@ -22,6 +22,46 @@ public enum PlatformShims {
         #endif
     }
 
+    /// 屏幕亮度（0...1）；读不到就给 `nil`（macOS 没有公开 API、或拿不到前台窗口场景）。
+    ///
+    /// 谁在用：播放页「左半屏纵向拖 = 亮度」（M03P12）—— 拿不到就**整次拖动不做事**，
+    /// 不摆一个「拖了没反应」的假手势。
+    @MainActor
+    public static func screenBrightness() -> Double? {
+        #if os(iOS)
+        guard let screen = activeScreen else {
+            return nil
+        }
+        return Double(screen.brightness)
+        #else
+        return nil
+        #endif
+    }
+
+    /// 设屏幕亮度（0...1）。iOS 改的是**系统亮度**（iOS 没有「App 内亮度」这回事 ——
+    /// 上游改的是 activity 窗口亮度，那是 Android 才有的东西）；macOS 是空操作
+    /// （`screenBrightness()` 会给 `nil`，调用方本来就不会走到这）。
+    @MainActor
+    public static func setScreenBrightness(_ value: Double) {
+        #if os(iOS)
+        guard let screen = activeScreen else {
+            return
+        }
+        screen.brightness = CGFloat(min(max(value, 0), 1))
+        #endif
+    }
+
+    #if os(iOS)
+    /// 前台那个窗口场景的屏幕（`UIScreen.main` 从 iOS 16 起被弃用，别用它）。
+    @MainActor
+    private static var activeScreen: UIScreen? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }?
+            .screen
+    }
+    #endif
+
     /// 跨平台颜色（`Color` 在两平台同名，这里只留扩展点）。
     public static let accent = Color.accentColor
 
