@@ -13,6 +13,8 @@
 - first_where / last_where / sorted_first_last / array_init / toggle_bool
 - identical_operands / redundant_nil_coalescing / fatal_error_message / vertical_whitespace
 - line_length（warning 140，忽略含 URL 的行）
+- type_body_length（warning 300 / error 450）与 file_length（warning 500 / error 800）——
+  纯行数统计，本机就能算准；CI 曾因 `LibavFFmpegSession` 类型体 501 > 450 红过一次（M04P17）
 
 覆盖不了（只能靠人或 Mac / CI 上的真 SwiftLint）：modifier_order、closure_spacing、
 untyped_error_in_catch、yoda_condition、optional_enum_case_matching、pattern_matching_keywords 等语义类规则。
@@ -28,6 +30,11 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LINE_LIMIT = 140
+# 与 .swiftlint.yml 对齐（只有 error 判失败；warning 只提示）
+TYPE_BODY_WARNING = 300
+TYPE_BODY_ERROR = 450
+FILE_LENGTH_WARNING = 500
+FILE_LENGTH_ERROR = 800
 
 PATTERNS = [
     # 只留**高置信度**的：能靠单行模式判准的。
@@ -56,8 +63,64 @@ def swift_files():
                     yield os.path.join(base, name)
 
 
+# 类型声明（含嵌套、含 extension；属性行 / 修饰符行不算 —— 与 SwiftLint 的 AST 口径近似）
+TYPE_DECL = re.compile(
+    r"^\s*(?:(?:public|internal|private|fileprivate|open|package|final)\s+)*"
+    r"(?:@\w+\s+)*"
+    r"(struct|class|actor|enum|extension)\s+([A-Za-z_][A-Za-z0-9_]*)"
+)
+
+
+def type_body_sizes(lines):
+    """每个类型声明的体行数（不算空行 / 纯注释行）—— type_body_length 口径。
+
+    比 SwiftLint 略保守（把声明那一行也算进去），宁可多报一行，也别漏。
+    """
+    sizes = []
+    for index, line in enumerate(lines):
+        match = TYPE_DECL.match(line)
+        if not match:
+            continue
+        depth = 0
+        started = False
+        body = 0
+        cursor = index
+        while cursor < len(lines):
+            for char in lines[cursor]:
+                if char == "{":
+                    depth += 1
+                    started = True
+                elif char == "}":
+                    depth -= 1
+            stripped = lines[cursor].strip()
+            if started and stripped and not stripped.startswith("//"):
+                body += 1
+            if started and depth == 0:
+                break
+            cursor += 1
+        sizes.append((index + 1, match.group(1), match.group(2), body))
+    return sizes
+
+
+def structure_hits(relative, lines, report, warnings):
+    """type_body_length / file_length：这两个只是数行数，本机算得准，别等 CI。"""
+    for number, kind, name, body in type_body_sizes(lines):
+        if body > TYPE_BODY_ERROR:
+            report.append("%s:%d [type_body_length %d > %d] %s %s" % (
+                relative, number, body, TYPE_BODY_ERROR, kind, name))
+        elif body > TYPE_BODY_WARNING:
+            warnings.append("%s:%d [type_body_length %d] %s %s" % (relative, number, body, kind, name))
+
+    effective = sum(1 for line in lines if not line.strip().startswith("//"))
+    if effective > FILE_LENGTH_ERROR:
+        report.append("%s [file_length %d > %d]" % (relative, effective, FILE_LENGTH_ERROR))
+    elif effective > FILE_LENGTH_WARNING:
+        warnings.append("%s [file_length %d]" % (relative, effective))
+
+
 def main() -> int:
     report = []
+    warnings = []
     scanned = 0
     for path in sorted(swift_files()):
         try:
@@ -83,10 +146,15 @@ def main() -> int:
             for name, pattern in PATTERNS:
                 if pattern.search(line):
                     report.append("%s:%d [%s] %s" % (relative, number, name, stripped[:110]))
+        structure_hits(relative, lines, report, warnings)
 
-    print("lint-check-done scanned=%d hits=%d" % (scanned, len(report)))
+    print("lint-check-done scanned=%d hits=%d warnings=%d" % (scanned, len(report), len(warnings)))
     for line in report[:40]:
         print("  " + line)
+    if warnings:
+        print("  （警告不算失败，SwiftLint 的 warning 同样不阻断）")
+        for line in warnings[:20]:
+            print("  ⚠️ " + line)
     return 1 if report else 0
 
 

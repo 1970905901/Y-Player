@@ -59,16 +59,6 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     /// 待办的换轨请求（控制线程放、解码线程取；`nil` = 没有待办）。与 seek 同一套：一段读包的人只能有一个。
     private var pendingAudioTrack: PendingAudioTrack?
 
-    /// 换轨请求的三种形态（对齐 `TrackSelection`）。
-    private enum PendingAudioTrack {
-        /// 回到容器里的第一条音轨。
-        case automatic
-        /// 切到指定流下标。
-        case stream(Int)
-        /// 关掉音轨。
-        case disabled
-    }
-
     /// 饥饿看门狗（M04P17）：解码线程喂帧、看门狗线程心跳；状态机与判定是纯逻辑（``FeedStarvationWatchdog``）。
     private var starvationWatchdog = FeedStarvationWatchdog()
     /// 最后一帧的 pts（秒）：解码线程写、看门狗线程读 —— 用 `lock` 串。
@@ -193,74 +183,6 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         audioRenderer.setVolume(min(max(volume, 0), 1))
     }
 
-    /// 换音轨（M04P16）：这里只**记账**，真正的切换在解码线程里做（`performAudioSwitch`）。
-    ///
-    /// - `.auto`：回到容器里的第一条音轨；
-    /// - `.disabled`：把音轨关掉（拆解码器，不是静音假装）；
-    /// - `.index`：切到那条流 —— 不是音频流 / 开不了，会保留旧轨继续响（原因进日志）。
-    ///
-    /// 字幕轨还没做（轨道清单里也没报出去）：这里如实忽略，不假装生效。
-    func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async {
-        guard kind == .audio else { return }
-        lock.lock()
-        switch selection {
-        case .auto: pendingAudioTrack = .automatic
-        case let .index(index): pendingAudioTrack = .stream(index)
-        case .disabled: pendingAudioTrack = .disabled
-        }
-        lock.unlock()
-    }
-
-    func stats() async -> PlaybackStats {
-        guard let info else {
-            return PlaybackStats()
-        }
-        var raw: [String: String] = [:]
-        if let video = info.streams.first(where: { $0.kind == .video }) {
-            raw["video-params/w"] = String(video.width)
-            raw["video-params/h"] = String(video.height)
-            raw["video-format"] = video.codecName
-            if video.fps > 0 {
-                raw["container-fps"] = String(video.fps)
-            }
-            // 源色彩：读不到就是空 —— 播放信息那边「空就不显示」，不猜。
-            if !video.primaries.isEmpty {
-                raw["video-params/primaries"] = video.primaries
-            }
-            if !video.gamma.isEmpty {
-                raw["video-params/gamma"] = video.gamma
-            }
-        }
-        // 音轨可能已经换过（M04P16）：按**当前**那条流的编码名报，不照抄打开时的第一条。
-        if let audioIndex = currentAudioIndex(),
-           let audio = info.streams.first(where: { $0.index == audioIndex })
-        {
-            raw["audio-codec"] = audio.codecName
-        }
-        if !info.containerName.isEmpty {
-            raw["file-format"] = info.containerName
-        }
-        // 下面三行都是**第一帧实测**出来的（锁里取快照）：一帧还没到就先不写，宁可空着也不猜。
-        // - 「解码」：实际拿到的是哪种帧（选硬解而硬解不可用时链路会停下报错）；
-        // - 「输出」：真正交给显示层的像素格式（硬解是 VT 的 buffer、软解是我们转的 BGRA）；
-        // - 「丢帧」：解码侧丢了多少（转换不出来的帧）—— 显示侧我们没有读法，不替它写 0。
-        lock.lock()
-        let isHardware = actualDecodeIsHardware
-        let outputPixelFormat = actualOutputPixelFormat
-        let decoderDropped = decoderDroppedSnapshot
-        lock.unlock()
-        if let isHardware {
-            raw["hwdec-current"] = isHardware ? "videotoolbox" : "no"
-        }
-        if let outputPixelFormat {
-            raw["video-out-params/pixelformat"] = outputPixelFormat
-        }
-        if decoderDropped > 0 {
-            raw["decoder-frame-drop-count"] = String(decoderDropped)
-        }
-        return PlaybackStats(rawValues: raw)
-    }
-
     func close() async {
         lock.lock()
         running = false
@@ -295,33 +217,6 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         watchdog.name = "yplayer-ffmpeg-watchdog"
         watchdog.qualityOfService = .utility
         watchdog.start()
-    }
-
-    /// 看门狗线程（M04P17）：每 0.2s 看一眼「时钟是不是跑到数据前面了」。
-    ///
-    /// 为什么非要**另一条线程**：解码线程可能正卡在一次阻塞读里（网络慢 / 掉线），
-    /// 那时它自己没法报「卡住了」，只能从外面看。这条线程只做三件事：
-    /// 读锁里的状态、判饥饿、停表 + 报「缓冲中」—— 恢复由解码线程在喂帧时做（``enqueue(_:duration:)``）。
-    ///
-    /// **时钟跟着帧走**：不停表的话，时钟会一直往前跑，恢复后那批帧全成了「迟到帧」，
-    /// 显示层按规矩丢掉它们 —— 用户看到的就不是「停一下」，而是「卡完突然快进一段」。
-    private func watchdogLoop() {
-        while isRunning() {
-            Thread.sleep(forTimeInterval: 0.2)
-            guard isRunning() else { return }
-            lock.lock()
-            let watching = playing && startedPlaying && !finishedEof
-            let becameStarving = watching
-                ? starvationWatchdog.tick(
-                    clockSeconds: videoRenderer.currentSeconds,
-                    lastFedSeconds: lastFedSeconds
-                )
-                : false
-            lock.unlock()
-            guard becameStarving else { continue }
-            videoRenderer.pause()
-            emit(.state(.buffering))
-        }
     }
 
     /// 解码主循环：背压等 → 取包 → 按流分发给两个解码器 → 喂对应的渲染器。
@@ -412,63 +307,6 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         return target
     }
 
-    /// 取走待办换轨（解码线程消费；控制线程只放不快取）。
-    private func takePendingAudioTrack() -> PendingAudioTrack? {
-        lock.lock()
-        defer { lock.unlock() }
-        let request = pendingAudioTrack
-        pendingAudioTrack = nil
-        return request
-    }
-
-    /// 当前音轨的流下标（`nil` = 没有音轨 / 被关掉）；解码线程与 `stats()` 都读，走锁。
-    private func currentAudioIndex() -> Int? {
-        lock.lock()
-        defer { lock.unlock() }
-        return audioStreamIndex
-    }
-
-    /// 换音轨（**只在解码线程里跑**）：新解码器先建好，成了才换、才 flush ——
-    /// 换不过去就保留旧轨继续响（不静音、不假装），原因进日志。
-    ///
-    /// v1 口径：**不做重定位** —— 新轨从当前读包位置往后接（见类文档的缺口清单）。
-    private func performAudioSwitch(to request: PendingAudioTrack) {
-        let target: Int?
-        switch request {
-        case .automatic:
-            target = input.firstStreamIndex(of: .audio)
-        case let .stream(index):
-            target = index
-        case .disabled:
-            target = nil
-        }
-        guard let target else {
-            // 关掉音轨（或本来就没有音轨）：拆解码器 + 清掉已排队的样本。
-            audioDecoder?.close()
-            audioDecoder = nil
-            audioRenderer.flush()
-            lock.lock()
-            audioStreamIndex = nil
-            lock.unlock()
-            return
-        }
-        guard target != currentAudioIndex() else { return }
-        let candidate = LibavAudioDecoder()
-        if let failure = candidate.open(input: input, streamIndex: target) {
-            candidate.close()
-            let note = "换音轨失败（流 \(target)）：\(failure) —— 继续放旧轨"
-            LibavTrace.logger.error("\(note, privacy: .public)")
-            return
-        }
-        audioDecoder?.close()
-        audioDecoder = candidate
-        // 清掉旧轨已经排队的样本：不清的话换完还会先响一段旧的。
-        audioRenderer.flush()
-        lock.lock()
-        audioStreamIndex = target
-        lock.unlock()
-    }
-
     /// 背压：有音轨时两侧都要吃得住；只有画面的文件不看音频侧。
     private func renderersReady() -> Bool {
         guard videoRenderer.isReadyForMoreMediaData else { return false }
@@ -535,32 +373,193 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         enqueue(pending, duration: lastFrameDelta)
     }
 
-    private func enqueue(_ frame: LibavVideoDecoder.Frame, duration: Double) {
-        let accepted = videoRenderer.enqueue(
-            pixelBuffer: frame.pixelBuffer,
-            presentationSeconds: frame.seconds,
-            durationSeconds: duration
-        )
-        guard accepted else { return }
-        videoFramesAccepted += 1
-        // 时钟跟着帧走（M04P17）：记下这帧的 pts + 从饥饿里恢复；第一帧真排上了才算「开始播」
-        // （在此之前界面那边还是 loading）。这些值跨线程读，一次锁里办完。
+    private func emitTimeIfNeeded() {
+        let current = videoRenderer.currentSeconds
+        guard abs(current - lastEmittedSeconds) >= 0.25 else { return }
+        lastEmittedSeconds = current
+        emit(.time(current: current, duration: durationSeconds))
+    }
+
+    private func emitEndedOnce() {
         lock.lock()
-        lastFedSeconds = frame.seconds
-        let wasStarving = starvationWatchdog.noteFeed()
-        let resumeRate = rate
-        let isPlayingNow = playing
-        let isFirstFrame = !startedPlaying
-        if isFirstFrame {
-            startedPlaying = true
-            playing = true
+        let already = endedEmitted
+        endedEmitted = true
+        lock.unlock()
+        guard !already else { return }
+        emit(.state(.ended))
+    }
+
+    private func isRunning() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return running
+    }
+
+    private func isDecodeFinished() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return decodeFinished
+    }
+
+    private func markDecodeFinished() {
+        lock.lock()
+        decodeFinished = true
+        lock.unlock()
+    }
+
+    private func emit(_ event: FFmpegSessionEvent) {
+        continuation?.yield(event)
+    }
+}
+
+// MARK: - 换音轨（M04P16）
+
+/// 换音轨：控制线程只记账（`selectTrack`），真正的切换在解码线程里做（`performAudioSwitch`）。
+///
+/// 为什么拆成扩展：类型体行数（`type_body_length`）会把 CI 的 lint 顶红，
+/// 而**扩展不计入类型体** —— 主声明留状态与主循环，各组职责放这儿（同文件，`private` 照旧可见）。
+extension LibavFFmpegSession {
+    /// 换轨请求的三种形态（对齐 `TrackSelection`）。
+    private enum PendingAudioTrack {
+        /// 回到容器里的第一条音轨。
+        case automatic
+        /// 切到指定流下标。
+        case stream(Int)
+        /// 关掉音轨。
+        case disabled
+    }
+
+    /// 换音轨（M04P16）：这里只**记账**，真正的切换在解码线程里做（`performAudioSwitch`）。
+    ///
+    /// - `.auto`：回到容器里的第一条音轨；
+    /// - `.disabled`：把音轨关掉（拆解码器，不是静音假装）；
+    /// - `.index`：切到那条流 —— 不是音频流 / 开不了，会保留旧轨继续响（原因进日志）。
+    ///
+    /// 字幕轨还没做（轨道清单里也没报出去）：这里如实忽略，不假装生效。
+    func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async {
+        guard kind == .audio else { return }
+        lock.lock()
+        switch selection {
+        case .auto: pendingAudioTrack = .automatic
+        case let .index(index): pendingAudioTrack = .stream(index)
+        case .disabled: pendingAudioTrack = .disabled
         }
         lock.unlock()
-        // 恢复只在「还在播」时做：暂停 / 用户自己停了表的时候，喂帧不许把表接回去。
-        if isFirstFrame || (wasStarving && isPlayingNow) {
-            videoRenderer.play(rate: resumeRate)
-            emit(.state(.playing))
+    }
+
+    /// 取走待办换轨（解码线程消费；控制线程只放不快取）。
+    private func takePendingAudioTrack() -> PendingAudioTrack? {
+        lock.lock()
+        defer { lock.unlock() }
+        let request = pendingAudioTrack
+        pendingAudioTrack = nil
+        return request
+    }
+
+    /// 当前音轨的流下标（`nil` = 没有音轨 / 被关掉）；解码线程与 `stats()` 都读，走锁。
+    private func currentAudioIndex() -> Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        return audioStreamIndex
+    }
+
+    /// 换音轨（**只在解码线程里跑**）：新解码器先建好，成了才换、才 flush ——
+    /// 换不过去就保留旧轨继续响（不静音、不假装），原因进日志。
+    ///
+    /// v1 口径：**不做重定位** —— 新轨从当前读包位置往后接（见类文档的缺口清单）。
+    private func performAudioSwitch(to request: PendingAudioTrack) {
+        let target: Int?
+        switch request {
+        case .automatic:
+            target = input.firstStreamIndex(of: .audio)
+        case let .stream(index):
+            target = index
+        case .disabled:
+            target = nil
         }
+        guard let target else {
+            // 关掉音轨（或本来就没有音轨）：拆解码器 + 清掉已排队的样本。
+            audioDecoder?.close()
+            audioDecoder = nil
+            audioRenderer.flush()
+            lock.lock()
+            audioStreamIndex = nil
+            lock.unlock()
+            return
+        }
+        guard target != currentAudioIndex() else { return }
+        let candidate = LibavAudioDecoder()
+        if let failure = candidate.open(input: input, streamIndex: target) {
+            candidate.close()
+            let note = "换音轨失败（流 \(target)）：\(failure) —— 继续放旧轨"
+            LibavTrace.logger.error("\(note, privacy: .public)")
+            return
+        }
+        audioDecoder?.close()
+        audioDecoder = candidate
+        // 清掉旧轨已经排队的样本：不清的话换完还会先响一段旧的。
+        audioRenderer.flush()
+        lock.lock()
+        audioStreamIndex = target
+        lock.unlock()
+    }
+}
+
+// MARK: - 排障与播放信息
+
+/// 排障与播放信息：播放信息那几行、硬解回退的失败出口、以及「有声音没画面」的取证日志。
+///
+/// 为什么拆成扩展：类型体行数（`type_body_length`）会把 CI 的 lint 顶红，
+/// 而**扩展不计入类型体** —— 主声明留状态与主循环，各组职责放这儿（同文件，`private` 照旧可见）。
+extension LibavFFmpegSession {
+    func stats() async -> PlaybackStats {
+        guard let info else {
+            return PlaybackStats()
+        }
+        var raw: [String: String] = [:]
+        if let video = info.streams.first(where: { $0.kind == .video }) {
+            raw["video-params/w"] = String(video.width)
+            raw["video-params/h"] = String(video.height)
+            raw["video-format"] = video.codecName
+            if video.fps > 0 {
+                raw["container-fps"] = String(video.fps)
+            }
+            // 源色彩：读不到就是空 —— 播放信息那边「空就不显示」，不猜。
+            if !video.primaries.isEmpty {
+                raw["video-params/primaries"] = video.primaries
+            }
+            if !video.gamma.isEmpty {
+                raw["video-params/gamma"] = video.gamma
+            }
+        }
+        // 音轨可能已经换过（M04P16）：按**当前**那条流的编码名报，不照抄打开时的第一条。
+        if let audioIndex = currentAudioIndex(),
+           let audio = info.streams.first(where: { $0.index == audioIndex })
+        {
+            raw["audio-codec"] = audio.codecName
+        }
+        if !info.containerName.isEmpty {
+            raw["file-format"] = info.containerName
+        }
+        // 下面三行都是**第一帧实测**出来的（锁里取快照）：一帧还没到就先不写，宁可空着也不猜。
+        // - 「解码」：实际拿到的是哪种帧（选硬解而硬解不可用时链路会停下报错）；
+        // - 「输出」：真正交给显示层的像素格式（硬解是 VT 的 buffer、软解是我们转的 BGRA）；
+        // - 「丢帧」：解码侧丢了多少（转换不出来的帧）—— 显示侧我们没有读法，不替它写 0。
+        lock.lock()
+        let isHardware = actualDecodeIsHardware
+        let outputPixelFormat = actualOutputPixelFormat
+        let decoderDropped = decoderDroppedSnapshot
+        lock.unlock()
+        if let isHardware {
+            raw["hwdec-current"] = isHardware ? "videotoolbox" : "no"
+        }
+        if let outputPixelFormat {
+            raw["video-out-params/pixelformat"] = outputPixelFormat
+        }
+        if decoderDropped > 0 {
+            raw["decoder-frame-drop-count"] = String(decoderDropped)
+        }
+        return PlaybackStats(rawValues: raw)
     }
 
     /// 记下这一帧走的哪条路、交给显示层的像素格式（播放信息「解码 / 输出」两行说实话用）。
@@ -615,42 +614,67 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
             + "最后一次=\(videoDecoder.lastDecodeErrorText ?? "无") 音频样本=\(audioSamplesEnqueued)"
         LibavTrace.logger.error("\(silence, privacy: .public)")
     }
+}
 
-    private func emitTimeIfNeeded() {
-        let current = videoRenderer.currentSeconds
-        guard abs(current - lastEmittedSeconds) >= 0.25 else { return }
-        lastEmittedSeconds = current
-        emit(.time(current: current, duration: durationSeconds))
-    }
+// MARK: - 时钟纪律（M04P17）
 
-    private func emitEndedOnce() {
+/// 时钟跟着帧走：喂帧时恢复时间轴（`enqueue`），饿了由看门狗线程停表（`watchdogLoop`）。
+///
+/// 为什么拆成扩展：类型体行数（`type_body_length`）会把 CI 的 lint 顶红，
+/// 而**扩展不计入类型体** —— 主声明留状态与主循环，各组职责放这儿（同文件，`private` 照旧可见）。
+extension LibavFFmpegSession {
+    private func enqueue(_ frame: LibavVideoDecoder.Frame, duration: Double) {
+        let accepted = videoRenderer.enqueue(
+            pixelBuffer: frame.pixelBuffer,
+            presentationSeconds: frame.seconds,
+            durationSeconds: duration
+        )
+        guard accepted else { return }
+        videoFramesAccepted += 1
+        // 时钟跟着帧走（M04P17）：记下这帧的 pts + 从饥饿里恢复；第一帧真排上了才算「开始播」
+        // （在此之前界面那边还是 loading）。这些值跨线程读，一次锁里办完。
         lock.lock()
-        let already = endedEmitted
-        endedEmitted = true
+        lastFedSeconds = frame.seconds
+        let wasStarving = starvationWatchdog.noteFeed()
+        let resumeRate = rate
+        let isPlayingNow = playing
+        let isFirstFrame = !startedPlaying
+        if isFirstFrame {
+            startedPlaying = true
+            playing = true
+        }
         lock.unlock()
-        guard !already else { return }
-        emit(.state(.ended))
+        // 恢复只在「还在播」时做：暂停 / 用户自己停了表的时候，喂帧不许把表接回去。
+        if isFirstFrame || (wasStarving && isPlayingNow) {
+            videoRenderer.play(rate: resumeRate)
+            emit(.state(.playing))
+        }
     }
 
-    private func isRunning() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return running
-    }
-
-    private func isDecodeFinished() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return decodeFinished
-    }
-
-    private func markDecodeFinished() {
-        lock.lock()
-        decodeFinished = true
-        lock.unlock()
-    }
-
-    private func emit(_ event: FFmpegSessionEvent) {
-        continuation?.yield(event)
+    /// 看门狗线程（M04P17）：每 0.2s 看一眼「时钟是不是跑到数据前面了」。
+    ///
+    /// 为什么非要**另一条线程**：解码线程可能正卡在一次阻塞读里（网络慢 / 掉线），
+    /// 那时它自己没法报「卡住了」，只能从外面看。这条线程只做三件事：
+    /// 读锁里的状态、判饥饿、停表 + 报「缓冲中」—— 恢复由解码线程在喂帧时做（``enqueue(_:duration:)``）。
+    ///
+    /// **时钟跟着帧走**：不停表的话，时钟会一直往前跑，恢复后那批帧全成了「迟到帧」，
+    /// 显示层按规矩丢掉它们 —— 用户看到的就不是「停一下」，而是「卡完突然快进一段」。
+    private func watchdogLoop() {
+        while isRunning() {
+            Thread.sleep(forTimeInterval: 0.2)
+            guard isRunning() else { return }
+            lock.lock()
+            let watching = playing && startedPlaying && !finishedEof
+            let becameStarving = watching
+                ? starvationWatchdog.tick(
+                    clockSeconds: videoRenderer.currentSeconds,
+                    lastFedSeconds: lastFedSeconds
+                )
+                : false
+            lock.unlock()
+            guard becameStarving else { continue }
+            videoRenderer.pause()
+            emit(.state(.buffering))
+        }
     }
 }
