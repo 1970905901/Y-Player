@@ -1,4 +1,5 @@
 @testable import CatVodPlayer
+import CoreMedia
 import CoreVideo
 import Foundation
 import Testing
@@ -71,6 +72,44 @@ final class FakeVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
     }
 }
 
+/// 假音频渲染器：记下喂了几块、最后的音量，背压可控。
+final class FakeAudioRenderer: FFmpegAudioRendering, @unchecked Sendable {
+    private let lock = NSLock()
+    private var samples = 0
+    private var ready = true
+    private var volume: Float = 1
+
+    var enqueuedCount: Int {
+        locked { samples }
+    }
+
+    var lastVolume: Float {
+        locked { volume }
+    }
+
+    var isReadyForMoreMediaData: Bool {
+        get { locked { ready } }
+        set { locked { ready = newValue } }
+    }
+
+    func enqueue(_ sample: CMSampleBuffer) {
+        _ = sample
+        locked { samples += 1 }
+    }
+
+    func flush() { }
+
+    func setVolume(_ volume: Float) {
+        locked { self.volume = volume }
+    }
+
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+}
+
 /// 事件收集箱：会话的事件在解码线程上产出，单测用轮询读。
 private final class EventBox: @unchecked Sendable {
     private let lock = NSLock()
@@ -89,11 +128,11 @@ private final class EventBox: @unchecked Sendable {
     }
 }
 
-/// 真会话（`LibavFFmpegSession`，M04P9）：真输入 + 真 VT 解码 + 假渲染器。
+/// 真会话（`LibavFFmpegSession`，M04P11 起音视频都接上）：真输入 + 真 VT 解码 + 假渲染器。
 ///
 /// 用 ``TinyMP4Fixture`` 现场编的小文件当片源（不打网络）；
-/// 「画面到底出没出」要等接线后上机看，这里钉的是**喂帧语义与生命周期**。
-@Suite("FFmpeg 真会话（M04P9）")
+/// 「画面 / 声音到底出没出」要等接线后上机看，这里钉的是**喂帧喂块语义与生命周期**。
+@Suite("FFmpeg 真会话（M04P9/M04P11）")
 struct LibavFFmpegSessionTests {
     /// 等条件成立（轮询 20ms）：超时就失败，不挂死。
     private func waitUntil(timeout: Double = 3, _ condition: () -> Bool) async -> Bool {
@@ -105,16 +144,26 @@ struct LibavFFmpegSessionTests {
         return condition()
     }
 
-    private func makeFixtureURL() async throws -> URL {
+    private func makeFixtureURL(audioSeconds: Double = 0) async throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("ffmpeg-session-\(UUID().uuidString).mp4")
-        try await TinyMP4Fixture.write(to: url, width: 320, height: 240, fps: 30, frames: 30)
+        try await TinyMP4Fixture.write(
+            to: url,
+            width: 320,
+            height: 240,
+            fps: 30,
+            frames: 30,
+            audioSeconds: audioSeconds
+        )
         return url
     }
 
     @Test("打不开的文件：报错误描述，不起线程")
     func openMissingFile() async {
-        let session = LibavFFmpegSession(renderer: FakeVideoRenderer())
+        let session = LibavFFmpegSession(
+            videoRenderer: FakeVideoRenderer(),
+            audioRenderer: FakeAudioRenderer()
+        )
         let failure = await session.open(
             MediaResource(url: "/definitely/not/here/\(UUID().uuidString).mp4"),
             decoderMode: .hardware
@@ -127,19 +176,23 @@ struct LibavFFmpegSessionTests {
     func softwareDecoderRejected() async throws {
         let url = try await makeFixtureURL()
         defer { try? FileManager.default.removeItem(at: url) }
-        let session = LibavFFmpegSession(renderer: FakeVideoRenderer())
+        let session = LibavFFmpegSession(
+            videoRenderer: FakeVideoRenderer(),
+            audioRenderer: FakeAudioRenderer()
+        )
         let failure = await session.open(MediaResource(url: url.path), decoderMode: .software)
         #expect(failure != nil)
         #expect(failure?.contains("硬解") == true)
         await session.close()
     }
 
-    @Test("端到端：整个小文件全解出来、按显示时间排队、自动开播、EOF 报结束")
+    @Test("端到端：视频帧与音频块都喂上、自动开播、EOF 报结束")
     func endToEnd() async throws {
-        let url = try await makeFixtureURL()
+        let url = try await makeFixtureURL(audioSeconds: 1.0)
         defer { try? FileManager.default.removeItem(at: url) }
         let renderer = FakeVideoRenderer()
-        let session = LibavFFmpegSession(renderer: renderer)
+        let audio = FakeAudioRenderer()
+        let session = LibavFFmpegSession(videoRenderer: renderer, audioRenderer: audio)
         let box = EventBox()
         let consumer = Task { for await event in session.events {
             box.append(event)
@@ -149,7 +202,7 @@ struct LibavFFmpegSessionTests {
         let failure = await session.open(MediaResource(url: url.path), decoderMode: .hardware)
         #expect(failure == nil)
 
-        // 30 帧小文件：等它全喂完并报结束
+        // 1 秒视频 + 1 秒音频的小文件：等它全喂完并报结束
         let ended = await waitUntil { box.all.contains(.state(.ended)) }
         #expect(ended)
 
@@ -158,6 +211,8 @@ struct LibavFFmpegSessionTests {
         #expect(renderer.playCallCount == 1)
         #expect(renderer.lastPlayRate == 1)
         #expect(box.all.contains(.state(.playing)))
+        // 音轨也接上：音频侧有块喂进来
+        #expect(audio.enqueuedCount > 0)
 
         let first = try #require(frames.first)
         #expect(abs(first.presentation) < 0.001)
@@ -170,12 +225,28 @@ struct LibavFFmpegSessionTests {
         await session.close()
     }
 
+    @Test("音量：透传给音频渲染器并夹到 0...1")
+    func volumeForwarding() async throws {
+        let url = try await makeFixtureURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let audio = FakeAudioRenderer()
+        let session = LibavFFmpegSession(videoRenderer: FakeVideoRenderer(), audioRenderer: audio)
+        let failure = await session.open(MediaResource(url: url.path), decoderMode: .hardware)
+        #expect(failure == nil)
+
+        await session.setVolume(0.3)
+        #expect(audio.lastVolume == 0.3)
+        await session.setVolume(1.5)
+        #expect(audio.lastVolume == 1)
+        await session.close()
+    }
+
     @Test("暂停 / 继续：渲染器跟着停 / 起，事件跟着报")
     func pauseAndResume() async throws {
         let url = try await makeFixtureURL()
         defer { try? FileManager.default.removeItem(at: url) }
         let renderer = FakeVideoRenderer()
-        let session = LibavFFmpegSession(renderer: renderer)
+        let session = LibavFFmpegSession(videoRenderer: renderer, audioRenderer: FakeAudioRenderer())
         let box = EventBox()
         let consumer = Task { for await event in session.events {
             box.append(event)
@@ -197,13 +268,13 @@ struct LibavFFmpegSessionTests {
         await session.close()
     }
 
-    @Test("背压：渲染器说吃不下就先不解，一放开立刻继续")
+    @Test("背压：视频渲染器说吃不下就先不解，一放开立刻继续")
     func backpressure() async throws {
         let url = try await makeFixtureURL()
         defer { try? FileManager.default.removeItem(at: url) }
         let renderer = FakeVideoRenderer()
         renderer.isReadyForMoreMediaData = false
-        let session = LibavFFmpegSession(renderer: renderer)
+        let session = LibavFFmpegSession(videoRenderer: renderer, audioRenderer: FakeAudioRenderer())
 
         let failure = await session.open(MediaResource(url: url.path), decoderMode: .hardware)
         #expect(failure == nil)
@@ -222,7 +293,7 @@ struct LibavFFmpegSessionTests {
         defer { try? FileManager.default.removeItem(at: url) }
         let renderer = FakeVideoRenderer()
         renderer.isReadyForMoreMediaData = false // 让它停在「等背压」时被关掉
-        let session = LibavFFmpegSession(renderer: renderer)
+        let session = LibavFFmpegSession(videoRenderer: renderer, audioRenderer: FakeAudioRenderer())
 
         let failure = await session.open(MediaResource(url: url.path), decoderMode: .hardware)
         #expect(failure == nil)

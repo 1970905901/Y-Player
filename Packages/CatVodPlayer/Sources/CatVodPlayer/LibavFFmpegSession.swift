@@ -1,26 +1,28 @@
+import AVFoundation
 import Foundation
 
-/// 自研 FFmpeg 内核的**真实会话**（M04P9，视频-only 第一版）：
-/// 输入（demux）→ VT 硬解 → 显示层，跑在一条专用解码线程上。
+/// 自研 FFmpeg 内核的**真实会话**（M04P11 起：音视频都接上）：
+/// 统一 demux（`LibavInput.nextPacket`）→ 视频走 VT 硬解进显示层、
+/// 音频走 libavcodec + swresample 进音频渲染器；两者挂**同一条** synchronizer。
 ///
-/// 这一版的边界（**接线进界面之前必须补齐**，别让界面以为它全能）：
-/// - **没有音频**（M04P10）；
-/// - **没有 seek / 起点续播**：`startPosition` 被忽略，seek 是空操作（不假装）；
-/// - **软解没做**：`decoderMode == .software` 直接拒绝（不假装生效）；
+/// 还没有的（**接线进界面之前必须补齐**，别让界面以为它全能）：
+/// - **seek / 起点续播**：`startPosition` 被忽略，seek 是空操作（不假装）；
+/// - **软解**：`decoderMode == .software` 直接拒绝（不假装生效）；
+/// - **音轨切换**：`selectTrack` 是空操作（只有默认轨）；
 /// - 网络读阻塞期间 `close()` 不保证立刻收线程 —— 在没有 interrupt callback 之前，
 ///   宁可让线程自然退出，也不释放它可能正在读的上下文；
 /// - `stats()` 给的是**打开时读到的事实**（分辨率 / 编码 / 容器 / 硬解），
 ///   不是 mpv 那种逐帧快照。
 ///
-/// 分层：C 调用全在 `LibavInput` / `LibavVideoDecoder` / `LibavVideoRenderer` 里，
-/// 本类只管线程、状态与背压。一个会话只服务一次打开（引擎换片会新建会话）。
+/// 分层：C 调用全在 `LibavInput` / 两个解码器 / 两个渲染器里，本类只管
+/// 线程、状态与背压。一个会话只服务一次打开（引擎换片会新建会话）。
 final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
-    /// 一次从解码器拿几帧（太小费调度，太大压不住背压）。
-    private static let decodeChunk = 4
-
     private let input = LibavInput()
-    private let decoder = LibavVideoDecoder()
-    private let renderer: any FFmpegVideoRendering
+    private let videoDecoder = LibavVideoDecoder()
+    /// 没有音轨的文件就一直是 nil（不是错误）。
+    private var audioDecoder: LibavAudioDecoder?
+    private let videoRenderer: any FFmpegVideoRendering
+    private let audioRenderer: any FFmpegAudioRendering
     let events: AsyncStream<FFmpegSessionEvent>
     private let continuation: AsyncStream<FFmpegSessionEvent>.Continuation?
 
@@ -40,17 +42,22 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     private var lastEmittedSeconds = -10.0
     private var finishedEof = false
 
-    /// 生产入口：给画面层。
+    /// 生产入口：给画面层 —— 音视频挂**同一条** synchronizer（音画同步结构自带）。
     ///
     /// `convenience`：类的 designated init **不能** `self.init` 委派（actor 那套写法不能照搬，
     /// M04P9 首轮编译就是红在这）。
     convenience init(surface: FFmpegVideoSurface) {
-        self.init(renderer: LibavVideoRenderer(surface: surface))
+        let synchronizer = AVSampleBufferRenderSynchronizer()
+        self.init(
+            videoRenderer: LibavVideoRenderer(surface: surface, synchronizer: synchronizer),
+            audioRenderer: LibavAudioRenderer(synchronizer: synchronizer)
+        )
     }
 
     /// 单测入口：给假渲染器（真输入 / 真解码仍会跑 —— 集成测试的用法）。
-    init(renderer: any FFmpegVideoRendering) {
-        self.renderer = renderer
+    init(videoRenderer: any FFmpegVideoRendering, audioRenderer: any FFmpegAudioRendering) {
+        self.videoRenderer = videoRenderer
+        self.audioRenderer = audioRenderer
         var captured: AsyncStream<FFmpegSessionEvent>.Continuation?
         events = AsyncStream<FFmpegSessionEvent> { captured = $0 }
         continuation = captured
@@ -65,8 +72,19 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         if let failure = input.open(url: resource.url, headers: resource.headers) {
             return failure
         }
-        if let failure = decoder.open(input: input) {
+        if let failure = videoDecoder.open(input: input) {
             return failure
+        }
+        // 有音轨就得能解：解不了直接报错，不悄悄变成默片
+        if input.firstStreamIndex(of: .audio) != nil {
+            let decoder = LibavAudioDecoder()
+            if let failure = decoder.open(input: input) {
+                decoder.close()
+                videoDecoder.close()
+                input.close()
+                return failure
+            }
+            audioDecoder = decoder
         }
         info = input.mediaInfo()
         durationSeconds = info?.durationSeconds ?? 0
@@ -79,7 +97,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         playing = true
         let rate = rate
         lock.unlock()
-        renderer.play(rate: rate)
+        videoRenderer.play(rate: rate)
         emit(.state(.playing))
     }
 
@@ -87,7 +105,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         lock.lock()
         playing = false
         lock.unlock()
-        renderer.pause()
+        videoRenderer.pause()
         emit(.state(.paused))
     }
 
@@ -102,17 +120,17 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         let playing = playing
         lock.unlock()
         if playing {
-            renderer.play(rate: rate)
+            videoRenderer.play(rate: rate)
         }
     }
 
+    /// 音量（0...1）：透传给音频渲染器。
     func setVolume(_ volume: Float) async {
-        // 音频还没做（M04P10）。
-        _ = volume
+        audioRenderer.setVolume(min(max(volume, 0), 1))
     }
 
     func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async {
-        // 轨道选择还没做：现在只有一条视频流。
+        // 轨道选择还没做：现在都只有默认轨。
         _ = selection
         _ = kind
     }
@@ -126,6 +144,9 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
             raw["video-params/w"] = String(video.width)
             raw["video-params/h"] = String(video.height)
             raw["video-format"] = video.codecName
+        }
+        if let audio = info.streams.first(where: { $0.kind == .audio }) {
+            raw["audio-codec"] = audio.codecName
         }
         if !info.containerName.isEmpty {
             raw["file-format"] = info.containerName
@@ -148,7 +169,8 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
         if isDecodeFinished() {
-            decoder.close()
+            videoDecoder.close()
+            audioDecoder?.close()
             input.close()
         }
         continuation?.finish()
@@ -166,40 +188,72 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         thread.start()
     }
 
-    /// 解码主循环：背压等 → 取帧 → 攒一帧的时长再喂（时长要等下一帧 pts 才知道）。
+    /// 解码主循环：背压等 → 取包 → 按流分发给两个解码器 → 喂对应的渲染器。
     private func decodeLoop() {
         defer { markDecodeFinished() }
         while isRunning() {
-            if !renderer.isReadyForMoreMediaData {
-                Thread.sleep(forTimeInterval: 0.005)
-                continue
-            }
             if finishedEof {
                 Thread.sleep(forTimeInterval: 0.05)
                 continue
             }
-            let frames = decoder.decodeFrames(Self.decodeChunk)
-            for frame in frames {
-                consume(frame)
-            }
-            if decoder.reachedEnd {
-                finishedEof = true
-                for frame in decoder.drain() {
-                    consume(frame)
-                }
-                finishPendingFrame()
-                emitEndedOnce()
+            guard renderersReady() else {
+                Thread.sleep(forTimeInterval: 0.005)
                 continue
             }
-            if frames.isEmpty {
-                Thread.sleep(forTimeInterval: 0.01)
-            } else {
-                emitTimeIfNeeded()
+            guard let packet = input.nextPacket() else {
+                if input.isAtEnd {
+                    finishStream()
+                } else {
+                    // 读包失败但不是 EOF（网络抖动 / 超时）：抖一抖再试
+                    Thread.sleep(forTimeInterval: 0.01)
+                }
+                continue
+            }
+            route(packet)
+            emitTimeIfNeeded()
+        }
+    }
+
+    /// 背压：有音轨时两侧都要吃得住；只有画面的文件不看音频侧。
+    private func renderersReady() -> Bool {
+        guard videoRenderer.isReadyForMoreMediaData else { return false }
+        if audioDecoder != nil, !audioRenderer.isReadyForMoreMediaData {
+            return false
+        }
+        return true
+    }
+
+    /// 按流下标分发（只会命中两条被打开的流；其它流的包直接丢）。
+    private func route(_ packet: LibavInput.Packet) {
+        if packet.streamIndex == videoDecoder.streamIndex {
+            for frame in videoDecoder.feed(packet.pointer) {
+                consume(frame)
+            }
+            return
+        }
+        if let audioDecoder, packet.streamIndex == audioDecoder.streamIndex {
+            for sample in audioDecoder.feed(packet.pointer) {
+                audioRenderer.enqueue(sample)
             }
         }
     }
 
-    /// 收一帧：先发上一帧（现在知道它的时长了），把这一帧留成 pending。
+    /// 读到尾：两边都冲一次解码器，收干净再报结束。
+    private func finishStream() {
+        finishedEof = true
+        for frame in videoDecoder.drain() {
+            consume(frame)
+        }
+        finishPendingFrame()
+        if let audioDecoder {
+            for sample in audioDecoder.drain() {
+                audioRenderer.enqueue(sample)
+            }
+        }
+        emitEndedOnce()
+    }
+
+    /// 收一帧视频：先发上一帧（现在知道它的时长了），把这一帧留成 pending。
     private func consume(_ frame: LibavVideoDecoder.Frame) {
         if let pending = pendingFrame {
             let delta = frame.seconds - pending.seconds
@@ -218,7 +272,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     }
 
     private func enqueue(_ frame: LibavVideoDecoder.Frame, duration: Double) {
-        let accepted = renderer.enqueue(
+        let accepted = videoRenderer.enqueue(
             pixelBuffer: frame.pixelBuffer,
             presentationSeconds: frame.seconds,
             durationSeconds: duration
@@ -231,13 +285,13 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
             playing = true
             let rate = rate
             lock.unlock()
-            renderer.play(rate: rate)
+            videoRenderer.play(rate: rate)
             emit(.state(.playing))
         }
     }
 
     private func emitTimeIfNeeded() {
-        let current = renderer.currentSeconds
+        let current = videoRenderer.currentSeconds
         guard abs(current - lastEmittedSeconds) >= 0.25 else { return }
         lastEmittedSeconds = current
         emit(.time(current: current, duration: durationSeconds))

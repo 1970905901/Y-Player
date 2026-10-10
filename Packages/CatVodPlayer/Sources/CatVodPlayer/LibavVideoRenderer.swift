@@ -32,10 +32,16 @@ final class LibavVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
     private let layer: AVSampleBufferDisplayLayer
     private let synchronizer: AVSampleBufferRenderSynchronizer
 
-    init(surface: FFmpegVideoSurface) {
+    /// 生产入口：跟音频共用**一条** synchronizer（音画同步的结构基础）。
+    init(surface: FFmpegVideoSurface, synchronizer: AVSampleBufferRenderSynchronizer) {
         layer = surface.layer
-        synchronizer = AVSampleBufferRenderSynchronizer()
+        self.synchronizer = synchronizer
         synchronizer.addRenderer(layer)
+    }
+
+    /// 自己单独用（只有画面的场景 / 单测）：自开一条时间轴。
+    convenience init(surface: FFmpegVideoSurface) {
+        self.init(surface: surface, synchronizer: AVSampleBufferRenderSynchronizer())
     }
 
     /// 显示层还能不能吃得下 —— 吃不下就先别解（给会话的**背压**信号）。

@@ -35,8 +35,6 @@ final class LibavVideoDecoder: @unchecked Sendable {
     private var formatContext: UnsafeMutablePointer<AVFormatContext>?
     private(set) var streamIndex = -1
     private var timeBase = AVRational(num: 0, den: 1)
-    /// 上一次 `decodeFrames` 是否撞到了文件尾（EOF）。会话据此收尾：drain + 报结束。
-    private(set) var reachedEnd = false
 
     deinit {
         close()
@@ -102,7 +100,6 @@ final class LibavVideoDecoder: @unchecked Sendable {
         guard let formatContext, codecContext != nil, streamIndex >= 0, count > 0 else {
             return []
         }
-        reachedEnd = false
         var frames: [Frame] = []
         guard let packet = av_packet_alloc(), let frame = av_frame_alloc() else {
             return []
@@ -116,10 +113,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
 
         while frames.count < count {
             let readCode = av_read_frame(formatContext, packet)
-            guard readCode >= 0 else {
-                reachedEnd = readCode == LibavInput.eofCode
-                break
-            }
+            guard readCode >= 0 else { break }
             if packet.pointee.stream_index == Int32(streamIndex) {
                 push(packet, frame: frame, into: &frames, limit: count)
             }
