@@ -99,15 +99,21 @@ final class AsyncGate: @unchecked Sendable {
     private var waiter: CheckedContinuation<Void, Never>?
 
     func wait() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            installWaiter(continuation)
+        }
+    }
+
+    /// **同步**：还没开就装上等待者；已经开了当场放行（锁不在 async 上下文里加 —— M03P11 的规矩）。
+    private func installWaiter(_ continuation: CheckedContinuation<Void, Never>) {
         lock.lock()
-        if opened {
+        guard !opened else {
             lock.unlock()
+            continuation.resume()
             return
         }
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            waiter = continuation
-            lock.unlock()
-        }
+        waiter = continuation
+        lock.unlock()
     }
 
     func open() {
@@ -152,9 +158,7 @@ final class StubStreamingTransport: HTTPStreamingTransport, @unchecked Sendable 
     }
 
     func stream(_ request: HTTPRequest) async throws -> HTTPStream {
-        lock.lock()
-        received.append(request)
-        lock.unlock()
+        record(request)
         if let failure {
             throw failure
         }
@@ -183,5 +187,12 @@ final class StubStreamingTransport: HTTPStreamingTransport, @unchecked Sendable 
         lock.lock()
         defer { lock.unlock() }
         return received.count
+    }
+
+    /// **同步**记一笔（`stream(_:)` 是 async，锁得在同步方法里加 —— M03P11 的规矩）。
+    private func record(_ request: HTTPRequest) {
+        lock.lock()
+        received.append(request)
+        lock.unlock()
     }
 }

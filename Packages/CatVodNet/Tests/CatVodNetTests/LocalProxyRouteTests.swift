@@ -272,10 +272,20 @@ struct LocalProxyStorageTests {
     func bufferReleasesFileOnDeinit() throws {
         let url = try LocalProxyTempFiles.makeFileURL()
         var buffer: LocalProxyFileBuffer? = try LocalProxyFileBuffer(fileURL: url)
+        #expect(buffer != nil)
         #expect(FileManager.default.fileExists(atPath: url.path))
         #expect(LocalProxyTempFiles.inUseCount >= 1)
         buffer = nil
         #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @Test("长度口径：带 Content-Encoding 的响应不信 Content-Length（URLSession 会解压，那个长度是压缩后的）")
+    func contentLengthIgnoresEncoded() {
+        #expect(LocalProxyFileBuffer.contentLength(["Content-Length": "100"]) == 100)
+        #expect(LocalProxyFileBuffer.contentLength(["content-length": " 100 "]) == 100)
+        #expect(LocalProxyFileBuffer.contentLength(["Content-Encoding": "gzip", "Content-Length": "100"]) == nil)
+        #expect(LocalProxyFileBuffer.contentLength(["Content-Encoding": "identity", "Content-Length": "100"]) == 100)
+        #expect(LocalProxyFileBuffer.contentLength([:]) == nil)
     }
 
     @Test("上游提前收尾：读侧抛「对不上」，不把短的实体当正常结束（M06p）")
@@ -301,6 +311,6 @@ struct LocalProxyStorageTests {
             caught = error
         }
         #expect(received == Data("short".utf8))
-        #expect(caught is LocalProxyFileBuffer.BufferError)
+        #expect((caught as? LocalProxyFileBuffer.BufferError) != nil)
     }
 }

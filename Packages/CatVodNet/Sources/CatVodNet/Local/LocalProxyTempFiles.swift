@@ -1,3 +1,4 @@
+import CatVodCore
 import FlyingFox
 import FlyingSocks
 import Foundation
@@ -364,7 +365,7 @@ public final class LocalProxyFileBuffer: @unchecked Sendable {
         }
         var payload = data
         if let expected, written + payload.count > expected {
-            payload = payload.prefix(max(expected - written, 0))
+            payload = payload.prefix(Swift.max(expected - written, 0))
         }
         if !payload.isEmpty {
             do {
@@ -420,24 +421,25 @@ public final class LocalProxyFileBuffer: @unchecked Sendable {
 
     /// 等到「可读字节超过 `offset`」或「写侧结束」（写完 / 坏了）——**单消费者**：
     /// 同一时刻只有一个等待者（响应体只有一条读链），多一个会把先来的那个忘掉。
+    ///
+    /// 锁在同步小方法 ``installWaiter(_:beyond:)`` 里加 —— `async` 函数体里不能直接
+    /// `lock()/unlock()`（Swift 6 里 NSLock 这对方法在异步上下文**不可用**，M03P11 踩过同一坑）。
     func waitForData(beyond offset: Int) async {
-        lock.lock()
-        let needsWait: Bool
-        if written > offset {
-            needsWait = false
-        } else if case .writing = state {
-            needsWait = true
-        } else {
-            needsWait = false
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            installWaiter(continuation, beyond: offset)
         }
-        guard needsWait else {
+    }
+
+    /// **同步**：该等就把等待者装上；不该等（已有新数据 / 写侧已结束）当场放行。
+    private func installWaiter(_ continuation: CheckedContinuation<Void, Never>, beyond offset: Int) {
+        lock.lock()
+        guard written <= offset, case .writing = state else {
             lock.unlock()
+            continuation.resume()
             return
         }
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            waiter = continuation
-            lock.unlock()
-        }
+        waiter = continuation
+        lock.unlock()
     }
 
     private func locked<T>(_ body: () -> T) -> T {
@@ -446,8 +448,17 @@ public final class LocalProxyFileBuffer: @unchecked Sendable {
         return body()
     }
 
-    /// 响应头里的 `Content-Length`（大小写不敏感）。
+    /// 响应头里能不能信 `Content-Length`（大小写不敏感；返回 nil = 发 chunked）。
+    ///
+    /// **带了 `Content-Encoding`（gzip 等）就不能信**：实体已经被 URLSession 解压，
+    /// 头里那个长度说的是压缩后的大小 —— 按它封顶会把实体截短。
     static func contentLength(_ headers: [String: String]) -> Int? {
+        for (key, value) in headers where key.lowercased() == "content-encoding" {
+            let encoding = value.trimmingCharacters(in: .whitespaces).lowercased()
+            guard encoding.isEmpty || encoding == "identity" else {
+                return nil
+            }
+        }
         for (key, value) in headers where key.lowercased() == "content-length" {
             return Int(value.trimmingCharacters(in: .whitespaces))
         }
@@ -463,7 +474,7 @@ public final class LocalProxyFileBuffer: @unchecked Sendable {
 ///
 /// 收尾口径：写到期望长度就结束；上游提前收尾（不够长）则抛 ``LocalProxyFileBuffer/BufferError/truncated(expected:received:)`` ——
 /// 让连接断掉，别把短实体留在 keep-alive 流里（下一条响应会被错位解析）。
-struct LocalProxyFileSequence: AsyncBufferedSequence, Sendable {
+struct LocalProxyFileSequence: AsyncBufferedSequence {
     typealias Element = UInt8
 
     let buffer: LocalProxyFileBuffer
@@ -492,7 +503,7 @@ struct LocalProxyFileSequence: AsyncBufferedSequence, Sendable {
                 try Task.checkCancellation()
                 let snapshot = buffer.snapshot()
                 if offset < snapshot.available {
-                    let want = min(max(count, 1), snapshot.available - offset)
+                    let want = Swift.min(Swift.max(count, 1), snapshot.available - offset)
                     guard let data = try read(upTo: want), !data.isEmpty else {
                         throw LocalProxyFileBuffer.BufferError.unreadable
                     }

@@ -111,11 +111,8 @@ public actor LocalProxyUpstreamClient {
         if let streaming = transport as? any HTTPStreamingTransport {
             let stream = try await streaming.stream(upstreamRequest(request))
             guard (200 ..< 300).contains(stream.status) else {
-                return try await .buffered(Response(
-                    status: stream.status,
-                    headers: stream.headers,
-                    body: collect(stream, for: request)
-                ))
+                let body = try await collect(stream, for: request)
+                return .buffered(Response(status: stream.status, headers: stream.headers, body: body))
             }
             buffer.attach(stream)
             return .streamed(Response(status: stream.status, headers: stream.headers))
