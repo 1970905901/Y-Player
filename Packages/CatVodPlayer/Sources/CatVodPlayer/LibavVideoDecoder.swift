@@ -340,144 +340,6 @@ final class LibavVideoDecoder: @unchecked Sendable {
         #endif
     }
 
-    /// 软解帧 → 显示层吃的 `CVPixelBuffer`（M04P14 起；M04P18 从 BGRA 换成 420v；M04P21 起 10bit 走 x420）。
-    ///
-    /// 为什么不用 BGRA：
-    /// - **省一档带宽**：BGRA 每像素 4 字节、还要先做一遍 YUV→RGB；420v 每像素 1.5 字节（x420 是 3 字节），
-    ///   sws 只做尺寸 / 排布上的事，不做色彩换算 —— 软解那条路的每帧成本直接降一档；
-    /// - **显示层原生吃它**：VT 硬解出来的帧本来就是 420v / x420 —— 软硬两条路交出去的东西长得一样。
-    ///
-    /// buffer 自己建而不是用 sws 的：显示层要 **IOSurface 背书**的 buffer，sws 分配的不是。
-    /// 10bit 源（M04P21 起）直通 `P010` → `x420`，色彩标签照挂（PQ / HLG 能传到显示层）；
-    /// 8bit 源照旧 `420v`。软解仍是兼容路线（不做 tone mapping，HDR 画质靠硬解那条）。
-    private func makeSoftwarePixelBuffer(from frame: UnsafeMutablePointer<AVFrame>) -> CVPixelBuffer? {
-        #if canImport(Libswscale) && canImport(Libavutil)
-        let width = Int(frame.pointee.width)
-        let height = Int(frame.pointee.height)
-        guard width > 0, height > 0,
-              let sourceFormat = Self.softwareSourceFormat(frame.pointee.format),
-              let targetFormat = Self.softwareTargetFormat(sourceFormat),
-              let pixelFormat = Self.coreVideoPixelFormat(forSoftwareTarget: targetFormat),
-              let context = swsConverter(
-                  width: width,
-                  height: height,
-                  sourceFormat: sourceFormat,
-                  targetFormat: targetFormat
-              )
-        else {
-            return nil
-        }
-
-        guard let target = av_frame_alloc() else { return nil }
-        defer {
-            var pointer: UnsafeMutablePointer<AVFrame>? = target
-            av_frame_free(&pointer)
-        }
-        target.pointee.width = Int32(width)
-        target.pointee.height = Int32(height)
-        target.pointee.format = Int32(targetFormat.rawValue)
-        guard av_frame_get_buffer(target, 0) >= 0, sws_scale_frame(context, target, frame) >= 0 else {
-            return nil
-        }
-
-        var pixelBuffer: CVPixelBuffer?
-        let attributes: [String: Any] = [kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any]]
-        let code = CVPixelBufferCreate(
-            kCFAllocatorDefault,
-            width,
-            height,
-            pixelFormat,
-            attributes as CFDictionary,
-            &pixelBuffer
-        )
-        guard code == kCVReturnSuccess, let pixelBuffer,
-              CVPixelBufferLockBaseAddress(pixelBuffer, []) == kCVReturnSuccess
-        else {
-            return nil
-        }
-        // 挂上**源的**色彩标签：420v / x420 什么都不带时 CoreVideo 会自己猜矩阵（对 1080p 这类片子常常猜错）；
-        // 播放信息的「输出」那行读的就是这里挂上去的东西（硬解那条读 VT 挂的）。
-        Self.attachColorTags(
-            to: pixelBuffer,
-            primaries: sourcePrimaries,
-            transfer: sourceTransfer,
-            matrix: sourceMatrix
-        )
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
-        // 两个平面各拷各的：Y 是 height 行，CbCr 交织（420）是 ceil(height / 2) 行。
-        let chromaRows = (height + 1) / 2
-        guard copyPlane(0, rows: height, from: target.pointee.data.0, linesize: target.pointee.linesize.0, into: pixelBuffer),
-              copyPlane(1, rows: chromaRows, from: target.pointee.data.1, linesize: target.pointee.linesize.1, into: pixelBuffer)
-        else {
-            return nil
-        }
-        return pixelBuffer
-        #else
-        _ = frame
-        return nil
-        #endif
-    }
-
-    /// 把一个平面的有效行拷进 `CVPixelBuffer` 的对应平面（行宽取两边小的那个）。
-    ///
-    /// 10bit（P010 ↔ x420）走的是同一条：两边都是「2 字节/样本、双平面」的同一套排布，字节级拷贝即可。
-    private func copyPlane(
-        _ plane: Int,
-        rows: Int,
-        from source: UnsafeMutablePointer<UInt8>?,
-        linesize: Int32,
-        into buffer: CVPixelBuffer
-    ) -> Bool {
-        guard let source, CVPixelBufferGetPlaneCount(buffer) > plane else { return false }
-        guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, plane) else { return false }
-        let sourceRowBytes = Int(linesize)
-        guard sourceRowBytes > 0 else { return false }
-        let destinationRowBytes = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
-        let copyBytes = min(destinationRowBytes, sourceRowBytes)
-        for row in 0 ..< rows {
-            let destinationRow = base.advanced(by: row * destinationRowBytes)
-            let sourceRow = UnsafeRawPointer(source).advanced(by: row * sourceRowBytes)
-            destinationRow.copyMemory(from: sourceRow, byteCount: copyBytes)
-        }
-        return true
-    }
-
-    /// 缓存 sws 转换器（源格式 / 尺寸变了才重建）；建不出来给 nil。
-    ///
-    /// 目标格式由调用方按 ``softwareTargetFormat(_:)`` 推好传进来（10bit → P010，其余 NV12）——
-    /// 缓存键因此还是「源格式 + 尺寸」，不用另记目标。
-    private func swsConverter(
-        width: Int,
-        height: Int,
-        sourceFormat: AVPixelFormat,
-        targetFormat: AVPixelFormat
-    ) -> UnsafeMutablePointer<SwsContext>? {
-        #if canImport(Libswscale) && canImport(Libavutil)
-        let format = Int32(sourceFormat.rawValue)
-        if let swsContext, swsSourceFormat == format, swsWidth == width, swsHeight == height {
-            return swsContext
-        }
-        if let swsContext {
-            sws_freeContext(swsContext)
-            self.swsContext = nil
-        }
-        // SWS_BILINEAR = 2：枚举常量导进来没有 int 重载，值写死（同 `LibavInput.avseekFlagBackward` 的写法）。
-        let created = sws_getContext(
-            Int32(width), Int32(height), sourceFormat,
-            Int32(width), Int32(height), targetFormat,
-            2, nil, nil, nil
-        )
-        swsContext = created
-        swsSourceFormat = format
-        swsWidth = width
-        swsHeight = height
-        return created
-        #else
-        _ = (width, height, sourceFormat, targetFormat)
-        return nil
-        #endif
-    }
-
     // MARK: - 内部
 
     /// 把一只包喂给解码器，并尽力把解码器里已备好的帧收进 `frames`（上限 `limit`）。
@@ -671,12 +533,12 @@ extension LibavVideoDecoder {
     }
 }
 
-// MARK: - 软解像素格式（M04P21）
+// MARK: - 软解：像素格式与转换（M04P21）
 
-/// 软解的像素格式映射：源格式 → 目标格式 → CoreVideo 格式。
+/// 软解那一组：源格式 → 目标格式 → CoreVideo 格式的映射，以及 sws 转换与平面拷贝。
 ///
-/// 为什么拆成扩展：类型体行数（`type_body_length`）会把 lint 顶红（同 M04P16~P20 那几组的理由）；
-/// 这几个 `static` 纯映射不碰实例状态，拆出来零成本。
+/// 为什么拆成扩展：类型体行数（`type_body_length`）离 CI 的 error 线只剩二十来行
+/// （同 M04P16~P21 那几组的理由）；这里的东西只碰本文件里的状态（同文件扩展的 `private` 照样可见）。
 extension LibavVideoDecoder {
     /// 软解的**目标**像素格式（M04P21）：10bit 源进 10bit 出 —— `yuv420p10le` / `p010le` → `P010LE`
     /// （macOS 侧就是 `x420`：10bit 双平面、高位对齐，sws 直出不用自己搬位）；其余照旧 NV12（420v）。
@@ -701,5 +563,143 @@ extension LibavVideoDecoder {
         if code == Int32(AV_PIX_FMT_NV12.rawValue) { return kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange }
         #endif
         return nil
+    }
+
+    /// 软解帧 → 显示层吃的 `CVPixelBuffer`（M04P14 起；M04P18 从 BGRA 换成 420v；M04P21 起 10bit 走 x420）。
+    ///
+    /// 为什么不用 BGRA：
+    /// - **省一档带宽**：BGRA 每像素 4 字节、还要先做一遍 YUV→RGB；420v 每像素 1.5 字节（x420 是 3 字节），
+    ///   sws 只做尺寸 / 排布上的事，不做色彩换算 —— 软解那条路的每帧成本直接降一档；
+    /// - **显示层原生吃它**：VT 硬解出来的帧本来就是 420v / x420 —— 软硬两条路交出去的东西长得一样。
+    ///
+    /// buffer 自己建而不是用 sws 的：显示层要 **IOSurface 背书**的 buffer，sws 分配的不是。
+    /// 10bit 源（M04P21 起）直通 `P010` → `x420`，色彩标签照挂（PQ / HLG 能传到显示层）；
+    /// 8bit 源照旧 `420v`。软解仍是兼容路线（不做 tone mapping，HDR 画质靠硬解那条）。
+    private func makeSoftwarePixelBuffer(from frame: UnsafeMutablePointer<AVFrame>) -> CVPixelBuffer? {
+        #if canImport(Libswscale) && canImport(Libavutil)
+        let width = Int(frame.pointee.width)
+        let height = Int(frame.pointee.height)
+        guard width > 0, height > 0,
+              let sourceFormat = Self.softwareSourceFormat(frame.pointee.format),
+              let targetFormat = Self.softwareTargetFormat(sourceFormat),
+              let pixelFormat = Self.coreVideoPixelFormat(forSoftwareTarget: targetFormat),
+              let context = swsConverter(
+                  width: width,
+                  height: height,
+                  sourceFormat: sourceFormat,
+                  targetFormat: targetFormat
+              )
+        else {
+            return nil
+        }
+
+        guard let target = av_frame_alloc() else { return nil }
+        defer {
+            var pointer: UnsafeMutablePointer<AVFrame>? = target
+            av_frame_free(&pointer)
+        }
+        target.pointee.width = Int32(width)
+        target.pointee.height = Int32(height)
+        target.pointee.format = Int32(targetFormat.rawValue)
+        guard av_frame_get_buffer(target, 0) >= 0, sws_scale_frame(context, target, frame) >= 0 else {
+            return nil
+        }
+
+        var pixelBuffer: CVPixelBuffer?
+        let attributes: [String: Any] = [kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any]]
+        let code = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            width,
+            height,
+            pixelFormat,
+            attributes as CFDictionary,
+            &pixelBuffer
+        )
+        guard code == kCVReturnSuccess, let pixelBuffer,
+              CVPixelBufferLockBaseAddress(pixelBuffer, []) == kCVReturnSuccess
+        else {
+            return nil
+        }
+        // 挂上**源的**色彩标签：420v / x420 什么都不带时 CoreVideo 会自己猜矩阵（对 1080p 这类片子常常猜错）；
+        // 播放信息的「输出」那行读的就是这里挂上去的东西（硬解那条读 VT 挂的）。
+        Self.attachColorTags(
+            to: pixelBuffer,
+            primaries: sourcePrimaries,
+            transfer: sourceTransfer,
+            matrix: sourceMatrix
+        )
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
+        // 两个平面各拷各的：Y 是 height 行，CbCr 交织（420）是 ceil(height / 2) 行。
+        let chromaRows = (height + 1) / 2
+        guard copyPlane(0, rows: height, from: target.pointee.data.0, linesize: target.pointee.linesize.0, into: pixelBuffer),
+              copyPlane(1, rows: chromaRows, from: target.pointee.data.1, linesize: target.pointee.linesize.1, into: pixelBuffer)
+        else {
+            return nil
+        }
+        return pixelBuffer
+        #else
+        _ = frame
+        return nil
+        #endif
+    }
+
+    /// 把一个平面的有效行拷进 `CVPixelBuffer` 的对应平面（行宽取两边小的那个）。
+    ///
+    /// 10bit（P010 ↔ x420）走的是同一条：两边都是「2 字节/样本、双平面」的同一套排布，字节级拷贝即可。
+    private func copyPlane(
+        _ plane: Int,
+        rows: Int,
+        from source: UnsafeMutablePointer<UInt8>?,
+        linesize: Int32,
+        into buffer: CVPixelBuffer
+    ) -> Bool {
+        guard let source, CVPixelBufferGetPlaneCount(buffer) > plane else { return false }
+        guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, plane) else { return false }
+        let sourceRowBytes = Int(linesize)
+        guard sourceRowBytes > 0 else { return false }
+        let destinationRowBytes = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
+        let copyBytes = min(destinationRowBytes, sourceRowBytes)
+        for row in 0 ..< rows {
+            let destinationRow = base.advanced(by: row * destinationRowBytes)
+            let sourceRow = UnsafeRawPointer(source).advanced(by: row * sourceRowBytes)
+            destinationRow.copyMemory(from: sourceRow, byteCount: copyBytes)
+        }
+        return true
+    }
+
+    /// 缓存 sws 转换器（源格式 / 尺寸变了才重建）；建不出来给 nil。
+    ///
+    /// 目标格式由调用方按 ``softwareTargetFormat(_:)`` 推好传进来（10bit → P010，其余 NV12）——
+    /// 缓存键因此还是「源格式 + 尺寸」，不用另记目标。
+    private func swsConverter(
+        width: Int,
+        height: Int,
+        sourceFormat: AVPixelFormat,
+        targetFormat: AVPixelFormat
+    ) -> UnsafeMutablePointer<SwsContext>? {
+        #if canImport(Libswscale) && canImport(Libavutil)
+        let format = Int32(sourceFormat.rawValue)
+        if let swsContext, swsSourceFormat == format, swsWidth == width, swsHeight == height {
+            return swsContext
+        }
+        if let swsContext {
+            sws_freeContext(swsContext)
+            self.swsContext = nil
+        }
+        // SWS_BILINEAR = 2：枚举常量导进来没有 int 重载，值写死（同 `LibavInput.avseekFlagBackward` 的写法）。
+        let created = sws_getContext(
+            Int32(width), Int32(height), sourceFormat,
+            Int32(width), Int32(height), targetFormat,
+            2, nil, nil, nil
+        )
+        swsContext = created
+        swsSourceFormat = format
+        swsWidth = width
+        swsHeight = height
+        return created
+        #else
+        _ = (width, height, sourceFormat, targetFormat)
+        return nil
+        #endif
     }
 }
