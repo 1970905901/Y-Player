@@ -217,10 +217,6 @@ jobs:
           files: |
             build/YPlayer-unsigned.ipa
             build/YPlayer-macOS-unsigned.zip
-          body: |
-            未签名构建产物（非 App Store 分发）。
-
-            - `YPlayer-unsigned.ipa`：iOS/iPadOS，需自行侧载并重签
-            - `YPlayer-macOS-unsigned.zip`：macOS 13+，首次打开需右键“打开”
-
-            本仓库不内置任何影视源，所有接口由使用者自行添加，责任自负。
+          # 正文来自仓库里的发布说明（下载 / 安装 / 本版有什么 / 已知限制都在那儿）——
+          # 发下一版先改 `docs/发布说明.md` 再打 tag，别把说明留在这个文件里。
+          body_path: docs/发布说明.md

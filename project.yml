@@ -71,7 +71,7 @@ targets:
       path: Apps/YPlayer-iOS/Info.plist
       properties:
         CFBundleDisplayName: YPlayer
-        CFBundleShortVersionString: "0.1.0"
+        CFBundleShortVersionString: "1.0.0"
         CFBundleVersion: "1"
         UILaunchScreen:
           UIColorName: ""
@@ -119,7 +119,7 @@ targets:
       path: Apps/YPlayer-macOS/Info.plist
       properties:
         CFBundleDisplayName: YPlayer
-        CFBundleShortVersionString: "0.1.0"
+        CFBundleShortVersionString: "1.0.0"
         CFBundleVersion: "1"
         LSMinimumSystemVersion: "13.0"
         LSApplicationCategoryType: public.app-category.entertainment

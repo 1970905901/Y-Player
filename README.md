@@ -6,13 +6,16 @@
 
 参考实现：[Silent1566/webhtv](https://github.com/Silent1566/webhtv)（作为协议与交互的兼容基准，不移植其 Java/Android 实现）。
 
-## 核心能力（规划）
+**当前版本：v1.0.0**（第一版正式版）—— 下载见 [Releases](https://github.com/1970905901/Y-Player/releases)，
+本版内容与已知限制见 [`docs/发布说明.md`](docs/发布说明.md)。
+
+## 核心能力
 
 | 能力 | 说明 |
 | --- | --- |
 | 源协议 | `type 0/1/2/4`（XML/JSON CMS、HTTP+base64 ext）完整；`type 3` 支持 CatSpider HTTP 与 JS Spider |
 | **js2p 主接口** | 支持 `index.js` + `index.js.md5` 形态的 JS 源：下载 → MD5 增量校验 → 在 JS 运行时执行 → 本机 HTTP 服务 → 按 CatSpider 路由调用 |
-| 播放内核 | 自研 `PlayerEngine` 抽象：`system`（AVPlayer，M2 可用）→ `mpv`（M3，已可用）→ `ffmpeg`（M4）；**设置里手动选择内核与硬解/软解，运行时严格遵循，不自动降级**。M4 的目标口径（2026-10-09）：**主做 HDR 与流畅度**，不是「再补一批格式」——格式与多音轨/字幕那部分 MPV 已经覆盖 |
+| 播放内核 | 自研 `PlayerEngine` 抽象，三个内核**都可用**、设置里手动选：`system`（AVPlayer，兼容性最好）、`mpv`（libmpv + MoltenVK，格式与多音轨/字幕覆盖最全）、`ffmpeg`（自研 FFmpeg，硬解/软解手动选、HDR 走硬解，逐帧/增益/播放信息是它）。**运行时不自动降级** |
 | 网络 | `headers`/`hosts`/`doh`/`proxy`/`ads`/`hlsRules`/`rules` 嗅探规则与本地代理服务 |
 | 不支持的形态 | `csp_*.jar`（需 JVM）、`.py`（需 CPython）、Widevine/PlayReady；UI 会明确给出原因 |
 
@@ -67,10 +70,13 @@ xcodebuild build -project YPlayer.xcodeproj -scheme YPlayer-macOS \
 
 ## 发布（未签名，非 App Store）
 
-打 tag 后由 GitHub Actions 产出：
+打 `v*` tag 后由 GitHub Actions 产出并开 Release：
 
 - `YPlayer-unsigned.ipa`（iOS/iPadOS，需自行侧载并重签）
 - `YPlayer-macOS-unsigned.zip`（macOS 13+）
+
+Release 正文 = [`docs/发布说明.md`](docs/发布说明.md)；完整发版流程见
+[构建与分发](docs/构建与分发.md) 第三节「发版流程」。
 
 ## 工程规范
 
