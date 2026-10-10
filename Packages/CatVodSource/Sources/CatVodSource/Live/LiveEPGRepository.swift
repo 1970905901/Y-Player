@@ -183,7 +183,10 @@ public struct LiveEPGRepository: Sendable {
         source: LiveSource,
         channel: LiveChannel
     ) async throws -> EPGGuide {
-        let data = try await fetchData(url, source: source)
+        // 逐频道这天走的是同一条取回路径（原样字节 → 按魔数解压）：`fetchRawData` + `decompressed`，
+        // 与文件形态共用同一套错误文案（「HTTP：…」/「gzip 解压失败：…」）。
+        let raw = try await fetchRawData(url, source: source)
+        let data = try Self.decompressed(raw, entry: url, source: source)
         if let schedule = EPGJSONParser.parse(data: data, key: key, timeZone: timeZone) {
             return EPGGuide(timeZone: timeZone, schedules: [schedule])
         }
