@@ -16,14 +16,14 @@ import GRDB
 public struct GRDBDownloadTaskStore: DownloadTaskStore {
     private static let columns = """
     id, siteKey, title, episode, line, url, headers, status, \
-    expectedBytes, receivedBytes, failureReason, retryCount, createdAt
+    expectedBytes, receivedBytes, failureReason, retryCount, completedSegments, resumeFingerprint, createdAt
     """
 
     private static let insertSQL = """
     INSERT OR REPLACE INTO downloadTask
     (id, siteKey, title, episode, line, url, headers, status, \
-    expectedBytes, receivedBytes, failureReason, retryCount, createdAt)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    expectedBytes, receivedBytes, failureReason, retryCount, completedSegments, resumeFingerprint, createdAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
 
     private let database: GRDBDatabase
@@ -60,6 +60,8 @@ public struct GRDBDownloadTaskStore: DownloadTaskStore {
             task.receivedBytes,
             task.failureReason,
             task.retryCount,
+            task.completedSegments,
+            task.resumeFingerprint,
             task.createdAt.timeIntervalSince1970,
         ]
         return database.write { db in
@@ -87,6 +89,8 @@ public struct GRDBDownloadTaskStore: DownloadTaskStore {
                     task.receivedBytes,
                     task.failureReason,
                     task.retryCount,
+                    task.completedSegments,
+                    task.resumeFingerprint,
                     task.createdAt.timeIntervalSince1970,
                 ]
                 try db.execute(sql: Self.insertSQL, arguments: arguments)
@@ -126,6 +130,8 @@ public struct GRDBDownloadTaskStore: DownloadTaskStore {
         let receivedBytes: Int64 = row["receivedBytes"]
         let failureReason: String = row["failureReason"]
         let retryCount: Int = row["retryCount"]
+        let completedSegments: Int = row["completedSegments"]
+        let resumeFingerprint: String = row["resumeFingerprint"]
         let createdAt: Double = row["createdAt"]
         // 注意：`id` 是从这几个字段**派生**出来的（``DownloadTask/id``），读的时候不还原它 ——
         // 存那一列只是为了让主键稳定、并支持直接按 id 删。
@@ -141,6 +147,8 @@ public struct GRDBDownloadTaskStore: DownloadTaskStore {
             receivedBytes: receivedBytes,
             failureReason: failureReason,
             retryCount: retryCount,
+            completedSegments: completedSegments,
+            resumeFingerprint: resumeFingerprint,
             createdAt: Date(timeIntervalSince1970: createdAt)
         )
     }

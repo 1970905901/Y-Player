@@ -74,7 +74,9 @@ struct GRDBDownloadTaskStoreTests {
         _ episode: String = "第 1 集",
         status: DownloadTask.Status = .waiting,
         received: Int64 = 0,
-        expected: Int64 = 0
+        expected: Int64 = 0,
+        segments: Int = 0,
+        fingerprint: String = ""
     ) -> DownloadTask {
         DownloadTask(
             siteKey: "wogg",
@@ -86,8 +88,22 @@ struct GRDBDownloadTaskStoreTests {
             status: status,
             expectedBytes: expected,
             receivedBytes: received,
+            completedSegments: segments,
+            resumeFingerprint: fingerprint,
             createdAt: Date(timeIntervalSince1970: 1_700_000_000)
         )
+    }
+
+    @Test("往返：续下账目（片段数 + 指纹）无损（M10n）")
+    func resumeLedgerRoundTrip() async throws {
+        let store = try makeStore()
+        let item = task(status: .paused, received: 512, expected: 2048, segments: 4, fingerprint: "deadbeef")
+        await store.save(item)
+
+        let loaded = await store.all()
+        #expect(loaded.first == item)
+        #expect(loaded.first?.completedSegments == 4)
+        #expect(loaded.first?.resumeFingerprint == "deadbeef")
     }
 
     @Test("往返：写一条读回来逐字段相等（含 header 里的中文）")

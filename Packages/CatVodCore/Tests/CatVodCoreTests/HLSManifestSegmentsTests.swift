@@ -232,6 +232,49 @@ struct HLSManifestSegmentsTests {
         #expect(!broken.isDownloadable)
     }
 
+    @Test("续下指纹：同前缀稳定、前缀变了就变、后面长出新片段不影响前缀（M10n）")
+    func resumeFingerprint() {
+        let first = media("""
+        #EXTINF:4,
+        seg-1.ts
+        #EXTINF:4,
+        seg-2.ts
+        """)
+        let same = media("""
+        #EXTINF:4,
+        seg-1.ts
+        #EXTINF:4,
+        seg-2.ts
+        """)
+        #expect(first.segmentFingerprint(prefix: 2) == same.segmentFingerprint(prefix: 2))
+
+        // 前缀里换了一片：指纹变（续下要靠它拦下「清单变过」）
+        let changed = media("""
+        #EXTINF:4,
+        seg-1-other.ts
+        #EXTINF:4,
+        seg-2.ts
+        """)
+        #expect(first.segmentFingerprint(prefix: 2) != changed.segmentFingerprint(prefix: 2))
+
+        // 清单后面长出新片段：前两片的指纹不动（续下不用整份重下）
+        let grown = media("""
+        #EXTINF:4,
+        seg-1.ts
+        #EXTINF:4,
+        seg-2.ts
+        #EXTINF:4,
+        seg-3.ts
+        """)
+        #expect(first.segmentFingerprint(prefix: 2) == grown.segmentFingerprint(prefix: 2))
+        #expect(first.segmentFingerprint(prefix: 3) != grown.segmentFingerprint(prefix: 3))
+
+        // 同一个 URI 靠字节范围区分的那类清单（M10l）：范围不同 → 指纹不同
+        let rangedA = media("#EXTINF:4,\n#EXT-X-BYTERANGE:100@0\nall.ts")
+        let rangedB = media("#EXTINF:4,\n#EXT-X-BYTERANGE:100@100\nall.ts")
+        #expect(rangedA.segmentFingerprint(prefix: 1) != rangedB.segmentFingerprint(prefix: 1))
+    }
+
     @Test("注释、CRLF、多余空行都不影响解析")
     func toleratesNoise() {
         let manifest = HLSManifestParser.parse(text: "#EXTM3U\r\n# 注释行\r\n\r\n#EXTINF:4.5,\r\nseg.ts\r\n", baseURL: base)

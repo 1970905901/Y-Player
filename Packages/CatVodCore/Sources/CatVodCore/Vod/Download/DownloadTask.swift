@@ -55,6 +55,17 @@ public struct DownloadTask: Sendable, Hashable, Identifiable {
     public var failureReason: String
     /// 已经重试过几次。
     public var retryCount: Int
+    /// 已经**完整**写进文件的片段数（含 fMP4 的 init 片；M10n）。`0` = 没有可续的（从头下）。
+    ///
+    /// 续下的对账账目之一：执行器停下（失败 / 暂停）时把「跑到第几片」记在这里，
+    /// 下次从这一片接着下。完成时清零 —— 账目只在半途有意义。
+    public var completedSegments: Int
+    /// 这 ``completedSegments`` 片对应的清单指纹（``HLSManifest/segmentFingerprint(prefix:)``；
+    /// M10n）；空字符串 = 没有账目。
+    ///
+    /// 为什么必须对账：续下是把新片段**追加**进一个已有文件，若清单变过（换源 / 重新转码 /
+    /// 顺序变了），按旧账目往下接会拼出一个**看不出来**的错文件 —— 指纹对不上就整份重下。
+    public var resumeFingerprint: String
     /// 创建时间（队列按它排先后）。
     public var createdAt: Date
 
@@ -70,6 +81,8 @@ public struct DownloadTask: Sendable, Hashable, Identifiable {
         receivedBytes: Int64 = 0,
         failureReason: String = "",
         retryCount: Int = 0,
+        completedSegments: Int = 0,
+        resumeFingerprint: String = "",
         createdAt: Date = Date()
     ) {
         self.siteKey = siteKey
@@ -83,6 +96,8 @@ public struct DownloadTask: Sendable, Hashable, Identifiable {
         self.receivedBytes = receivedBytes
         self.failureReason = failureReason
         self.retryCount = retryCount
+        self.completedSegments = completedSegments
+        self.resumeFingerprint = resumeFingerprint
         self.createdAt = createdAt
     }
 

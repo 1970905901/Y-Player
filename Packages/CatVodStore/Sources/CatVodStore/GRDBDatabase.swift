@@ -116,6 +116,13 @@ public final class GRDBDatabase: Sendable {
                 t.column("createdAt", .double).notNull()
             }
         }
+        // v3：续下账目（M10n）—— 跑到第几片、清单前缀指纹。
+        migrator.registerMigration("v3.downloadResume") { db in
+            try db.alter(table: "downloadTask") { t in
+                t.add(column: "completedSegments", .integer).notNull().defaults(to: 0)
+                t.add(column: "resumeFingerprint", .text).notNull().defaults(to: "")
+            }
+        }
         try migrator.migrate(queue)
     }
 }

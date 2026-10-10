@@ -66,6 +66,31 @@ public struct HLSManifest: Sendable, Equatable {
         }
     }
 
+    /// 前 `count` 片的指纹（含 init 片；M10n）。
+    ///
+    /// 逐个片段把 `URI + 字节范围` 喂进 FNV-1a（64 位，十六进制字符串）—— 续下要拿它
+    /// 跟 ``DownloadTask/resumeFingerprint`` 对账：对得上才敢把新片段追加上去。
+    ///
+    /// 为什么按**前缀**算而不是整份清单：续下只关心「已经写进文件的那几片」没变 ——
+    /// 清单在后面长出新片段（VOD 变长之类的写法）不该害得整份重下。
+    public func segmentFingerprint(prefix count: Int) -> String {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        func feed(_ text: String) {
+            for byte in text.utf8 {
+                hash = (hash ^ UInt64(byte)) &* 0x0000_0100_0000_01B3
+            }
+            // 每片之间加一个分隔符：免得「(a,b)」与「(ab,)」喂出同一串字节。
+            hash = (hash ^ 0x0A) &* 0x0000_0100_0000_01B3
+        }
+        for index in 0 ..< min(max(0, count), segments.count) {
+            feed(segments[index])
+            if segmentRanges.indices.contains(index), let range = segmentRanges[index] {
+                feed("#\(range.offset)+\(range.length)")
+            }
+        }
+        return String(hash, radix: 16)
+    }
+
     /// 是不是主清单。
     public var isMaster: Bool
     /// 主清单的变体（按清单里的顺序）。

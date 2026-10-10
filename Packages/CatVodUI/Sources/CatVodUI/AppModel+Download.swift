@@ -49,11 +49,22 @@ public extension AppModel {
     }
 
     /// 暂停。排队中和**正在下的那一条**都当场生效（M10m）：先落「已暂停」，再取消执行句柄 ——
-    /// 执行器在下一个可停处停下（分片之间 / 当前请求被打断），交回的也是「已暂停」而不是失败；
-    /// 半成品按 M10d 的规矩删掉（「继续」时从头下）。
+    /// 执行器在下一个可停处停下（分片之间 / 当前请求被打断），交回「已暂停」而不是失败；
+    /// 半成品留在原地（M10n）：下次「继续」从账目那一片接着下。
     func pauseDownload(id: String) async {
         await updateDownload(id: id) { DownloadQueue.pausing($0) }
-        downloadRunTasks[id]?.cancel()
+        guard let run = downloadRunTasks[id] else {
+            return
+        }
+        run.cancel()
+        // 等执行器停下，把它对到的账目（下到第几片）并进那条任务 —— 取消结果本身不落库
+        // （M10m），进度就靠这里带回来。
+        let outcome = await run.value
+        guard outcome.task.status != .finished else {
+            // 取消晚了一步：这趟其实下完了，结果由队列收尾那条路落库。
+            return
+        }
+        await mergeDownloadLedger(id: id, from: outcome.task)
     }
 
     /// 继续 / 重试（会重置自动重试额度，见 ``DownloadQueue/retrying(_:)``）。
@@ -234,6 +245,24 @@ public extension AppModel {
     }
 
     // MARK: - 内部
+
+    /// 把执行器交回的续下账目并进库里那条 —— **只动账目，不动状态**（M10n）。
+    ///
+    /// 为什么不动状态：用户可能已经点了「继续」（状态是 `.waiting`），账目晚一步回来
+    /// 不能把它按回去 —— M10m 首验的抢写就是栽在「谁都能写状态」上。
+    func mergeDownloadLedger(id: String, from outcome: DownloadTask) async {
+        guard outcome.completedSegments > 0 else {
+            return
+        }
+        await updateDownload(id: id) { task in
+            var merged = task
+            merged.completedSegments = outcome.completedSegments
+            merged.resumeFingerprint = outcome.resumeFingerprint
+            merged.receivedBytes = outcome.receivedBytes
+            merged.expectedBytes = outcome.expectedBytes
+            return merged
+        }
+    }
 
     /// 改一条任务（找不到、或没变化就不动）。
     func updateDownload(id: String, _ transform: (DownloadTask) -> DownloadTask) async {

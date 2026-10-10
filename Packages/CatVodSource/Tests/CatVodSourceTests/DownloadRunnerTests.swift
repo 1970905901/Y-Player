@@ -329,13 +329,17 @@ struct DownloadRunnerTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
     }
 
-    @Test("某片挂了：回退排队 + 半成品删掉（重试要从头下，不能往少一段的文件后面写）")
-    func removesPartialFileOnFailure() async throws {
+    @Test("某片挂了：账目记着、半成品留着；修好后重试从断点接着下（M10n）")
+    func keepsPartialFileOnFailure() async throws {
         let directory = try makeDirectory("failure")
         let index = "https://cdn.example/v/index.m3u8"
+        let first = "https://cdn.example/v/seg-1.ts"
+        let second = "https://cdn.example/v/seg-2.ts"
+        let body = "#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-2.ts"
+        // 第一趟：第二片没配（404），挂在它上面
         let transport = DownloadStubTransport([
-            index: playlist("#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-missing.ts"),
-            "https://cdn.example/v/seg-1.ts": segment("AAA"),
+            index: playlist(body),
+            first: segment("AAA"),
         ])
         let runner = DownloadRunner(transport: transport, directory: directory)
 
@@ -344,7 +348,155 @@ struct DownloadRunnerTests {
         #expect(outcome.task.status == .waiting)
         #expect(outcome.task.retryCount == 1)
         #expect(!outcome.task.failureReason.isEmpty)
-        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+        // 半成品留着 + 账目记着：下到第 1 片、3 字节
+        #expect(outcome.task.completedSegments == 1)
+        #expect(outcome.task.receivedBytes == 3)
+        #expect(!outcome.task.resumeFingerprint.isEmpty)
+        let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        #expect(files.count == 1)
+        let name = try #require(files.first)
+        #expect(try String(contentsOf: directory.appendingPathComponent(name), encoding: .utf8) == "AAA")
+
+        // 修好之后重试：从第 2 片接着下，不重取第 1 片
+        let fixed = DownloadStubTransport([
+            index: playlist(body),
+            first: segment("AAA"),
+            second: segment("BBBB"),
+        ])
+        let retry = DownloadRunner(transport: fixed, directory: directory)
+        let resumed = await retry.run(outcome.task)
+
+        #expect(resumed.task.status == .finished)
+        let fileURL = try #require(resumed.fileURL)
+        #expect(try String(contentsOf: fileURL, encoding: .utf8) == "AAABBBB")
+        #expect(resumed.task.receivedBytes == 7)
+        // 完成 = 账目清零
+        #expect(resumed.task.completedSegments == 0)
+        #expect(await fixed.requestedURLs() == [index, second])
+    }
+
+    // MARK: - 续下（M10n）
+
+    /// 造一个「上一趟下到第 1 片」的半成品 + 对应的任务账目。
+    private func partialTask(
+        _ index: String,
+        segments: Int = 1,
+        fileBytes: Int = 3,
+        fingerprint: String? = nil
+    ) throws -> (task: DownloadTask, fileName: String) {
+        let manifest = HLSManifestParser.parse(
+            text: "#EXTM3U\n#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-2.ts",
+            baseURL: index
+        )
+        var task = makeTask(index)
+        task.status = .paused
+        task.completedSegments = segments
+        task.receivedBytes = Int64(fileBytes)
+        task.resumeFingerprint = fingerprint ?? manifest.segmentFingerprint(prefix: segments)
+        let fileName = DownloadTask.sanitized("\(task.fileNameBase) · \(task.siteKey)") + ".ts"
+        return (task, fileName)
+    }
+
+    private func writePartial(_ text: String, named name: String, in directory: URL) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(text.utf8).write(to: directory.appendingPathComponent(name))
+    }
+
+    @Test("续下：账目 + 指纹对上 → 只取剩下的片段，接着写")
+    func resumesFromLedger() async throws {
+        let directory = try makeDirectory("resume")
+        let index = "https://cdn.example/v/index.m3u8"
+        let first = "https://cdn.example/v/seg-1.ts"
+        let second = "https://cdn.example/v/seg-2.ts"
+        let body = "#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-2.ts"
+        let (task, fileName) = try partialTask(index)
+        try writePartial("AAA", named: fileName, in: directory)
+        let transport = DownloadStubTransport([
+            index: playlist(body),
+            first: segment("AAA"),
+            second: segment("BBBB"),
+        ])
+        let runner = DownloadRunner(transport: transport, directory: directory)
+
+        let outcome = await runner.run(task)
+
+        #expect(outcome.task.status == .finished)
+        let fileURL = try #require(outcome.fileURL)
+        #expect(try String(contentsOf: fileURL, encoding: .utf8) == "AAABBBB")
+        #expect(outcome.task.receivedBytes == 7)
+        // 清单 + 只取第 2 片：第 1 片没有重取
+        #expect(await transport.requestedURLs() == [index, second])
+    }
+
+    @Test("续下：清单指纹对不上 → 整份重下，绝不硬拼")
+    func restartsWhenFingerprintChanged() async throws {
+        let directory = try makeDirectory("resume-changed")
+        let index = "https://cdn.example/v/index.m3u8"
+        let first = "https://cdn.example/v/seg-1.ts"
+        let second = "https://cdn.example/v/seg-2.ts"
+        let body = "#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-2.ts"
+        let (task, fileName) = try partialTask(index, fingerprint: "0bad")
+        try writePartial("AAA", named: fileName, in: directory)
+        let transport = DownloadStubTransport([
+            index: playlist(body),
+            first: segment("XXX"),
+            second: segment("BBBB"),
+        ])
+        let runner = DownloadRunner(transport: transport, directory: directory)
+
+        let outcome = await runner.run(task)
+
+        #expect(outcome.task.status == .finished)
+        let fileURL = try #require(outcome.fileURL)
+        // 第一片是新内容：旧半成品被整份丢掉
+        #expect(try String(contentsOf: fileURL, encoding: .utf8) == "XXXBBBB")
+        #expect(await transport.requestedURLs() == [index, first, second])
+    }
+
+    @Test("续下：半成品比账目还短（字节丢了）→ 从头下")
+    func restartsWhenFileShorterThanLedger() async throws {
+        let directory = try makeDirectory("resume-short")
+        let index = "https://cdn.example/v/index.m3u8"
+        let first = "https://cdn.example/v/seg-1.ts"
+        let second = "https://cdn.example/v/seg-2.ts"
+        let body = "#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-2.ts"
+        let (task, fileName) = try partialTask(index)
+        try writePartial("AA", named: fileName, in: directory)
+        let transport = DownloadStubTransport([
+            index: playlist(body),
+            first: segment("AAA"),
+            second: segment("BBBB"),
+        ])
+        let runner = DownloadRunner(transport: transport, directory: directory)
+
+        let outcome = await runner.run(task)
+
+        #expect(outcome.task.status == .finished)
+        #expect(await transport.requestedURLs() == [index, first, second])
+    }
+
+    @Test("续下：尾巴是上次写了一半的片段 → 截到账目长度再接着写")
+    func truncatesTornTail() async throws {
+        let directory = try makeDirectory("resume-torn")
+        let index = "https://cdn.example/v/index.m3u8"
+        let second = "https://cdn.example/v/seg-2.ts"
+        let body = "#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-2.ts"
+        let (task, fileName) = try partialTask(index)
+        // 账目说 3 字节，文件里却有 4（第 4 个字节是上次写了一半的）
+        try writePartial("AAAB", named: fileName, in: directory)
+        let transport = DownloadStubTransport([
+            index: playlist(body),
+            "https://cdn.example/v/seg-1.ts": segment("AAA"),
+            second: segment("BBBB"),
+        ])
+        let runner = DownloadRunner(transport: transport, directory: directory)
+
+        let outcome = await runner.run(task)
+
+        #expect(outcome.task.status == .finished)
+        let fileURL = try #require(outcome.fileURL)
+        #expect(try String(contentsOf: fileURL, encoding: .utf8) == "AAABBBB")
+        #expect(await transport.requestedURLs() == [index, second])
     }
 
     @Test("文件名带上站点 key：两个站点的同名同集不会互相覆盖")
@@ -398,7 +550,13 @@ struct DownloadRunnerTests {
         #expect(outcome.task.retryCount == 0)
         #expect(outcome.task.failureReason.isEmpty)
         #expect(outcome.fileURL == nil)
-        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+        // 半成品留着（M10n）：账目 = 下到第 1 片
+        #expect(outcome.task.completedSegments == 1)
+        #expect(outcome.task.receivedBytes == 3)
+        let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        #expect(files.count == 1)
+        let name = try #require(files.first)
+        #expect(try String(contentsOf: directory.appendingPathComponent(name), encoding: .utf8) == "AAA")
     }
 
     @Test("开跑前就被取消：一个请求都不发，回「已暂停」")
@@ -452,6 +610,12 @@ struct DownloadRunnerTests {
         // 第二片是「取消也打断不了」的那片：它被取了回来，但第三片一个请求都不发
         let requested = await transport.requestedURLs()
         #expect(requested == [index, "https://cdn.example/v/seg-1.ts", second])
-        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+        // 半成品留着：账目 = 下到第 2 片（7 字节）
+        #expect(outcome.task.completedSegments == 2)
+        #expect(outcome.task.receivedBytes == 7)
+        let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        #expect(files.count == 1)
+        let name = try #require(files.first)
+        #expect(try String(contentsOf: directory.appendingPathComponent(name), encoding: .utf8) == "AAABBBB")
     }
 }

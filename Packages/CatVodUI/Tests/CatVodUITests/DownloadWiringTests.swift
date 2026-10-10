@@ -18,21 +18,29 @@ private actor WiringTransport: HTTPTransport {
     }
 }
 
-/// 带「挂起」的假传输（M10m 的暂停用）：`hang` 里的地址一直等（取消时立刻抛）；其余按 `responses` 回。
+/// 带「挂起」的假传输（M10m 的暂停用）：`hang` 里的地址每次一直等（取消时立刻抛）；
+/// `hangOnce` 里的只挂第一次（之后的取回正常）—— 演「暂停 → 继续」的续下（M10n）。
 private actor HangingWiringTransport: HTTPTransport {
     private let responses: [String: HTTPResponse]
     private let hang: Set<String>
+    private let hangOnce: Set<String>
     private var started: Set<String> = []
+    private var sends: [String: Int] = [:]
+    private var requests: [String] = []
 
-    init(_ responses: [String: HTTPResponse], hang: Set<String> = []) {
+    init(_ responses: [String: HTTPResponse], hang: Set<String> = [], hangOnce: Set<String> = []) {
         self.responses = responses
         self.hang = hang
+        self.hangOnce = hangOnce
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         let url = request.url.absoluteString
+        requests.append(url)
         started.insert(url)
-        if hang.contains(url) {
+        let count = (sends[url] ?? 0) + 1
+        sends[url] = count
+        if hang.contains(url) || (hangOnce.contains(url) && count == 1) {
             try await Task.sleep(nanoseconds: 10_000_000_000)
         }
         return responses[url] ?? HTTPResponse(status: 404)
@@ -40,6 +48,10 @@ private actor HangingWiringTransport: HTTPTransport {
 
     func hasStarted(_ url: String) -> Bool {
         started.contains(url)
+    }
+
+    func requestedURLs() -> [String] {
+        requests
     }
 }
 
@@ -394,10 +406,69 @@ struct DownloadWiringTests {
         #expect(task.retryCount == 0)
         #expect(task.failureReason.isEmpty)
 
-        // 半成品删掉：暂停后再继续要能从头下（M10d 的规矩）
+        // 半成品留着 + 账目记着（M10n）：继续时从第 2 片接着下，不重取第 1 片
+        #expect(task.completedSegments == 1)
+        #expect(task.receivedBytes == 3)
         let directory = AppModelFixture.downloadDirectory(in: fixture.directory)
-        let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
-        #expect(files.isEmpty)
+        let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        #expect(files.count == 1)
+        let name = try #require(files.first)
+        #expect(try String(contentsOf: directory.appendingPathComponent(name), encoding: .utf8) == "AAA")
+    }
+
+    @Test("暂停后继续：从断点接着下，不重取下过的片段（M10n）")
+    func resumeContinuesFromPartial() async throws {
+        let index = "https://cdn.example/v/index.m3u8"
+        let first = "https://cdn.example/v/seg-1.ts"
+        let second = "https://cdn.example/v/seg-2.ts"
+        let third = "https://cdn.example/v/seg-3.ts"
+        let body = "#EXTM3U\n#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-2.ts\n#EXTINF:4,\nseg-3.ts"
+        let transport = HangingWiringTransport(
+            [
+                index: playlist(body),
+                first: HTTPResponse(status: 200, body: Data("AAA".utf8)),
+                second: HTTPResponse(status: 200, body: Data("BBBB".utf8)),
+                third: HTTPResponse(status: 200, body: Data("CC".utf8)),
+            ],
+            hangOnce: [second]
+        )
+        let fixture = try AppModelFixture(downloadTransport: transport)
+        defer { fixture.tearDown() }
+        await fixture.load()
+
+        let added = await fixture.model.enqueueDownloads(
+            [DownloadRequest(episode: "第 1 集", line: "线路一", url: index)],
+            siteKey: "a",
+            title: "某剧"
+        )
+        let id = try #require(added.first?.id)
+        fixture.model.startDownloadDriverIfNeeded()
+        let reachedSecond = await waitUntil { await transport.hasStarted(second) }
+        #expect(reachedSecond)
+
+        await fixture.model.pauseDownload(id: id)
+        // 账目落库：文件里已有第 1 片（3 字节）
+        let paused = try #require(fixture.model.downloadTasks.first)
+        #expect(paused.status == DownloadTask.Status.paused)
+        #expect(paused.completedSegments == 1)
+        #expect(paused.receivedBytes == 3)
+
+        await fixture.model.resumeDownload(id: id)
+        let finished = await waitForFirstTaskToFinish(fixture.model)
+        #expect(finished)
+
+        let task = try #require(fixture.model.downloadTasks.first)
+        #expect(task.status == DownloadTask.Status.finished)
+        // 三片拼起来的内容：续下接上了
+        let directory = AppModelFixture.downloadDirectory(in: fixture.directory)
+        let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        #expect(files.count == 1)
+        let name = try #require(files.first)
+        #expect(try String(contentsOf: directory.appendingPathComponent(name), encoding: .utf8) == "AAABBBBCC")
+        // 第 1 片只取过一次；清单取了两趟（首跑 + 续下）
+        let requested = await transport.requestedURLs()
+        #expect(requested.filter { $0 == first }.count == 1)
+        #expect(requested.filter { $0 == index }.count == 2)
     }
 
     @Test("暂停后马上点继续：晚到的取消结果不能把任务按回暂停")
