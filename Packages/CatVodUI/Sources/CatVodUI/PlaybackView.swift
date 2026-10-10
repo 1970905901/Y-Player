@@ -108,6 +108,10 @@ public struct PlaybackView: View {
     @State private var playbackClock = PlaybackClock()
     /// 当前引擎状态（弹幕靠它决定时间走不走：暂停 / 缓冲都该停表）。
     @State var playerState: PlayerState = .idle
+    /// 自绘内核的控制条是否可见（M03P10）：单击画面切换，播放中几秒后自动收起。
+    @State var isControlsVisible = true
+    /// 「自动收起」的计时句柄：每次交互重排；切到非播放态直接取消（暂停时本来就该看得见）。
+    @State var controlsHideTask: Task<Void, Never>?
     /// 当前倍速（`speedChanged` 事件给的真值）。
     @State var playbackRate: Double = 1
     /// 「离线下载」那一块的反馈文案（加入队列 / 已经下过）。
@@ -256,6 +260,9 @@ public struct PlaybackView: View {
         .onDisappear {
             eventTask?.cancel()
             eventTask = nil
+            // 控制条的自动收起计时也别留着（离开页面后没人需要它）。
+            controlsHideTask?.cancel()
+            controlsHideTask = nil
             let current = engine
             Task {
                 // 退出前落一次进度（节流不适用于离场）。
@@ -296,8 +303,10 @@ public struct PlaybackView: View {
                         .clipped()
                     }
                     // 自绘内核（MPV / 自研 FFmpeg）没有系统播放器控件：补一条最小控制条。
-                    if mpvSurface != nil || ffmpegSurface != nil {
+                    // 显隐由「单击画面」切换、播放中自动收起（M03P10）。
+                    if mpvSurface != nil || ffmpegSurface != nil, isControlsVisible {
                         playerControls
+                            .transition(.opacity)
                     }
                     // 手势提示（进度预览 / 音量）：只显示、不拦触摸。
                     if !gestureHint.isEmpty {
@@ -312,6 +321,7 @@ public struct PlaybackView: View {
                             .allowsHitTesting(false)
                     }
                 }
+                .animation(.easeInOut(duration: 0.2), value: isControlsVisible)
                 // 键里带尺寸：旋转屏幕 / 改窗口后，轨道数与字号要按新尺寸重排。
                 .task(id: danmakuPlanKey(size: proxy.size)) {
                     danmakuRender = makeDanmakuRender(size: proxy.size)
@@ -346,14 +356,24 @@ public struct PlaybackView: View {
         }
     }
 
-    /// 自绘内核画面的共同外壳：双击播放 / 暂停 + 拖动手势。
+    /// 自绘内核画面的共同外壳：双击播放 / 暂停、单击显隐控制条、拖动手势。
+    ///
+    /// **单击 / 双击的优先级**（M03P10）：`exclusively(before:)` 让双击先决 —— 单击只在
+    /// 「没有第二下」之后才触发，所以双击播放时控制条不会先闪一下（M03P6 当时担心的正是这个）。
     private func interactiveLayer(_ content: some View, size: CGSize) -> some View {
         content
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) {
-                // 双击 = 播放 / 暂停。
-                Task { await togglePlayback() }
-            }
+            .gesture(
+                TapGesture(count: 2)
+                    .onEnded { _ in
+                        // 双击 = 播放 / 暂停。
+                        Task { await togglePlayback() }
+                    }
+                    .exclusively(
+                        before: TapGesture(count: 1)
+                            .onEnded { _ in toggleControlsVisibility() }
+                    )
+            )
             .gesture(playerGesture(width: size.width))
     }
 
@@ -436,6 +456,8 @@ public struct PlaybackView: View {
                         // 松手才 seek：一次拖动会产生几十个中间值，逐个 seek 会把内核打爆。
                         let target = latestPosition
                         Task { await engine?.seek(to: target) }
+                        // 跟控制条交互过：自动收起的计时从头算（M03P10）。
+                        scheduleControlsAutoHide()
                     }
                 )
                 .tint(.white)
@@ -455,6 +477,44 @@ public struct PlaybackView: View {
             get: { latestPosition },
             set: { newValue in latestPosition = newValue }
         )
+    }
+
+    /// 控制条自动收起的等待时长（M03P10）。
+    static let controlsAutoHideSeconds: TimeInterval = 4
+
+    /// 控制条该不该自动收起（**纯函数**，有单测）：只有「看得见 + 正在播」才排自动收起 ——
+    /// 暂停 / 缓冲 / 结束 / 失败都留着（那时人要看它）。
+    static func controlsShouldAutoHide(isVisible: Bool, state: PlayerState) -> Bool {
+        isVisible && state == .playing
+    }
+
+    /// 单击画面：切换控制条，并按当前状态重排自动收起的计时。
+    func toggleControlsVisibility() {
+        isControlsVisible.toggle()
+        scheduleControlsAutoHide()
+    }
+
+    /// 重排「自动收起」：条件不满足就把计时取消（不留一个什么都不做的任务在跑）。
+    func scheduleControlsAutoHide() {
+        controlsHideTask?.cancel()
+        controlsHideTask = nil
+        guard Self.controlsShouldAutoHide(isVisible: isControlsVisible, state: playerState) else {
+            return
+        }
+        controlsHideTask = Task {
+            try? await Task.sleep(nanoseconds: UInt64(Self.controlsAutoHideSeconds * 1_000_000_000))
+            guard !Task.isCancelled else {
+                return
+            }
+            isControlsVisible = false
+        }
+    }
+
+    /// 非播放态：取消自动收起并把控制条亮出来。
+    func showControls() {
+        controlsHideTask?.cancel()
+        controlsHideTask = nil
+        isControlsVisible = true
     }
 
     /// 播放 / 暂停（MPV 控制条）。
@@ -543,6 +603,12 @@ extension PlaybackView {
             case let .stateChanged(state):
                 stateText = describe(state)
                 playerState = state
+                // 控制条（M03P10）：播放中才排「几秒后自动收起」；其余状态亮着（暂停时人还要点它）。
+                if state == .playing {
+                    scheduleControlsAutoHide()
+                } else {
+                    showControls()
+                }
                 // 失败要同时上那块醒目的提示：只写「状态」行容易让人以为还在转圈
                 // （自研内核「选硬解但这台机器没有硬解」就走这条路，M04P14）。
                 if case let .failed(reason) = state {
