@@ -24,6 +24,7 @@ struct DiagnosticsReport: Sendable, Equatable {
     var engine: String
     var decoder: String
     var mpvAvailability: String
+    var ffmpegAvailability: String
     var downloads: String
     var hostStatus: String
     var hostTail: [String]
@@ -56,6 +57,7 @@ struct DiagnosticsReport: Sendable, Equatable {
             "内核：\(Self.value(engine))",
             "解码：\(Self.value(decoder))",
             "内核可用性：\(Self.value(mpvAvailability))",
+            "自研内核：\(Self.value(ffmpegAvailability))",
             "",
         ]
         lines.append(contentsOf: playbackSection())

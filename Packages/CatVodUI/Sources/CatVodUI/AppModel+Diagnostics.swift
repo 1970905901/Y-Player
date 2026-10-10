@@ -29,6 +29,7 @@ extension AppModel {
             engine: playbackSettings.engine.displayName,
             decoder: playbackSettings.decoderMode.displayName,
             mpvAvailability: MpvAvailability.summary,
+            ffmpegAvailability: FFmpegAvailability.summary,
             downloads: downloadSummaryText,
             hostStatus: hostStatus.summary,
             hostTail: hostDiagnostics(limit: 12),

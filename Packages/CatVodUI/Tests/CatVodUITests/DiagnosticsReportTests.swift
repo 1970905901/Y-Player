@@ -19,7 +19,10 @@ struct DiagnosticsReportTests {
             interfaceCacheSize: "6.2 MB",
             engine: "MPV",
             decoder: "硬件解码",
-            mpvAvailability: "libmpv=可用，Libavcodec=可用",
+            mpvAvailability: "libmpv=可用；引擎已实装 · 画面路径已接线",
+            ffmpegAvailability: "Libav 6/6：Libavcodec=61.19.100，Libavformat=61.7.100，"
+                + "Libavutil=59.39.100，Libswscale=8.3.100，Libswresample=5.3.100，"
+                + "Libass=可用；引擎未实装",
             downloads: "共 3 条：下载中 1 · 排队 1 · 暂停 0 · 完成 1 · 失败 0",
             hostStatus: "运行中（http://127.0.0.1:9988，55 个站点）",
             hostTail: ["[info] host ready", "[warn] slow"],
@@ -40,6 +43,7 @@ struct DiagnosticsReportTests {
             engine: "",
             decoder: "",
             mpvAvailability: "",
+            ffmpegAvailability: "",
             downloads: "",
             hostStatus: "",
             hostTail: [],
@@ -69,6 +73,7 @@ struct DiagnosticsReportTests {
         #expect(text.contains("App：—"))
         #expect(text.contains("摘要：—"))
         #expect(text.contains("内核可用性：—"))
+        #expect(text.contains("自研内核：—"))
         #expect(text.contains("最近输出：（无）"))
         #expect(text.contains("【失败记录】\n（无）"))
     }
@@ -85,6 +90,7 @@ struct DiagnosticsReportTests {
         #expect(text.contains("拉取时间：2026-10-10 09:10:02"))
         #expect(text.contains("缓存大小：6.2 MB"))
         #expect(text.contains("内核：MPV"))
+        #expect(text.contains("自研内核：Libav 6/6"))
         #expect(text.contains("  [info] host ready"))
         #expect(text.contains("- 本地库打开失败：disk full"))
     }
@@ -184,6 +190,8 @@ struct DiagnosticsWiringTests {
         #expect(report.interfaceKind == "JSON 配置")
         #expect(report.downloads == "共 0 条")
         #expect(report.engine == fixture.model.playbackSettings.engine.displayName)
+        #expect(report.mpvAvailability == MpvAvailability.summary)
+        #expect(report.ffmpegAvailability == FFmpegAvailability.summary)
         #expect(report.text.contains("【接口】"))
     }
 

@@ -17,19 +17,13 @@ public enum MpvAvailability {
         #endif
     }
 
-    /// 自研 FFmpegEngine（M4）要用的 Libav* 是否可用 —— 它们与 libmpv 同源，
-    /// 若为 false 说明 MPVKit 只暴露了 libmpv 而没暴露 FFmpeg 头文件。
-    public static var canImportLibavcodec: Bool {
-        #if canImport(Libavcodec)
-        return true
-        #else
-        return false
-        #endif
-    }
-
-    /// 供界面/日志展示的一行说明（避免各处各写一套）。
+    /// 供界面 / 日志展示的一行说明（避免各处各写一套）。
+    ///
+    /// 只讲 libmpv 与 MPV 引擎自身；Libav* 的事实归 ``FFmpegAvailability``（M4），两边不混用。
     public static var summary: String {
-        "libmpv=\(canImportLibmpv ? "可用" : "不可用")，Libavcodec=\(canImportLibavcodec ? "可用" : "不可用")"
+        let engine = isEngineImplemented ? "引擎已实装" : "引擎未实装"
+        let video = isVideoOutputReady ? "画面路径已接线" : "画面路径未接线"
+        return "libmpv=\(canImportLibmpv ? "可用" : "不可用")；\(engine) · \(video)"
     }
 
     // MARK: - 实装状态（与「依赖是否链接」严格分开）
@@ -52,7 +46,4 @@ public enum MpvAvailability {
     /// ⚠️ 剩下的是**真机/模拟器确认**：Metal 后端在 MPVKit 里是补丁级支持，第一次跑要盯
     /// 「有没有画面、有没有 `dyld` 缺库、HDR 会不会崩」。真出问题只动 `LibmpvSession` 的渲染选项。
     public static let isVideoOutputReady = true
-
-    /// 自研 `FFmpegEngine`（M4）是否已实装。
-    public static let isFFmpegEngineImplemented = false
 }

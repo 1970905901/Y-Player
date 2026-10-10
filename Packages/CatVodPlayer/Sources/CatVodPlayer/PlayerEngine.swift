@@ -27,7 +27,7 @@ public enum PlayerEngineKind: String, Sendable, CaseIterable {
     /// **「能用」= 引擎已实装 + 依赖可用**，而不是「依赖链接上了」。
     /// 之前这里直接看 `canImport(Libmpv)`，一旦 MPVKit 接进来就会立刻返回 true，
     /// 而 `MpvEngine` 还没实装 —— 界面会宣称 MPV 可用却根本播不了。
-    /// 依赖侧的事实现在只由 ``MpvAvailability`` 暴露，两者不混用。
+    /// 依赖侧的事实现在只由 ``MpvAvailability``（libmpv）与 ``FFmpegAvailability``（Libav*）暴露，两者不混用。
     ///
     /// MPV 另有一条：引擎实装后**还要**等渲染路径就绪（没有画面 = 不能用），
     /// 所以 `.mpv` 要 `isEngineImplemented && isVideoOutputReady` 两个都真。
@@ -40,7 +40,7 @@ public enum PlayerEngineKind: String, Sendable, CaseIterable {
         case .mpv:
             return MpvAvailability.isEngineImplemented && MpvAvailability.isVideoOutputReady
         case .ffmpeg:
-            return MpvAvailability.isFFmpegEngineImplemented
+            return FFmpegAvailability.isEngineImplemented
         }
     }
 }
@@ -249,7 +249,13 @@ public struct PlayerCoordinator {
         case .mpv:
             return "MPV 内核不可用：libmpv 依赖缺失，或建引擎时没有给它画面层（渲染路径见 M03P1 第 3 步）"
         case .ffmpeg:
-            return "自研 FFmpeg 内核尚未接入本构建（计划 M4）"
+            // 依赖事实由 `FFmpegAvailability` 提供（M04P4 起），这里只说人话，不再重复探测。
+            guard FFmpegAvailability.isComplete else {
+                let missing = FFmpegAvailability.missingNames.joined(separator: "、")
+                return "自研 FFmpeg 内核（M4）依赖不全：缺 \(missing)"
+            }
+            let libav = "\(FFmpegAvailability.availableCount)/\(FFmpegAvailability.probes.count)"
+            return "自研 FFmpeg 内核（M4）依赖已就绪（Libav \(libav)），引擎尚未实装"
         }
     }
 }

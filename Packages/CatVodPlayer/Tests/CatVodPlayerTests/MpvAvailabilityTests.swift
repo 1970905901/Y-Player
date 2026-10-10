@@ -9,11 +9,6 @@ struct MpvAvailabilityTests {
         #expect(MpvAvailability.canImportLibmpv)
     }
 
-    @Test("Libav* 也应可用（M4 的 FFmpegEngine 复用同一套二进制）")
-    func libavcodecImportable() {
-        #expect(MpvAvailability.canImportLibavcodec)
-    }
-
     @Test("实装 + 渲染路径接线 ⇒ MPV 才是可用（M03P1 第 3/4 步都齐）")
     func engineAndVideoOutputReady() {
         // 这一对断言是接入 MPVKit 时暴露出的真问题：只要看 canImport 就返回 true，
