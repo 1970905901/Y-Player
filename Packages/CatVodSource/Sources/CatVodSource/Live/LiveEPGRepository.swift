@@ -244,13 +244,14 @@ public struct LiveEPGRepository: Sendable {
         let cached = cache?.read(key)
         if !force, let cached,
            EPGFileCachePolicy.refreshReason(exists: true, modifiedAt: cached.modifiedAt, now: now) == nil,
-           let parsed = guide(fromStored: cached.data, entry: entry, timeZone: timeZone, source: source) {
+           let parsed = guide(fromStored: cached.data, entry: entry, timeZone: timeZone, source: source)
+        {
             return EntryLoad(guide: parsed, freshness: cached.modifiedAt)
         }
         do {
             let raw = try await fetchRawData(entry, source: source)
             cache?.store(raw, for: key)
-            return EntryLoad(guide: try guide(fromFetched: raw, entry: entry, timeZone: timeZone, source: source))
+            return try EntryLoad(guide: guide(fromFetched: raw, entry: entry, timeZone: timeZone, source: source))
         } catch let error as CatVodError {
             return EntryLoad(
                 guide: cached.flatMap { guide(fromStored: $0.data, entry: entry, timeZone: timeZone, source: source) },

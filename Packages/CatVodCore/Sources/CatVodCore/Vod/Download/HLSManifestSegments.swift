@@ -74,7 +74,7 @@ public struct HLSManifest: Sendable, Equatable {
     /// 为什么按**前缀**算而不是整份清单：续下只关心「已经写进文件的那几片」没变 ——
     /// 清单在后面长出新片段（VOD 变长之类的写法）不该害得整份重下。
     public func segmentFingerprint(prefix count: Int) -> String {
-        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        var hash: UInt64 = 0xCBF2_9CE4_8422_2325
         func feed(_ text: String) {
             for byte in text.utf8 {
                 hash = (hash ^ UInt64(byte)) &* 0x0000_0100_0000_01B3

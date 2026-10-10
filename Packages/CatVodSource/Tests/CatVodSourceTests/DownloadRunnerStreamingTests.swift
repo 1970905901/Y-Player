@@ -123,7 +123,7 @@ private final class StreamCancelBox: @unchecked Sendable {
 
     func cancel() {
         lock.lock()
-        let task = self.task
+        let task = task
         self.task = nil
         lock.unlock()
         task?.cancel()

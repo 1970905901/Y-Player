@@ -1,5 +1,5 @@
-@testable import CatVodPlayer
 import AVFoundation
+@testable import CatVodPlayer
 import Foundation
 import Testing
 

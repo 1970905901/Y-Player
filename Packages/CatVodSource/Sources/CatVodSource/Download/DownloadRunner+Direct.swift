@@ -33,7 +33,8 @@ extension DownloadRunner {
         while true {
             let piece = try await openPiece(task.url, task: task, from: offset > 0 ? offset : nil, streaming: streaming)
             if offset > 0, piece.status == 206,
-               Self.matchesResume(offset: offset, total: knownTotal, headers: piece.headers) {
+               Self.matchesResume(offset: offset, total: knownTotal, headers: piece.headers)
+            {
                 return try await writePiece(
                     piece, cursor: ChunkCursor(stream: piece.chunks), to: target,
                     mode: .append(from: offset), declaredTotal: knownTotal,
@@ -249,7 +250,8 @@ extension DownloadRunner {
             let halves = parts[1].split(separator: "/")
             guard halves.count == 2, halves[1] != "*",
                   let start = halves[0].split(separator: "-").first.flatMap({ Int64($0) }),
-                  let total = Int64(halves[1]) else {
+                  let total = Int64(halves[1])
+            else {
                 continue
             }
             return (start, total)

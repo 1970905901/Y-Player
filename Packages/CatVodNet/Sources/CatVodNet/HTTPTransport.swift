@@ -138,7 +138,7 @@ public struct HTTPStream: Sendable {
         status: Int,
         headers: [String: String] = [:],
         chunks: AsyncThrowingStream<Data, Error>,
-        cancel: @escaping @Sendable () -> Void = {}
+        cancel: @escaping @Sendable () -> Void = { }
     ) {
         self.status = status
         self.headers = headers

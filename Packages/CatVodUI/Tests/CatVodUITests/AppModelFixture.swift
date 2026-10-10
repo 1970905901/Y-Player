@@ -76,7 +76,6 @@ final class AppModelFixture {
         UserDefaults().removePersistentDomain(forName: suiteName)
         try? FileManager.default.removeItem(at: directory)
     }
-
 }
 
 /// 夹具的默认内联配置。

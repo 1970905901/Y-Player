@@ -293,6 +293,7 @@ enum TinyMP4Fixture {
         }
         guard writer.status == .completed else { throw writer.error ?? FixtureError.finishFailed }
     }
+
     /// VT 的输出回调可能在别的线程上回来：样本先收进这里，编码完再按 pts 排好交给 writer。
     private final class HEVCSampleCollector: @unchecked Sendable {
         private let lock = NSLock()
@@ -344,6 +345,7 @@ enum TinyMP4Fixture {
             }
         }
     }
+
     /// 把整块 BGRA 填成一个灰度值（不用 CoreGraphics 画，省一层依赖）。
     private static func fill(_ pixelBuffer: CVPixelBuffer, gray: UInt8) {
         CVPixelBufferLockBaseAddress(pixelBuffer, [])

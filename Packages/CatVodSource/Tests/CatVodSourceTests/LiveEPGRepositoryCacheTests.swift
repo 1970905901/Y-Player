@@ -40,7 +40,7 @@ struct LiveEPGRepositoryCacheTests {
     }
 
     private func makeCache(_ name: String) throws -> LiveEPGFileCache {
-        LiveEPGFileCache(directory: try makeDirectory(name))
+        try LiveEPGFileCache(directory: makeDirectory(name))
     }
 
     @Test("冷启动：新鲜缓存不发请求，直接用 —— 存的是原样 gz 字节（不是解压后的几十 MB）")

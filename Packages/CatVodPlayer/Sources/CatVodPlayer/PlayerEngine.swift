@@ -203,12 +203,12 @@ public enum DecoderMode: String, Sendable, CaseIterable {
     }
 }
 
-extension PlayerEngineKind {
+public extension PlayerEngineKind {
     /// 这个内核能不能做「音量增益」（M04P23）。
     ///
     /// 系统内核的 `AVPlayer.volume` 上限就是 1（原声）—— 放大不了，界面据此不摆那个滑杆
     /// （与「解码方式对系统内核无效」「画面比例对系统内核不支持」同一套「拿不到就不摆」的规矩）。
-    public var supportsAudioGain: Bool {
+    var supportsAudioGain: Bool {
         self != .system
     }
 }

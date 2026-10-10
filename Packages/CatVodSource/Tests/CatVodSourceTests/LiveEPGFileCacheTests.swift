@@ -18,7 +18,7 @@ struct LiveEPGFileCacheTests {
 
     @Test("文件名：同一个地址永远同一个文件，不同地址不撞")
     func stableFileName() throws {
-        let cache = LiveEPGFileCache(directory: try makeDirectory("names"))
+        let cache = try LiveEPGFileCache(directory: makeDirectory("names"))
         let first = cache.fileName(for: "https://live.example.com/epg/cctv.xml")
         #expect(first == cache.fileName(for: "https://live.example.com/epg/cctv.xml"))
         #expect(first != cache.fileName(for: "https://live.example.com/epg/other.xml"))
@@ -28,7 +28,7 @@ struct LiveEPGFileCacheTests {
 
     @Test("写→读：原样字节 + 落盘时间；没写过的地址读回 nil")
     func roundTrip() throws {
-        let cache = LiveEPGFileCache(directory: try makeDirectory("roundtrip"))
+        let cache = try LiveEPGFileCache(directory: makeDirectory("roundtrip"))
         let url = "https://live.example.com/epg/cctv.xml.gz"
         #expect(cache.read(url) == nil)
 
@@ -42,7 +42,7 @@ struct LiveEPGFileCacheTests {
 
     @Test("概览与清空：条数 / 占用 / 最近写入都在，清空返回删了几个")
     func summaryAndClear() throws {
-        let cache = LiveEPGFileCache(directory: try makeDirectory("summary"))
+        let cache = try LiveEPGFileCache(directory: makeDirectory("summary"))
         cache.store(Data(repeating: 0x41, count: 100), for: "https://a.example.com/1.xml")
         cache.store(Data(repeating: 0x42, count: 50), for: "https://a.example.com/2.xml")
 

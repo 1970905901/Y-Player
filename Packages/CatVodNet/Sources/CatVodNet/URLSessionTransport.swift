@@ -302,7 +302,7 @@ private final class StreamPump: @unchecked Sendable {
     /// 取消生产：取消迭代任务 —— `AsyncBytes` 会随之收尾，`chunks` 以错误结束。
     func cancel() {
         lock.lock()
-        let task = self.task
+        let task = task
         self.task = nil
         lock.unlock()
         task?.cancel()
