@@ -48,4 +48,6 @@
 
 - iOS 15 与最新 iOS 模拟器上各跑一遍：导航推进/返回、列表分组、工具栏按钮、搜索框位置与行为必须与系统习惯一致。
 - macOS 13+ 上验证：窗口工具栏、列表风格、菜单与快捷键为 macOS 原生形态。
-- 代码审查：`Packages/CatVodUI/Sources/CatVodUI/Platform/` 之外不应出现版本分支。
+- 代码审查 + **本地闸门**：`Packages/CatVodUI/Sources/CatVodUI/Platform/` 之外不应出现版本分支 ——
+  `Scripts/check_lint.py` 的 `platform_branch` 规则会拦（业务视图里写 `#available(` / `#if os(` 即命中；
+  `#if canImport(...)` 不算，见上文例外说明）。
