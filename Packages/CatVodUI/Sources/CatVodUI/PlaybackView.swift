@@ -99,6 +99,9 @@ public struct PlaybackView: View {
     @State var gestureBaseBrightness: Double?
     /// 这次拖动在调什么：开始那一刻定，中途不换（横向拐弯也不会跳成调音量）。
     @State var gestureDrag: DragMode?
+    /// 纵甩切集（M03P23）的采样器：记最近一小段 `(时刻, 纵向位移)`，松手那一刻算速度。
+    /// 去掉 `private`：`PlaybackView+Gestures.swift` 要用（与手势那一组同一理由）。
+    @State var gestureSwipe = PlaybackSwipeTracker()
     /// 手势提示条（进度预览 / 音量 / 亮度 / 长按倍速）；空 = 不显示。
     @State var gestureHint = ""
     /// 当前音量（0...1）：自绘内核的手势改的是它；系统内核不碰（音量交给硬件键）。

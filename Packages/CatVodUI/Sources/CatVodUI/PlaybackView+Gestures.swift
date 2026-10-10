@@ -16,9 +16,14 @@ import SwiftUI
 /// | 双指捏合 | 缩放画面 1.0–5.0x（中心锚点），捏回 1.0 就是归位（M03P14） |
 /// | 左半屏纵拖 | 调屏幕亮度：拖动中即时生效；拿不到亮度（macOS）则这次拖动不做事 |
 /// | 右半屏纵拖 | 调音量：拖动中只看百分比，**松手下发内核** |
+/// | 中间一半纵甩 | 切集：上滑下一集、下滑上一集（M03P23）；「是不是一甩」见 ``PlaybackSwipeRules`` |
 ///
 /// **锁屏**（M03P21，`PlaybackView/isLocked`）：锁上之后双击、拖动、长按加速、捏合全停，
 /// 只留单击 —— 锁上时控制条只剩解锁按钮，单击是把它叫回来的唯一办法（``LockedGesturePolicy``）。
+///
+/// **一甩切集**（M03P23，上游 `onFlingUp` / `onFlingDown`）：纵甩够长、够快、够直（见 ``PlaybackSwipeRules``）
+/// 且起手在画面**中间一半** → 上滑下一集、下滑上一集；那一甩顺手调过的音量 / 亮度会**撤回去**
+/// （不撤的话快速换集会一次跳掉小半格音量）。
 ///
 /// 这次拖动调什么由**起点**决定（``DragMode``），开始那一刻定下就不再变 ——
 /// 横向拖到一半拐弯也不会突然跳成调音量。
@@ -156,8 +161,15 @@ extension PlaybackView {
                 }
                 let dx = value.translation.width
                 let dy = value.translation.height
+                let isFirstFrame = gestureDrag == nil
                 let mode = gestureDrag ?? Self.dragMode(dx: dx, dy: dy, startX: value.startLocation.x, width: width)
                 gestureDrag = mode
+                if isFirstFrame {
+                    // 这次拖动的第一帧：清掉上一轮的采样（上一轮可能被长按 / 捏合打断，没走到收尾）。
+                    gestureSwipe.reset()
+                }
+                // 纵甩切集的采样（M03P23）：判不判得成甩在松手那一刻算（见 ``PlaybackSwipeRules``）。
+                gestureSwipe.record(at: Date().timeIntervalSinceReferenceDate, y: Double(dy))
                 switch mode {
                 case .seek:
                     let base = gestureBasePosition ?? latestPosition
@@ -184,6 +196,21 @@ extension PlaybackView {
                 guard !isSpeedBoostHolding, !isZooming, !isLocked else {
                     return
                 }
+                // 一甩切集（M03P23）：先判甩 —— 甩了就撤掉这次顺手做的音量 / 亮度调整，
+                // seek / 下发音量那两条路都不走。
+                // **有播放列表才判**：直播 / 下载播放 / 设置页试播没有「集」这回事，
+                // 那些页面上纵甩还是音量 / 亮度（不然甩一下会白撤一次调整）。
+                let speed = gestureSwipe.speed(at: Date().timeIntervalSinceReferenceDate)
+                gestureSwipe.reset()
+                let swipe: PlaybackSwipeAction? = playlist == nil
+                    ? nil
+                    : Self.swipeAction(value: value, speed: speed, width: width)
+                if let swipe {
+                    revertGestureAdjustment()
+                    settleGesture()
+                    Task { await performSwipe(swipe) }
+                    return
+                }
                 if gestureDrag == .seek, let base = gestureBasePosition {
                     // 进度：松手才 seek。
                     let target = Self.seekTarget(base: base, dx: value.translation.width, width: width, duration: latestDuration)
@@ -193,12 +220,66 @@ extension PlaybackView {
                     let target = Float(volume)
                     Task { await engine?.setVolume(target) }
                 }
-                gestureBasePosition = nil
-                gestureBaseVolume = nil
-                gestureBaseBrightness = nil
-                gestureDrag = nil
+                settleGesture()
+            }
+    }
+
+    // MARK: - 一甩切集（M03P23）
+
+    /// 这次松手算不算一甩：视图上的量递给纯规则（``PlaybackSwipeRules``）。
+    static func swipeAction(value: DragGesture.Value, speed: Double, width: CGFloat) -> PlaybackSwipeAction? {
+        PlaybackSwipeRules.action(
+            translation: value.translation,
+            speed: speed,
+            startX: value.startLocation.x,
+            width: width
+        )
+    }
+
+    /// 撤掉这次拖动里已经做出的音量 / 亮度调整（一甩切集时用）。
+    ///
+    /// 为什么撤：一甩的位移是「切集的手势」，不是「调音量」—— 顺手把音量调掉小半格不是用户要的。
+    func revertGestureAdjustment() {
+        if gestureDrag == .volume, let base = gestureBaseVolume {
+            volume = base
+        } else if gestureDrag == .brightness, let base = gestureBaseBrightness {
+            PlatformShims.setScreenBrightness(base)
+        }
+    }
+
+    /// 拖动收尾：基准 / 这次在调什么 / 提示一起清掉（提示随后由切集流程或下一次手势再写）。
+    func settleGesture() {
+        gestureBasePosition = nil
+        gestureBaseVolume = nil
+        gestureBaseBrightness = nil
+        gestureDrag = nil
+        gestureHint = ""
+    }
+
+    /// 一甩切集：上滑下一集、下滑上一集（上游 `onFlingUp` / `onFlingDown`）。
+    ///
+    /// - 没有播放列表的入口（直播 / 下载播放 / 设置页试播）整个不做 —— 那种页面没有「集」这回事；
+    /// - 到头了直说一句（上游是回头重刷一遍；我们这儿说不出那还能干嘛，不如直说），提示过一会儿自己收；
+    /// - 换集期间提示留在屏上（找地址 / 起播要一会儿），换完（或失败）再清 —— 新画面 / 错误行就是反馈。
+    func performSwipe(_ swipe: PlaybackSwipeAction) async {
+        guard let playlist, let current = currentEpisodeIndex else {
+            return
+        }
+        let target = swipe == .next
+            ? playlist.nextIndex(after: current)
+            : playlist.previousIndex(before: current)
+        guard let target else {
+            let text = swipe == .next ? "已经是最后一集" : "已经是第一集"
+            gestureHint = text
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            if gestureHint == text {
                 gestureHint = ""
             }
+            return
+        }
+        gestureHint = "\(swipe == .next ? "下一集" : "上一集")：\(playlist.episodeName(at: target))"
+        await switchEpisode(to: target)
+        gestureHint = ""
     }
 
     // MARK: - 双指缩放

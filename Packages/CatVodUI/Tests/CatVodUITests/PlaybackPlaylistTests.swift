@@ -21,7 +21,24 @@ struct PlaybackPlaylistRulesTests {
         #expect(PlaybackPlaylistRules.nextIndex(current: -1, count: 3) == nil)
     }
 
-    @Test("播放列表：集名空时回落「第 N 集」，下一集按列表算")
+    @Test("中间集有上一集；第一集没有")
+    func previousIndexBasics() {
+        #expect(PlaybackPlaylistRules.previousIndex(current: 2, count: 3) == 1)
+        #expect(PlaybackPlaylistRules.previousIndex(current: 1, count: 3) == 0)
+        #expect(PlaybackPlaylistRules.previousIndex(current: 0, count: 3) == nil)
+    }
+
+    @Test("只有一集 / 空列表 / 没进过播放页：都没有上一集")
+    func previousIndexEdges() {
+        #expect(PlaybackPlaylistRules.previousIndex(current: 0, count: 1) == nil)
+        #expect(PlaybackPlaylistRules.previousIndex(current: 0, count: 0) == nil)
+        #expect(PlaybackPlaylistRules.previousIndex(current: nil, count: 5) == nil)
+        // 下标越界（配置换过 / 进度里的集对不上）也不猜一个出来。
+        #expect(PlaybackPlaylistRules.previousIndex(current: 9, count: 3) == nil)
+        #expect(PlaybackPlaylistRules.previousIndex(current: -1, count: 3) == nil)
+    }
+
+    @Test("播放列表：集名空时回落「第 N 集」，上一集 / 下一集都按列表算")
     func playlistHelpers() {
         let episodes = [
             PlaylistParser.Episode(name: "", url: "a"),
@@ -33,5 +50,7 @@ struct PlaybackPlaylistRulesTests {
         #expect(playlist.episodeName(at: 9).isEmpty)
         #expect(playlist.nextIndex(after: 0) == 1)
         #expect(playlist.nextIndex(after: 1) == nil)
+        #expect(playlist.previousIndex(before: 1) == 0)
+        #expect(playlist.previousIndex(before: 0) == nil)
     }
 }

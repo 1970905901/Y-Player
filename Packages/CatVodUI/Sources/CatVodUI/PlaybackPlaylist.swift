@@ -45,6 +45,11 @@ public struct PlaybackPlaylist {
     public func nextIndex(after index: Int?) -> Int? {
         PlaybackPlaylistRules.nextIndex(current: index, count: episodes.count)
     }
+
+    /// 上一集是谁（M03P23：播放页「下滑上一集」要用）。
+    public func previousIndex(before index: Int?) -> Int? {
+        PlaybackPlaylistRules.previousIndex(current: index, count: episodes.count)
+    }
 }
 
 /// 换一集的结果：资源 + 它对应的进度上下文 + 标题。
@@ -71,5 +76,13 @@ enum PlaybackPlaylistRules {
             return nil
         }
         return current + 1
+    }
+
+    /// 上一集下标；没有（第一集 / 只有一集 / 没有播放列表）返回 nil（M03P23）。
+    static func previousIndex(current: Int?, count: Int) -> Int? {
+        guard let current, current > 0, current < count else {
+            return nil
+        }
+        return current - 1
     }
 }
