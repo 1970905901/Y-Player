@@ -14,7 +14,9 @@
 
 两条规则都**刻意收窄**（宁可漏报，也不误报 —— 与 check_lint.py 同一条纪律）：
 - error：只在 **func 的签名**（从声明行到第一个 `{`）里找 private 嵌套类型 —— 局部变量、函数体都不看；
-- warning：跨文件引用 private 成员时，**排除在引用文件里自己声明过同名局部**的情况。
+- warning：跨文件引用 private 成员时，**排除在引用文件里自己声明过同名局部**的情况；
+  查找范围是**这份类型散落的全部文件**（主文件 + 各扩展文件）—— M03P25 踩的反方向就在这儿：
+  private 声明在扩展文件、主文件反过来引用它（坑列表第 15 条记过这种形态，当时脚本抓不到）。
 
 ⚠️ 覆盖不了：真正要编译器才知道的东西。改完代码仍然要让 YG 跑
 `swift test --package-path Packages/<包>`（它才是真正的编译闸门）。
@@ -118,7 +120,28 @@ def private_member_names(lines):
     return names
 
 
+def companion_file(name, relative):
+    """这份文件是不是「这个类型的文件」（命名约定：`类型名.swift` / `类型名+xxx.swift`）。
+
+    为什么要有这一步：只按类型名聚合的话，`CodingKeys` / `Entry` 这种名字会把几十个
+    毫不相干的文件聚成一堆，private 成员一查就是满屏假警报。本仓库的扩展文件命名很规矩
+    （`PlaybackView+Danmaku.swift`、`AppModel+Host.swift`…），用约定换准确率。
+    """
+    base = os.path.basename(relative)
+    return base == name + ".swift" or base.startswith(name + "+")
+
+
 def cross_file_warnings(per_file):
+    """跨文件引 private 成员（warning）。
+
+    ⚠️ 按「这份类型散落在哪几个文件」逐个查，而不是只看声明所在的那一个：
+    扩展文件与主文件互为「另一个文件」—— M03P25 的 `danmakuSection` 就是这么漏过去的
+    （private 写在 `PlaybackView+Danmaku.swift`，主文件引用它）。宁可多数几个当警告，
+    也不要漏掉一个真编译错误（这条踩过太多次：M04P19 两次、M25P2、M03P25）。
+
+    文件范围只认本仓库的命名约定（`类型名.swift` / `类型名+xxx.swift`）：像 `CodingKeys` / `Entry`
+    这种到处都在用的嵌套类型名，一按名字聚就全是误报（实测过一次，四条全是假警报）。
+    """
     owners = {}
     files_of = {}
     for relative, lines in per_file.items():
@@ -127,6 +150,8 @@ def cross_file_warnings(per_file):
             if not match:
                 continue
             name = match.group("name")
+            if not companion_file(name, relative):
+                continue
             files_of.setdefault(name, set()).add(relative)
             if match.group("kind") != "extension":
                 owners.setdefault(name, relative)
@@ -135,31 +160,34 @@ def cross_file_warnings(per_file):
     for name, files in sorted(files_of.items()):
         if len(files) < 2 or name not in owners:
             continue
-        main_file = owners[name]
-        members = private_member_names(per_file[main_file])
-        if not members:
-            continue
+        members_of = {relative: private_member_names(per_file[relative]) for relative in files}
         for relative in sorted(files):
-            if relative == main_file:
-                continue
             lines = per_file[relative]
             local_names = declared_names(lines)
+            others = {
+                source: members
+                for source, members in members_of.items()
+                if source != relative and members
+            }
+            if not others:
+                continue
             for index, line in enumerate(lines):
                 if line.strip().startswith("//"):
                     continue
-                for member in sorted(members):
-                    if member in local_names:
-                        continue
-                    # 两个已知的误报形状：别的类型的同名成员（`X.content`）、命名的尾随闭包（`placeholder: {`）
-                    if re.search(r"\.\s*%s\b" % re.escape(member), line):
-                        continue
-                    if re.search(r"\b%s\s*:" % re.escape(member), line):
-                        continue
-                    if re.search(r"\b%s\b" % re.escape(member), line):
-                        findings.append(
-                            "%s:%d [private-across-files] %s 的 private 成员 %s 在另一个文件里被引用"
-                            % (relative, index + 1, name, member)
-                        )
+                for source, members in sorted(others.items()):
+                    for member in sorted(members):
+                        if member in local_names:
+                            continue
+                        # 两个已知的误报形状：别的类型的同名成员（`X.content`）、命名的尾随闭包（`placeholder: {`）
+                        if re.search(r"\.\s*%s\b" % re.escape(member), line):
+                            continue
+                        if re.search(r"\b%s\s*:" % re.escape(member), line):
+                            continue
+                        if re.search(r"\b%s\b" % re.escape(member), line):
+                            findings.append(
+                                "%s:%d [private-across-files] %s 的 private 成员 %s（写在 %s）在这里被引用"
+                                % (relative, index + 1, name, member, source)
+                            )
     return findings
 
 
