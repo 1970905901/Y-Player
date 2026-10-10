@@ -206,9 +206,10 @@ struct LibavFFmpegSessionTests {
         #expect(ended)
         #expect(renderer.enqueued.count == 30)
 
-        // 「解码」那行由第一帧实测：软解模式必须写软解，不是照抄设置
+        // 「解码 / 输出」两行由第一帧实测：软解模式必须写软解，且输出是我们转的 BGRA
         let stats = await session.stats()
         #expect(stats.decodeText == "软件解码")
+        #expect(stats.outputPixelFormat == "BGRA")
         await session.close()
     }
 
@@ -248,9 +249,11 @@ struct LibavFFmpegSessionTests {
         for (current, next) in zip(frames, frames.dropFirst()) {
             #expect(abs(current.duration - (next.presentation - current.presentation)) < 0.002)
         }
-        // 「解码」那行：硬解模式下这里得是硬解（VT 真生效），而不是被软解兜底悄悄接住
+        // 播放信息那几行（M04P15）：解码实测 + 容器帧率（fixture 是 30fps）+ 输出像素格式
         let stats = await session.stats()
         #expect(stats.decodeText == "硬件解码（VideoToolbox）")
+        #expect(abs(stats.fps - 30) < 0.5)
+        #expect(!stats.outputPixelFormat.isEmpty)
         await session.close()
     }
 

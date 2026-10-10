@@ -120,6 +120,15 @@ struct PlaybackStatsTests {
         #expect(some.dropText == "显示 3 · 解码 1")
     }
 
+    @Test("丢帧：只有一侧报得出来就只写那一侧（自研内核只有解码侧计数）")
+    func singleSidedDropCounters() {
+        let decoderOnly = PlaybackStats(rawValues: ["decoder-frame-drop-count": "2"])
+        #expect(decoderOnly.dropText == "解码 2")
+
+        let displayOnly = PlaybackStats(rawValues: ["frame-drop-count": "3"])
+        #expect(displayOnly.dropText == "显示 3")
+    }
+
     @Test("缺字段：缺什么空什么，不编默认值")
     func missingFieldsStayEmpty() {
         let stats = PlaybackStats(rawValues: ["video-params/w": "1920", "video-params/h": "1080"])

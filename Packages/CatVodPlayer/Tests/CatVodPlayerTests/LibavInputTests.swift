@@ -60,6 +60,27 @@ struct LibavInputTests {
         #expect(video.codecName == "h264")
     }
 
+    @Test("帧率与色彩翻译：只认能确证的，认不出给空串")
+    func fpsAndColorNames() {
+        #expect(LibavInput.fps(numerator: 30, denominator: 1) == 30)
+        #expect(LibavInput.fps(numerator: 24000, denominator: 1001) > 23.97)
+        #expect(LibavInput.fps(numerator: 0, denominator: 0) == 0)
+        #expect(LibavInput.fps(numerator: 30, denominator: 0) == 0)
+
+        // 括号里的数字是 FFmpeg 的枚举值（测试目标不 import Libavutil，写在这儿核对）
+        #expect(LibavInput.colorPrimariesName(1) == "bt.709") // AVCOL_PRI_BT709
+        #expect(LibavInput.colorPrimariesName(9) == "bt.2020") // AVCOL_PRI_BT2020
+        #expect(LibavInput.colorPrimariesName(12) == "display-p3") // AVCOL_PRI_SMPTE432
+        #expect(LibavInput.colorPrimariesName(6) == "bt.601") // AVCOL_PRI_SMPTE170M
+        #expect(LibavInput.colorPrimariesName(2).isEmpty) // AVCOL_PRI_UNSPECIFIED：不猜
+
+        #expect(LibavInput.colorTransferName(16) == "pq") // AVCOL_TRC_SMPTE2084（HDR）
+        #expect(LibavInput.colorTransferName(18) == "hlg") // AVCOL_TRC_ARIB_STD_B67（HDR）
+        #expect(LibavInput.colorTransferName(1) == "bt.709") // AVCOL_TRC_BT709
+        #expect(LibavInput.colorTransferName(4) == "bt.470m") // AVCOL_TRC_GAMMA22
+        #expect(LibavInput.colorTransferName(2).isEmpty) // AVCOL_TRC_UNSPECIFIED
+    }
+
     @Test("nextPacket：包按流下标读出，读到尾 isAtEnd 标上（统一 demux 的入口）")
     func readsPackets() async throws {
         let url = FileManager.default.temporaryDirectory

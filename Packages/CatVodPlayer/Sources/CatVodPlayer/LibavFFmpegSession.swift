@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreVideo
 import Foundation
 
 /// 自研 FFmpeg 内核的**真实会话**（M04P14 起：音视频 + seek + 软解兜底都接上）：
@@ -51,6 +52,10 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     private var loggedVideoSilence = false
     /// 实际跑起来的解码路径（第一帧定）：解码线程写、控制路径（`stats()`）读 —— 用 `lock` 串。
     private var actualDecodeIsHardware: Bool?
+    /// 真正交给显示层的像素格式（第一帧的 `CVPixelBuffer` 实测）：播放信息「输出」那行用。
+    private var actualOutputPixelFormat: String?
+    /// 解码侧丢帧快照（解码线程写、控制路径读，都走 `lock`）。
+    private var decoderDroppedSnapshot = 0
     private var reportedHardwareFallback = false
 
     /// 生产入口：给画面层 —— 音视频挂**同一条** synchronizer（音画同步结构自带）。
@@ -172,6 +177,16 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
             raw["video-params/w"] = String(video.width)
             raw["video-params/h"] = String(video.height)
             raw["video-format"] = video.codecName
+            if video.fps > 0 {
+                raw["container-fps"] = String(video.fps)
+            }
+            // 源色彩：读不到就是空 —— 播放信息那边「空就不显示」，不猜。
+            if !video.primaries.isEmpty {
+                raw["video-params/primaries"] = video.primaries
+            }
+            if !video.gamma.isEmpty {
+                raw["video-params/gamma"] = video.gamma
+            }
         }
         if let audio = info.streams.first(where: { $0.kind == .audio }) {
             raw["audio-codec"] = audio.codecName
@@ -179,13 +194,23 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         if !info.containerName.isEmpty {
             raw["file-format"] = info.containerName
         }
-        // 「解码」那行说实话：实际拿到的是哪种帧（硬解不可用时 libav 会自己掉回软解）。
-        // 一帧都还没到就先不写 —— 宁可这行空着，也不猜。
+        // 下面三行都是**第一帧实测**出来的（锁里取快照）：一帧还没到就先不写，宁可空着也不猜。
+        // - 「解码」：实际拿到的是哪种帧（选硬解而硬解不可用时链路会停下报错）；
+        // - 「输出」：真正交给显示层的像素格式（硬解是 VT 的 buffer、软解是我们转的 BGRA）；
+        // - 「丢帧」：解码侧丢了多少（转换不出来的帧）—— 显示侧我们没有读法，不替它写 0。
         lock.lock()
         let isHardware = actualDecodeIsHardware
+        let outputPixelFormat = actualOutputPixelFormat
+        let decoderDropped = decoderDroppedSnapshot
         lock.unlock()
         if let isHardware {
             raw["hwdec-current"] = isHardware ? "videotoolbox" : "no"
+        }
+        if let outputPixelFormat {
+            raw["video-out-params/pixelformat"] = outputPixelFormat
+        }
+        if decoderDropped > 0 {
+            raw["decoder-frame-drop-count"] = String(decoderDropped)
         }
         return PlaybackStats(rawValues: raw)
     }
@@ -252,6 +277,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
                 failHardwareFallback()
                 continue
             }
+            noteDroppedFrames()
             emitTimeIfNeeded()
             reportVideoSilenceIfNeeded()
         }
@@ -341,7 +367,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
 
     /// 收一帧视频：先发上一帧（现在知道它的时长了），把这一帧留成 pending。
     private func consume(_ frame: LibavVideoDecoder.Frame) {
-        noteDecodePath(isHardware: frame.isHardware)
+        noteDecodePath(frame)
         if let pending = pendingFrame {
             let delta = frame.seconds - pending.seconds
             let duration = delta > 0.001 ? delta : lastFrameDelta
@@ -378,16 +404,29 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         }
     }
 
-    /// 记下这一帧走的哪条路（播放信息的「解码」行说实话用）。
+    /// 记下这一帧走的哪条路、交给显示层的像素格式（播放信息「解码 / 输出」两行说实话用）。
     ///
     /// 为什么得由第一帧来定：硬解到底生不生效只有帧自己知道 —— 解码层收到非 VT 帧时会记旗标，
     /// 会话这边另查 `hardwareFallbackDetected` 并**停下报错**（不自动降级）。
-    private func noteDecodePath(isHardware: Bool) {
+    private func noteDecodePath(_ frame: LibavVideoDecoder.Frame) {
+        let format = LibavVideoDecoder.fourCC(CVPixelBufferGetPixelFormatType(frame.pixelBuffer))
         lock.lock()
         let previous = actualDecodeIsHardware
-        if previous == nil || (previous == true && !isHardware) {
-            actualDecodeIsHardware = isHardware
+        if previous == nil || (previous == true && !frame.isHardware) {
+            actualDecodeIsHardware = frame.isHardware
         }
+        if actualOutputPixelFormat != format {
+            actualOutputPixelFormat = format
+        }
+        lock.unlock()
+    }
+
+    /// 解码侧丢帧计数进快照（跟 `stats()` 共用一把锁）：只在变化时写，别让它每包都转一次锁。
+    private func noteDroppedFrames() {
+        let dropped = videoDecoder.droppedFrameCount
+        guard dropped != decoderDroppedSnapshot else { return }
+        lock.lock()
+        decoderDroppedSnapshot = dropped
         lock.unlock()
     }
 

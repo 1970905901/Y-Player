@@ -48,6 +48,12 @@ final class LibavInput: @unchecked Sendable {
         /// 视频才有（其余为 0）。
         var width: Int
         var height: Int
+        /// 容器帧率（`avg_frame_rate` 优先、退化 `r_frame_rate`）；读不到为 0。
+        var fps: Double
+        /// 源的色域（`bt.709` / `bt.2020`…）；读不到给**空串**（播放信息那边"空就不显示"）。
+        var primaries: String
+        /// 源的传输特性（`pq` / `hlg` 是 HDR）；读不到给空串。
+        var gamma: String
     }
 
     /// 一只**借来的**包（见 ``nextPacket()`` 的生命周期约定）。
@@ -131,12 +137,19 @@ final class LibavInput: @unchecked Sendable {
                 } else {
                     typeText = ""
                 }
+                // 帧率：`avg_frame_rate` 是容器认的平均帧率，没有（den = 0）才退到 `r_frame_rate`。
+                let averageRate = stream.pointee.avg_frame_rate
+                let instantRate = stream.pointee.r_frame_rate
+                let frameRate = averageRate.den > 0 ? averageRate : instantRate
                 streams.append(StreamInfo(
                     index: index,
                     kind: StreamInfo.Kind(typeText: typeText),
                     codecName: String(cString: avcodec_get_name(parameters.pointee.codec_id)),
                     width: Int(parameters.pointee.width),
-                    height: Int(parameters.pointee.height)
+                    height: Int(parameters.pointee.height),
+                    fps: Self.fps(numerator: frameRate.num, denominator: frameRate.den),
+                    primaries: Self.colorPrimariesName(Int32(parameters.pointee.color_primaries.rawValue)),
+                    gamma: Self.colorTransferName(Int32(parameters.pointee.color_trc.rawValue))
                 ))
             }
         }
@@ -262,6 +275,42 @@ final class LibavInput: @unchecked Sendable {
             options["headers"] = extra.joined(separator: "\r\n")
         }
         return options
+    }
+
+    /// 帧率（`AVRational` 的分子 / 分母 → Double）；分母为 0 或负给 0。
+    ///
+    /// 签名不摆 `AVRational`（同 `LibavVideoDecoder.seconds`）：纯算术的测试不该被迫 `import Libavutil`。
+    static func fps(numerator: Int32, denominator: Int32) -> Double {
+        guard numerator > 0, denominator > 0 else { return 0 }
+        return Double(numerator) / Double(denominator)
+    }
+
+    /// 源色域 → 播放信息用的名字（与 `PlaybackStats` 认的那套一致）；认不出给**空串**。
+    ///
+    /// 只翻能确证的枚举值 —— 不认识的宁可不显示，也不猜（这一行是要给「HDR 有没有送出去」当证据的）。
+    static func colorPrimariesName(_ raw: Int32) -> String {
+        #if canImport(Libavutil)
+        if raw == Int32(AVCOL_PRI_BT709.rawValue) { return "bt.709" }
+        if raw == Int32(AVCOL_PRI_BT2020.rawValue) { return "bt.2020" }
+        if raw == Int32(AVCOL_PRI_SMPTE432.rawValue) { return "display-p3" }
+        if raw == Int32(AVCOL_PRI_SMPTE170M.rawValue) { return "bt.601" }
+        if raw == Int32(AVCOL_PRI_BT470BG.rawValue) { return "bt.601" }
+        #endif
+        return ""
+    }
+
+    /// 源传输特性（TRC / gamma）→ 播放信息用的名字（`pq` / `hlg` 就是 HDR 的判据）；认不出给空串。
+    static func colorTransferName(_ raw: Int32) -> String {
+        #if canImport(Libavutil)
+        if raw == Int32(AVCOL_TRC_SMPTE2084.rawValue) { return "pq" }
+        if raw == Int32(AVCOL_TRC_ARIB_STD_B67.rawValue) { return "hlg" }
+        if raw == Int32(AVCOL_TRC_BT709.rawValue) { return "bt.709" }
+        if raw == Int32(AVCOL_TRC_SMPTE170M.rawValue) { return "bt.601" }
+        if raw == Int32(AVCOL_TRC_GAMMA22.rawValue) { return "bt.470m" }
+        if raw == Int32(AVCOL_TRC_GAMMA28.rawValue) { return "bt.470g" }
+        if raw == Int32(AVCOL_TRC_LINEAR.rawValue) { return "linear" }
+        #endif
+        return ""
     }
 
     /// FFmpeg 的媒体时长时间基（`AV_TIME_BASE`：1 秒 = 1000000）。
