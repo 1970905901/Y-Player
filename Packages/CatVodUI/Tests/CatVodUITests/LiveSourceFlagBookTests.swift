@@ -24,7 +24,7 @@ struct LiveSourceFlagBookTests {
         #expect(LiveSourceFlagBook.decode(nil).isEmpty)
         #expect(LiveSourceFlagBook.decode("").isEmpty)
         #expect(LiveSourceFlagBook.decode("{不是 JSON").isEmpty)
-        #expect(LiveSourceFlagBook.decode("["数组不是表"]").isEmpty)
+        #expect(LiveSourceFlagBook.decode("[\"数组不是表\"]").isEmpty)
         #expect(LiveSourceFlagBook.decode("{\"\":true,\"演示直播\":false}") == ["演示直播": false])
     }
 
