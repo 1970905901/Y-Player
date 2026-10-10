@@ -52,6 +52,11 @@ final class LibavVideoDecoder: @unchecked Sendable {
     private(set) var streamIndex = -1
     private var timeBase = AVRational(num: 0, den: 1)
 
+    /// 源的色彩信息（打开时读一次）：软解建 buffer 时按它挂 CoreVideo 色彩标签（M04P20）。
+    private var sourcePrimaries: Int32 = 0
+    private var sourceTransfer: Int32 = 0
+    private var sourceMatrix: Int32 = 0
+
     /// 软解那条路的像素转换器（M04P14）：`yuv*` → **420v（NV12）**。按「源格式 + 尺寸」缓存，变了才重建。
     ///
     /// 类型是 `UnsafeMutablePointer<SwsContext>`：libswscale 的头里 `struct SwsContext` 是**前向声明**，
@@ -148,6 +153,10 @@ final class LibavVideoDecoder: @unchecked Sendable {
         self.formatContext = formatContext
         streamIndex = index
         timeBase = stream.pointee.time_base
+        // 源的色彩信息：软解建 buffer 时要照着挂标签（硬解那条由 VT 自己挂）。
+        sourcePrimaries = Int32(parameters.pointee.color_primaries.rawValue)
+        sourceTransfer = Int32(parameters.pointee.color_trc.rawValue)
+        sourceMatrix = Int32(parameters.pointee.color_space.rawValue)
         // 硬解有没有真的生效，看这一行：输出不是 VT 帧的话，后面每一帧都会被丢掉（= 有声音没画面）。
         let pixelFormat = codecContext.pointee.pix_fmt
         let hasDevice = device != nil
@@ -377,6 +386,14 @@ final class LibavVideoDecoder: @unchecked Sendable {
         else {
             return nil
         }
+        // 挂上**源的**色彩标签：420v 什么都不带时 CoreVideo 会自己猜矩阵（对 1080p 这类片子常常猜错）；
+        // 播放信息的「输出」那行读的就是这里挂上去的东西（硬解那条读 VT 挂的）。
+        Self.attachColorTags(
+            to: pixelBuffer,
+            primaries: sourcePrimaries,
+            transfer: sourceTransfer,
+            matrix: sourceMatrix
+        )
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
         // 两个平面各拷各的：Y 是 height 行，CbCr 交织（420）是 ceil(height / 2) 行。
         let chromaRows = (height + 1) / 2
@@ -545,5 +562,95 @@ final class LibavVideoDecoder: @unchecked Sendable {
         }
         frames.append(Frame(pixelBuffer: converted, seconds: seconds, isHardware: false))
         return true
+    }
+}
+
+// MARK: - 色彩标签（M04P20）
+
+/// 色彩标签：软解建 buffer 时按**源**挂 CoreVideo 标签（硬解那条由 VideoToolbox 自己挂），
+/// 送显示后从 buffer 上读回 —— 播放信息的「输出」行拿它说话。
+///
+/// 为什么拆成扩展：类型体行数（`type_body_length`）会把 CI 的 lint 顶红
+/// （同 M04P16~P19 那几组的理由）；这些 `static` 成员不碰实例状态，拆出来零成本。
+extension LibavVideoDecoder {
+    /// 给自建的 buffer 挂上**源的**色彩标签（软解那条路；硬解由 VT 自己挂，M04P20）。
+    ///
+    /// 认不出的值**不挂**（宁可让 CoreVideo 按默认来，也不写一个假的）；
+    /// 三个键分别是：色域 / 传输特性 / YCbCr 矩阵 —— 播放信息的「输出」行读回前两个来说话（矩阵只挂，没有出口）。
+    static func attachColorTags(to buffer: CVPixelBuffer, primaries: Int32, transfer: Int32, matrix: Int32) {
+        if let tag = colorPrimariesTag(primaries) {
+            CVBufferSetAttachment(buffer, kCVImageBufferColorPrimariesKey, tag, .shouldPropagate)
+        }
+        if let tag = transferTag(transfer) {
+            CVBufferSetAttachment(buffer, kCVImageBufferTransferFunctionKey, tag, .shouldPropagate)
+        }
+        if let tag = matrixTag(matrix) {
+            CVBufferSetAttachment(buffer, kCVImageBufferYCbCrMatrixKey, tag, .shouldPropagate)
+        }
+    }
+
+    /// libav 的色域 → CoreVideo 的标签；认不出给 nil。
+    static func colorPrimariesTag(_ raw: Int32) -> CFString? {
+        #if canImport(Libavutil)
+        if raw == Int32(AVCOL_PRI_BT709.rawValue) { return kCVImageBufferColorPrimaries_ITU_R_709_2 }
+        if raw == Int32(AVCOL_PRI_BT2020.rawValue) { return kCVImageBufferColorPrimaries_ITU_R_2020 }
+        if raw == Int32(AVCOL_PRI_SMPTE432.rawValue) { return kCVImageBufferColorPrimaries_P3_D65 }
+        if raw == Int32(AVCOL_PRI_SMPTE170M.rawValue) { return kCVImageBufferColorPrimaries_SMPTE_C }
+        if raw == Int32(AVCOL_PRI_BT470BG.rawValue) { return kCVImageBufferColorPrimaries_SMPTE_C }
+        #endif
+        return nil
+    }
+
+    /// libav 的传输特性 → CoreVideo 的标签（`SMPTE_ST_2084` / `HLG` 就是 HDR 那两种）；认不出给 nil。
+    static func transferTag(_ raw: Int32) -> CFString? {
+        #if canImport(Libavutil)
+        if raw == Int32(AVCOL_TRC_SMPTE2084.rawValue) { return kCVImageBufferTransferFunction_SMPTE_ST_2084 }
+        if raw == Int32(AVCOL_TRC_ARIB_STD_B67.rawValue) { return kCVImageBufferTransferFunction_ITU_R_2100_HLG }
+        if raw == Int32(AVCOL_TRC_BT709.rawValue) { return kCVImageBufferTransferFunction_ITU_R_709_2 }
+        if raw == Int32(AVCOL_TRC_LINEAR.rawValue) { return kCVImageBufferTransferFunction_Linear }
+        #endif
+        return nil
+    }
+
+    /// libav 的矩阵 → CoreVideo 的标签；认不出给 nil。
+    static func matrixTag(_ raw: Int32) -> CFString? {
+        #if canImport(Libavutil)
+        if raw == Int32(AVCOL_SPC_BT709.rawValue) { return kCVImageBufferYCbCrMatrix_ITU_R_709_2 }
+        if raw == Int32(AVCOL_SPC_BT2020_NCL.rawValue) { return kCVImageBufferYCbCrMatrix_ITU_R_2020 }
+        if raw == Int32(AVCOL_SPC_SMPTE170M.rawValue) { return kCVImageBufferYCbCrMatrix_ITU_R_601_4 }
+        if raw == Int32(AVCOL_SPC_BT470BG.rawValue) { return kCVImageBufferYCbCrMatrix_ITU_R_601_4 }
+        #endif
+        return nil
+    }
+
+    /// 从**送显示的那张 buffer 上读回**色彩标签（M04P20）：硬解那条是 VideoToolbox 自己挂的，
+    /// 软解那条是 ``attachColorTags(to:primaries:transfer:matrix:)`` 挂的 —— 读回的是**实际挂上的**，
+    /// 不是我们「打算挂的」。翻成播放信息那套名词；没挂或认不出都给 nil（那边「空就不显示」，不猜）。
+    static func readColorTags(from buffer: CVPixelBuffer) -> (primaries: String?, gamma: String?) {
+        let primariesTag = CVBufferCopyAttachment(buffer, kCVImageBufferColorPrimariesKey, nil) as? String
+        let transferTag = CVBufferCopyAttachment(buffer, kCVImageBufferTransferFunctionKey, nil) as? String
+        return (
+            primaries: primariesTag.flatMap { colorPrimariesName($0) },
+            gamma: transferTag.flatMap { transferName($0) }
+        )
+    }
+
+    /// CoreVideo 的色域标签 → 播放信息用的名字（``colorPrimariesTag(_:)`` 的反查）；认不出给 nil。
+    static func colorPrimariesName(_ tag: String) -> String? {
+        if tag == (kCVImageBufferColorPrimaries_ITU_R_709_2 as String) { return "bt.709" }
+        if tag == (kCVImageBufferColorPrimaries_ITU_R_2020 as String) { return "bt.2020" }
+        if tag == (kCVImageBufferColorPrimaries_P3_D65 as String) { return "display-p3" }
+        if tag == (kCVImageBufferColorPrimaries_SMPTE_C as String) { return "bt.601" }
+        return nil
+    }
+
+    /// CoreVideo 的传输特性标签 → 播放信息用的名字（``transferTag(_:)`` 的反查；`pq` / `hlg` 即 HDR 两种）；
+    /// 认不出给 nil。
+    static func transferName(_ tag: String) -> String? {
+        if tag == (kCVImageBufferTransferFunction_SMPTE_ST_2084 as String) { return "pq" }
+        if tag == (kCVImageBufferTransferFunction_ITU_R_2100_HLG as String) { return "hlg" }
+        if tag == (kCVImageBufferTransferFunction_ITU_R_709_2 as String) { return "bt.709" }
+        if tag == (kCVImageBufferTransferFunction_Linear as String) { return "linear" }
+        return nil
     }
 }

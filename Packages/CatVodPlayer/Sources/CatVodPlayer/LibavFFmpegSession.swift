@@ -14,7 +14,7 @@ import Foundation
 /// - 网络读阻塞期间 `close()` 不保证立刻收线程 —— 在没有 interrupt callback 之前，
 ///   宁可让线程自然退出，也不释放它可能正在读的上下文；
 /// - `stats()` 里画面那几行是**打开时读到的事实**（分辨率 / 编码 / 容器），不是 mpv 那种逐帧快照；
-///   「解码 / 输出」两行例外 —— 它们是第一帧实测出来的。
+///   「解码 / 输出」那几行例外 —— 它们是第一帧实测出来的（输出的色彩标签是 M04P20 从 buffer 读回的）。
 ///
 /// 分层：C 调用全在 `LibavInput` / 两个解码器 / 两个渲染器里，本类只管
 /// 线程、状态与背压。一个会话只服务一次打开（引擎换片会新建会话）。
@@ -76,6 +76,10 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     private var actualDecodeIsHardware: Bool?
     /// 真正交给显示层的像素格式（第一帧的 `CVPixelBuffer` 实测）：播放信息「输出」那行用。
     private var actualOutputPixelFormat: String?
+    /// 送显示那张 buffer 上**实际读回**的色彩标签（M04P20）：硬解是 VT 挂的、软解是我们挂的。
+    /// `nil` = 没挂 / 认不出（认不出不猜，播放信息那边空着）。解码线程写、`stats()` 读 —— 走 `lock`。
+    private var actualOutputPrimaries: String?
+    private var actualOutputGamma: String?
     /// 解码侧丢帧快照（解码线程写、控制路径读，都走 `lock`）。
     private var decoderDroppedSnapshot = 0
     private var reportedHardwareFallback = false
@@ -598,13 +602,16 @@ extension LibavFFmpegSession {
         if !info.containerName.isEmpty {
             raw["file-format"] = info.containerName
         }
-        // 下面三行都是**第一帧实测**出来的（锁里取快照）：一帧还没到就先不写，宁可空着也不猜。
+        // 下面几行都是**第一帧实测**出来的（锁里取快照）：一帧还没到就先不写，宁可空着也不猜。
         // - 「解码」：实际拿到的是哪种帧（选硬解而硬解不可用时链路会停下报错）；
-        // - 「输出」：真正交给显示层的像素格式（硬解是 VT 的 buffer、软解是我们转的 420v）；
+        // - 「输出」：真正交给显示层的像素格式（硬解是 VT 的 buffer、软解是我们转的 420v）
+        //   与色彩标签（M04P20：从那张 buffer 上读回，HDR 有没有送出去看它）；
         // - 「丢帧」：解码侧丢了多少（转换不出来的帧）—— 显示侧我们没有读法，不替它写 0。
         lock.lock()
         let isHardware = actualDecodeIsHardware
         let outputPixelFormat = actualOutputPixelFormat
+        let outputPrimaries = actualOutputPrimaries
+        let outputGamma = actualOutputGamma
         let decoderDropped = decoderDroppedSnapshot
         lock.unlock()
         if let isHardware {
@@ -613,18 +620,26 @@ extension LibavFFmpegSession {
         if let outputPixelFormat {
             raw["video-out-params/pixelformat"] = outputPixelFormat
         }
+        if let outputPrimaries {
+            raw["video-out-params/primaries"] = outputPrimaries
+        }
+        if let outputGamma {
+            raw["video-out-params/gamma"] = outputGamma
+        }
         if decoderDropped > 0 {
             raw["decoder-frame-drop-count"] = String(decoderDropped)
         }
         return PlaybackStats(rawValues: raw)
     }
 
-    /// 记下这一帧走的哪条路、交给显示层的像素格式（播放信息「解码 / 输出」两行说实话用）。
+    /// 记下这一帧走的哪条路、交给显示层的像素格式与色彩标签（播放信息「解码 / 输出」两行说实话用）。
     ///
     /// 为什么得由第一帧来定：硬解到底生不生效只有帧自己知道 —— 解码层收到非 VT 帧时会记旗标，
     /// 会话这边另查 `hardwareFallbackDetected` 并**停下报错**（不自动降级）。
     private func noteDecodePath(_ frame: LibavVideoDecoder.Frame) {
         let format = LibavVideoDecoder.fourCC(CVPixelBufferGetPixelFormatType(frame.pixelBuffer))
+        // 色彩标签从送显示的那张 buffer 上读回（M04P20）：硬解是 VT 挂的、软解是解码器挂的。
+        let colorTags = LibavVideoDecoder.readColorTags(from: frame.pixelBuffer)
         lock.lock()
         let previous = actualDecodeIsHardware
         if previous == nil || (previous == true && !frame.isHardware) {
@@ -633,6 +648,8 @@ extension LibavFFmpegSession {
         if actualOutputPixelFormat != format {
             actualOutputPixelFormat = format
         }
+        actualOutputPrimaries = colorTags.primaries
+        actualOutputGamma = colorTags.gamma
         lock.unlock()
     }
 

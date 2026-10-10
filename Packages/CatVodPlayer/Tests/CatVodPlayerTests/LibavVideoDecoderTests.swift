@@ -106,4 +106,44 @@ struct LibavVideoDecoderTests {
             #expect(previous.seconds <= next.seconds)
         }
     }
+
+    @Test("色彩标签：挂上 → 读回同一套名词；认不出的值不挂（M04P20）")
+    func colorTagRoundTrip() throws {
+        let tagged = try #require(Self.makePixelBuffer())
+        // 9 = AVCOL_PRI_BT2020 / AVCOL_SPC_BT2020_NCL，16 = AVCOL_TRC_SMPTE2084 ——
+        // 枚举值是 FFmpeg 的稳定 ABI；测试 target 不依赖 Libavutil，只能把字面量写在注释里。
+        LibavVideoDecoder.attachColorTags(to: tagged, primaries: 9, transfer: 16, matrix: 9)
+        let readBack = LibavVideoDecoder.readColorTags(from: tagged)
+        #expect(readBack.primaries == "bt.2020")
+        #expect(readBack.gamma == "pq")
+
+        let empty = try #require(Self.makePixelBuffer())
+        LibavVideoDecoder.attachColorTags(to: empty, primaries: 999, transfer: 999, matrix: 999)
+        let nothing = LibavVideoDecoder.readColorTags(from: empty)
+        #expect(nothing.primaries == nil)
+        #expect(nothing.gamma == nil)
+    }
+
+    @Test("CoreVideo 标签 → 播放信息名词：只翻能确证的，认不出给 nil（M04P20）")
+    func colorTagNames() {
+        let tag709 = kCVImageBufferColorPrimaries_ITU_R_709_2 as String
+        let tag2020 = kCVImageBufferColorPrimaries_ITU_R_2020 as String
+        let tagPQ = kCVImageBufferTransferFunction_SMPTE_ST_2084 as String
+        let tagHLG = kCVImageBufferTransferFunction_ITU_R_2100_HLG as String
+        #expect(LibavVideoDecoder.colorPrimariesName(tag709) == "bt.709")
+        #expect(LibavVideoDecoder.colorPrimariesName(tag2020) == "bt.2020")
+        #expect(LibavVideoDecoder.transferName(tagPQ) == "pq")
+        #expect(LibavVideoDecoder.transferName(tagHLG) == "hlg")
+        #expect(LibavVideoDecoder.colorPrimariesName("Unknown") == nil)
+        #expect(LibavVideoDecoder.transferName("Unknown") == nil)
+    }
+
+    /// 8×8 的 420v buffer：只用来挂 / 读色彩附件，不参与解码。
+    private static func makePixelBuffer() -> CVPixelBuffer? {
+        var buffer: CVPixelBuffer?
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault, 8, 8, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, nil, &buffer
+        )
+        return status == kCVReturnSuccess ? buffer : nil
+    }
 }
