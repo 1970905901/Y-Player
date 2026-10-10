@@ -328,26 +328,66 @@ public struct VodDetailView: View {
                 guard episodes.indices.contains(index) else {
                     return nil
                 }
-                let target = episodes[index]
-                let context = progressContext(for: target, at: index)
-                if let resource = makeResource(for: target) {
-                    return PlaybackEpisodeResource(
-                        resource: resource,
-                        progressContext: context,
-                        title: target.displayName
-                    )
-                }
-                guard let site, isSpiderPlayable(site) || requiresSitePlay(site, episode: target) else {
+                return await episodeResource(for: episodes[index], at: index)
+            }
+        )
+    }
+
+    /// 把某一集变成资源：直链（type 0/1/2）同步造；要向站点 / 宿主换地址的（type 3/4）异步换；
+    /// 需要解析链的返回 nil（那条路播放页不自己走）。
+    ///
+    /// **换集与换线路（M03P17）共用这一条** —— 取地址的规则只有一份。
+    func episodeResource(for episode: PlaylistParser.Episode, at index: Int) async -> PlaybackEpisodeResource? {
+        let context = progressContext(for: episode, at: index)
+        if let resource = makeResource(for: episode) {
+            return PlaybackEpisodeResource(
+                resource: resource,
+                progressContext: context,
+                title: episode.displayName
+            )
+        }
+        guard let site, isSpiderPlayable(site) || requiresSitePlay(site, episode: episode) else {
+            return nil
+        }
+        guard let resource = await siteResource(site: site, episode: episode) else {
+            return nil
+        }
+        return PlaybackEpisodeResource(
+            resource: resource,
+            progressContext: context,
+            title: episode.displayName
+        )
+    }
+
+    /// 播放页自己的换线路能力（M03P17，对齐上游播放页的线路条）：线路清单 + 「另一条线路上的同一集怎么取」。
+    ///
+    /// 只有一条线路时不给（播放页据此不显示线路区）。
+    /// 同一集的找法：**先按集名**（线路之间集数 / 顺序常常不一样），名字对不上再按下标兜底
+    /// （规则在 `PlaybackLineSwitcher.matchIndex`，有单测）。
+    func lineSwitcher(currentIndex: Int) -> PlaybackLineSwitcher? {
+        guard lines.count > 1 else {
+            return nil
+        }
+        return PlaybackLineSwitcher(
+            lines: lines.map(\.name),
+            current: currentLine?.name ?? "",
+            load: { line, episodeName, index in
+                guard let target = lines.first(where: { $0.name == line }),
+                      let hit = PlaybackLineSwitcher.matchIndex(
+                          episodeName: episodeName,
+                          index: index,
+                          names: target.episodes.map(\.name)
+                      )
+                else {
                     return nil
                 }
-                guard let resource = await siteResource(site: site, episode: target) else {
-                    return nil
+                return await episodeResource(for: target.episodes[hit], at: hit)
+            },
+            onLineChanged: { line in
+                // 详情页的线路选择跟着换：返回时停在刚看的那条线上。
+                if let index = lines.firstIndex(where: { $0.name == line }) {
+                    selectedLineIndex = index
                 }
-                return PlaybackEpisodeResource(
-                    resource: resource,
-                    progressContext: context,
-                    title: target.displayName
-                )
             }
         )
     }
@@ -384,7 +424,8 @@ public struct VodDetailView: View {
                     await enqueuePlaybackDownload(requests, siteKey: siteKey, title: title, headers: headers)
                 },
                 onPlaybackStats: { model.notePlaybackStats($0) },
-                playlist: playlist
+                playlist: playlist,
+                lineSwitcher: lineSwitcher(currentIndex: index)
             )
         } else if let site, isSpiderPlayable(site) {
             // js2p / CatSpider 站点：播放地址要用 `POST /play` 换，因此走异步入口。
@@ -396,7 +437,8 @@ public struct VodDetailView: View {
                 lineName: currentLine?.name ?? "",
                 episodeIndex: index,
                 progressKey: progressKey,
-                playlist: playlist
+                playlist: playlist,
+                lineSwitcher: lineSwitcher(currentIndex: index)
             )
         } else if let site, requiresSitePlay(site, episode: episode) {
             // type=4：播放地址要用站点的 `play` 接口换（`play` + `flag`），同样是异步入口（M06n）。
@@ -408,7 +450,8 @@ public struct VodDetailView: View {
                 lineName: currentLine?.name ?? "",
                 episodeIndex: index,
                 progressKey: progressKey,
-                playlist: playlist
+                playlist: playlist,
+                lineSwitcher: lineSwitcher(currentIndex: index)
             )
         } else if let site, canParse(episode) {
             // 需要解析（`parse/jx = 1`）的集：走解析链（M5b 已支持 type=1 JSON；type=0/4 会给出 M5c 的原因）。

@@ -30,10 +30,16 @@ public struct PlaybackView: View {
     /// 播放列表（M12P1）：给了它，播放页就能自己换集（选集 / 下一集 / 片尾连播）；
     /// nil = 这页不换集（直播、下载播放、设置页试播这些入口不传）。
     let playlist: PlaybackPlaylist?
+    /// 播放页自己的换线路能力（M03P17）：详情页把「线路清单 + 另一条线路上的那一集怎么取」包好传进来。
+    /// `nil`（拿不到线路清单 / 只有一条线）= 不显示线路区。
+    let lineSwitcher: PlaybackLineSwitcher?
     /// 当前是第几集（换集时更新，供「选集」抽屉高亮与「下一集」判定）。
-    @State private var currentEpisodeIndex: Int?
+    /// 去掉 `private`：`PlaybackView+Lines.swift`（换线路）要用。
+    @State var currentEpisodeIndex: Int?
     /// 「选集」抽屉是否展开。
     @State private var isEpisodeDrawerPresented = false
+    /// 当前线路（M03P17）：起手是详情页选的那条，换线路后就地更新。
+    @State var selectedLine = ""
     /// 「开始一次播放」的回传口（M06l）：换集/换台时上层用它把跨集累计的东西归零（当前用于「跳过广告」统计）。
     ///
     /// 为什么不让播放页直接拿 `AppModel`：这里只需要「播了」这一个信号，
@@ -104,7 +110,8 @@ public struct PlaybackView: View {
     @State var speedBoostEndedAt: Date?
     @State private var stateText = "准备中…"
     @State private var engineText = ""
-    @State private var errorText = ""
+    /// 出错文案（换线路失败也走它，见 `PlaybackView+Lines.swift`）—— 跨文件要用，模块内。
+    @State var errorText = ""
     @State private var eventTask: Task<Void, Never>?
     @State private var resumedFromText = ""
     /// 片头 / 片尾标记（M03P16）：秒；0 = 没标。与进度写在同一份记录里（`opening` / `ending` 两列）。
@@ -163,6 +170,7 @@ public struct PlaybackView: View {
         onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> DownloadEnqueueOutcome)? = nil,
         onPlaybackStats: ((PlaybackStats) -> Void)? = nil,
         playlist: PlaybackPlaylist? = nil,
+        lineSwitcher: PlaybackLineSwitcher? = nil,
         onStart: (() -> Void)? = nil
     ) {
         _activeResource = State(initialValue: resource)
@@ -171,6 +179,8 @@ public struct PlaybackView: View {
         _activeProgressContext = State(initialValue: progressContext)
         self.playlist = playlist
         _currentEpisodeIndex = State(initialValue: playlist?.currentIndex)
+        self.lineSwitcher = lineSwitcher
+        _selectedLine = State(initialValue: lineSwitcher?.current ?? "")
         self.progressStore = progressStore
         self.danmaku = danmaku
         self.onDanmaku = onDanmaku
@@ -222,6 +232,7 @@ public struct PlaybackView: View {
                         }
                     }
                 }
+                lineSection
                 openingEndingSection
                 Section("媒体") {
                     Text(activeResource.url)
@@ -714,9 +725,21 @@ extension PlaybackView {
         }
         currentEpisodeIndex = index
         playlist.onIndexChanged?(index)
+        await applyEpisode(
+            next,
+            fallbackTitle: playlist.episodeName(at: index),
+            episodeName: playlist.episodeName(at: index)
+        )
+    }
+
+    /// 换集 / 换线路的**共同落点**（M12P1 / M03P17）：换资源 → 清界面状态 → 在**同一个引擎**上重新 load。
+    ///
+    /// 位置靠进度记录续上（调用方负责先把当前位置 `persist` 下去）；
+    /// 弹幕按集名重新搜 —— 换集时集名变了要重搜，换线路时集名没变（就是同一集）也不会白跑。
+    func applyEpisode(_ next: PlaybackEpisodeResource, fallbackTitle: String, episodeName: String) async {
         activeResource = next.resource
         activeProgressContext = next.progressContext
-        activeTitle = next.title.isEmpty ? playlist.episodeName(at: index) : next.title
+        activeTitle = next.title.isEmpty ? fallbackTitle : next.title
         // 新一集的界面状态：进度、轨道、提示、错误全部从零开始。
         latestPosition = 0
         latestDuration = 0
@@ -729,9 +752,8 @@ extension PlaybackView {
         audioSelection = .auto
         subtitleSelection = .auto
         isScrubbing = false
-        // 弹幕要按新集重新搜（搜索用的是集名）；没搜到就当这集没有弹幕。
         if let danmaku {
-            onDanmaku?(DanmakuRequest(name: danmaku.name, episode: playlist.episodeName(at: index)))
+            onDanmaku?(DanmakuRequest(name: danmaku.name, episode: episodeName))
         }
         await loadActiveResource()
     }
@@ -839,100 +861,6 @@ extension PlaybackView {
                 Task { await engine?.selectTrack(selection, for: .subtitle) }
             }
         )
-    }
-
-    /// 「播放速度」区：当前值 + 预设 + 恢复。
-    ///
-    /// 排版跟本页其它区一致（一行行文字），因为画面交给系统原生 `VideoPlayer`，我们不自绘播放控件
-    /// （`docs/UI 规范.md`）。范围/步进/预设与显示格式全部对齐上游 `SpeedSetting`；
-    /// 上游那套里**还没做的只剩「跳过静音」**（要内核支持，见 M02P15）——「长按倍速」在 M03P13 接上。
-    private var speedSection: some View {
-        Section("播放速度") {
-            HStack {
-                Text(SpeedSetting.format(speed))
-                    .monospacedDigit()
-                Spacer()
-                Button("恢复 1.0x") {
-                    setSpeed(SpeedSetting.normal, persist: true)
-                }
-                .disabled(SpeedSetting.isNormal(speed))
-            }
-            Slider(
-                value: speedSlider,
-                in: SpeedSetting.minimum ... SpeedSetting.maximum,
-                step: SpeedSetting.step,
-                onEditingChanged: { editing in
-                    // 拖动过程中已经即时生效；松手才落盘（一次拖动几十个中间值，不必写几十次 UserDefaults）。
-                    guard !editing else { return }
-                    PlaybackSpeedBook.save(speed)
-                }
-            )
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(SpeedSetting.presets, id: \.self) { preset in
-                        Button(SpeedSetting.format(preset)) {
-                            setSpeed(preset, persist: true)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(SpeedSetting.isSame(preset, speed) ? .accentColor : .secondary)
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-            HStack {
-                Text("长按倍速")
-                Spacer()
-                Text(SpeedSetting.format(longPressSpeed))
-                    .monospacedDigit()
-                Button("恢复 \(SpeedSetting.format(SpeedSetting.longPress))") {
-                    setLongPressSpeed(SpeedSetting.longPress)
-                }
-                .disabled(SpeedSetting.isSame(longPressSpeed, SpeedSetting.longPress))
-            }
-            Slider(
-                value: longPressSpeedSlider,
-                in: SpeedSetting.longPressMinimum ... SpeedSetting.maximum,
-                step: SpeedSetting.longPressStep
-            )
-        }
-    }
-
-    /// 滑杆绑定：拖动中即时生效（改倍速要能马上听出来）。
-    private var speedSlider: Binding<Float> {
-        Binding(
-            get: { speed },
-            set: { newValue in setSpeed(newValue, persist: false) }
-        )
-    }
-
-    /// 长按倍速滑杆：只有 7 档（2.0–5.0、步进 0.5），**不用等松手** —— 每一档都写一次存档也不心疼。
-    private var longPressSpeedSlider: Binding<Float> {
-        Binding(
-            get: { longPressSpeed },
-            set: { newValue in setLongPressSpeed(newValue) }
-        )
-    }
-
-    /// 改倍速的**唯一出口**：夹紧 → 记进界面 →（可选）落盘 → 下发内核。
-    /// 长按加速松手也走这里回到用户那份倍速（M03P12）—— 跨文件扩展要用，所以是模块内。
-    func setSpeed(_ value: Float, persist: Bool) {
-        let target = SpeedSetting.clamp(value)
-        speed = target
-        if persist {
-            PlaybackSpeedBook.save(target)
-        }
-        guard let engine else {
-            return
-        }
-        Task { await engine.setRate(target) }
-    }
-
-    /// 改长按倍速的**唯一出口**（M03P13）：夹紧 → 记进界面 → 落盘。
-    /// **不下发内核**：它只影响下一次长按，当前正在播的速度不该被它改。
-    private func setLongPressSpeed(_ value: Float) {
-        let target = SpeedSetting.clampLongPress(value)
-        longPressSpeed = target
-        PlaybackSpeedBook.saveLongPressSpeed(target)
     }
 
     /// 时间文本（`1:02:03` 或 `2:34`）。

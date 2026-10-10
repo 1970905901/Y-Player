@@ -27,6 +27,8 @@ struct SitePlayEpisodeView: View {
     let progressKey: PlaybackKey?
     /// 播放页自己的换集能力（M12P1）：详情页包好传进来，这里只转发。
     let playlist: PlaybackPlaylist?
+    /// 播放页自己的换线路能力（M03P17）：同上，只转发。
+    let lineSwitcher: PlaybackLineSwitcher?
 
     @State private var resource: MediaResource?
     /// 站点说「还要再解析一次」时存下 play 的结果，body 里转交给解析链（见 ``loadResource()``）。
@@ -78,6 +80,7 @@ struct SitePlayEpisodeView: View {
                     },
                     onPlaybackStats: { model.notePlaybackStats($0) },
                     playlist: playlist,
+                    lineSwitcher: lineSwitcher,
                     onStart: { model.resetAdSkip() }
                 )
             } else if let parseFallback {
