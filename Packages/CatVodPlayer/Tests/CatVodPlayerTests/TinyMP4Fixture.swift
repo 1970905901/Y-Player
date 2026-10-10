@@ -3,6 +3,7 @@ import AVFoundation
 import CoreMedia
 import CoreVideo
 import Foundation
+import VideoToolbox
 
 /// 生成一个几帧的小 MP4（测试夹具）：给输入层 / demux 类测试一个**离线的确定性输入**。
 ///
@@ -158,47 +159,141 @@ enum TinyMP4Fixture {
         }
     }
 
-    /// 写一个 **10bit** 的 y4m（YUV4MPEG2）原始帧文件：给软解 10bit 那条路当输入（M04P21）。
+    /// 写一个 **10bit（HEVC Main10）** 的小 MP4：给软解 10bit 那条路当输入（M04P21）。
     ///
-    /// 为什么不用 AVAssetWriter 编 HEVC Main10：这台 SDK 的 AVAssetWriter 把
-    /// `AVVideoProfileLevelKey` 判成非法 key，直接抛 NSException
-    /// （`Output settings dictionary contains one or more invalid keys: ProfileLevel`）；
-    /// 不给 profile 又只编 8bit。y4m 是 FFmpeg 原生的裸帧容器：10bit 数据原样进 rawvideo 解码器，
-    /// 走的还是同一条「源格式 → sws → x420」—— 要测的东西一模一样，还不用求编码器。
-    static func writeTenBitY4M(
+    /// 为什么绕这么大一圈：这台 SDK 的 AVAssetWriter 把 `AVVideoProfileLevelKey` 判成非法 key、
+    /// 直接抛 NSException；不给 profile 它又只编 8bit（x420 源也照压）。所以干脆不经过 AVFoundation
+    /// 的编码器配置 —— 用 **VideoToolbox 直编**（`VTCompressionSession` + Main10 profile），
+    /// 编出来的 `CMSampleBuffer` 交给 AVAssetWriter **直通**（`outputSettings: nil`）封成 mp4。
+    static func writeTenBitHEVC(
         to url: URL,
         width: Int = 320,
         height: Int = 240,
         fps: Int = 30,
         frames: Int = 10
-    ) throws {
+    ) async throws {
         try? FileManager.default.removeItem(at: url)
-        var data = Data()
-        data.append(Data("YUV4MPEG2 W\(width) H\(height) F\(fps):1 Ip A1:1 C420p10\n".utf8))
-        // 每帧 = `FRAME\n` + Y 平面（width×height 个 16bit 样本）+ U / V 平面（各一半边长）。
-        let chromaWidth = width / 2
-        let chromaHeight = height / 2
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: nil)
+        input.expectsMediaDataInRealTime = false
+        guard writer.canAdd(input) else { throw FixtureError.writerRejectedInput }
+        writer.add(input)
+        guard writer.startWriting() else { throw writer.error ?? FixtureError.startFailed }
+        writer.startSession(atSourceTime: .zero)
+
+        let collector = HEVCSampleCollector()
+        var session: VTCompressionSession?
+        let attributes: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any],
+        ]
+        let created = VTCompressionSessionCreate(
+            allocator: kCFAllocatorDefault,
+            width: Int32(width),
+            height: Int32(height),
+            codecType: kCMVideoCodecType_HEVC,
+            encoderSpecification: nil,
+            imageBufferAttributes: attributes as CFDictionary,
+            compressedDataAllocator: nil,
+            outputCallback: { refcon, _, status, _, sampleBuffer in
+                guard status == noErr, let refcon, let sampleBuffer else { return }
+                Unmanaged<HEVCSampleCollector>.fromOpaque(refcon).takeUnretainedValue().append(sampleBuffer)
+            },
+            refcon: Unmanaged.passUnretained(collector).toOpaque(),
+            compressionSessionOut: &session
+        )
+        guard created == noErr, let session else { throw FixtureError.videoToolbox(created) }
+        defer { VTCompressionSessionInvalidate(session) }
+        let profileStatus = VTSessionSetProperty(
+            session,
+            key: kVTCompressionPropertyKey_ProfileLevel,
+            value: kVTProfileLevel_HEVC_Main10_AutoLevel
+        )
+        guard profileStatus == noErr else { throw FixtureError.videoToolbox(profileStatus) }
+        _ = VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
+        _ = VTCompressionSessionPrepareToEncodeFrames(session)
+
         for frame in 0 ..< frames {
-            data.append(Data("FRAME\n".utf8))
-            appendSamples(&data, value: frame % 2 == 0 ? 64 : 800, count: width * height)
-            appendSamples(&data, value: 512, count: chromaWidth * chromaHeight)
-            appendSamples(&data, value: 512, count: chromaWidth * chromaHeight)
+            let pixelBuffer = try makeTenBitBuffer(width: width, height: height, gray: frame % 2 == 0 ? 64 : 800)
+            let encodeStatus = VTCompressionSessionEncodeFrame(
+                session,
+                imageBuffer: pixelBuffer,
+                presentationTimeStamp: CMTime(value: CMTimeValue(frame), timescale: CMTimeScale(fps)),
+                duration: CMTime(value: 1, timescale: CMTimeScale(fps)),
+                frameProperties: nil,
+                sourceFrameRefcon: nil,
+                infoFlagsOut: nil
+            )
+            guard encodeStatus == noErr else { throw FixtureError.videoToolbox(encodeStatus) }
         }
-        try data.write(to: url)
+        VTCompressionSessionCompleteFrames(session, untilPresentationTimeStamp: .invalid)
+
+        let samples = collector.sortedSamples()
+        guard samples.count == frames else { throw FixtureError.encodedSampleMissing }
+        for sample in samples {
+            while !input.isReadyForMoreMediaData {
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            guard input.append(sample) else { throw writer.error ?? FixtureError.appendFailed }
+        }
+        input.markAsFinished()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            writer.finishWriting { continuation.resume() }
+        }
+        guard writer.status == .completed else { throw writer.error ?? FixtureError.finishFailed }
     }
 
-    /// 往 y4m 里填一段**小端** 16bit 样本（y4m 的 10bit 就是「16bit 字里放 10bit 值」）。
-    private static func appendSamples(_ data: inout Data, value: UInt16, count: Int) {
-        let low = UInt8(value & 0xFF)
-        let high = UInt8(value >> 8)
-        var bytes = [UInt8](repeating: 0, count: count * 2)
-        for index in 0 ..< count {
-            bytes[index * 2] = low
-            bytes[index * 2 + 1] = high
+    /// VT 的输出回调可能在别的线程上回来：样本先收进这里，编码完再按 pts 排好交给 writer。
+    private final class HEVCSampleCollector: @unchecked Sendable {
+        private let lock = NSLock()
+        private var samples: [(pts: CMTime, sample: CMSampleBuffer)] = []
+
+        func append(_ sample: CMSampleBuffer) {
+            let pts = CMSampleBufferGetPresentationTimeStamp(sample)
+            lock.lock()
+            samples.append((pts, sample))
+            lock.unlock()
         }
-        data.append(contentsOf: bytes)
+
+        func sortedSamples() -> [CMSampleBuffer] {
+            lock.lock()
+            defer { lock.unlock() }
+            return samples.sorted { $0.pts < $1.pts }.map { $0.sample }
+        }
     }
 
+    /// 造一张 x420（10bit 双平面）的灰度帧：Y 一个值、CbCr 中性 512（10bit 的中灰）。
+    private static func makeTenBitBuffer(width: Int, height: Int, gray: UInt16) throws -> CVPixelBuffer {
+        var buffer: CVPixelBuffer?
+        let attributes: [String: Any] = [
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any],
+        ]
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            width,
+            height,
+            kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
+            attributes as CFDictionary,
+            &buffer
+        )
+        guard status == kCVReturnSuccess, let buffer else { throw FixtureError.noPixelBuffer }
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        fillTenBitPlane(buffer, plane: 0, value: gray, columns: width, rows: height)
+        fillTenBitPlane(buffer, plane: 1, value: 512, columns: (width + 1) / 2 * 2, rows: (height + 1) / 2)
+        return buffer
+    }
+
+    private static func fillTenBitPlane(_ buffer: CVPixelBuffer, plane: Int, value: UInt16, columns: Int, rows: Int) {
+        guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, plane) else { return }
+        let rowBytes = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
+        for row in 0 ..< rows {
+            let samples = (base + row * rowBytes).assumingMemoryBound(to: UInt16.self)
+            for column in 0 ..< columns {
+                samples[column] = value
+            }
+        }
+    }
     /// 把整块 BGRA 填成一个灰度值（不用 CoreGraphics 画，省一层依赖）。
     private static func fill(_ pixelBuffer: CVPixelBuffer, gray: UInt8) {
         CVPixelBufferLockBaseAddress(pixelBuffer, [])
@@ -215,5 +310,7 @@ enum TinyMP4Fixture {
         case appendFailed
         case finishFailed
         case noAudioBuffer
+        case videoToolbox(OSStatus)
+        case encodedSampleMissing
     }
 }
