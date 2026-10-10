@@ -15,7 +15,7 @@ extension PlaybackView {
     @ViewBuilder
     var openingEndingSection: some View {
         if activeProgressContext != nil, latestDuration > 0 {
-            Section("片头 / 片尾") {
+            Section {
                 markRow(
                     title: "片头",
                     mark: openingMark,
@@ -30,6 +30,8 @@ extension PlaybackView {
                     onMark: markEnding,
                     onClear: clearEnding
                 )
+            } header: {
+                Text("片头 / 片尾")
             } footer: {
                 Text("片头 / 片尾只在开头 / 结尾附近能标（<15 分钟片 3 分钟、<30 分钟 6 分钟、更长 10 分钟）。标好后：开播跳过片头、播到片尾自动下一集。")
             }
