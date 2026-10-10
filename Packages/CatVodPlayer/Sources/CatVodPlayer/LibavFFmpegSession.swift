@@ -948,24 +948,29 @@ extension LibavFFmpegSession {
     /// 「第一帧实测」那组快照（`stats()` 要用）：一次进锁全带走。
     ///
     /// `stats()` 也是 `async`，不能在它体内直接加锁 —— 与 M03P11 六个控制方法同一理由。
-    /// 五个字段打包成一个快照回来，调用方拿到的还是「同一瞬间」的那组值（不逐字段加锁）。
-    private func decodePathSnapshot() -> (
-        isHardware: Bool?,
-        pixelFormat: String?,
-        primaries: String?,
-        gamma: String?,
-        displayDropped: Int,
-        decoderDropped: Int
-    ) {
+    /// 六个字段打包成一个快照回来，调用方拿到的还是「同一瞬间」的那组值（不逐字段加锁）。
+    ///
+    /// 为什么是结构体不是元组（M06p 首验后改）：SwiftLint 的 `large_tuple` 在 4 个成员以上就是
+    /// **error**（CI 的 Lint 作业就红在这一条），而元组也没法逐字段写文档。
+    private struct DecodePathSnapshot {
+        var isHardware: Bool?
+        var pixelFormat: String?
+        var primaries: String?
+        var gamma: String?
+        var displayDropped: Int
+        var decoderDropped: Int
+    }
+
+    private func decodePathSnapshot() -> DecodePathSnapshot {
         lock.lock()
         defer { lock.unlock() }
-        return (
-            actualDecodeIsHardware,
-            actualOutputPixelFormat,
-            actualOutputPrimaries,
-            actualOutputGamma,
-            displayDroppedSnapshot,
-            decoderDroppedSnapshot
+        return DecodePathSnapshot(
+            isHardware: actualDecodeIsHardware,
+            pixelFormat: actualOutputPixelFormat,
+            primaries: actualOutputPrimaries,
+            gamma: actualOutputGamma,
+            displayDropped: displayDroppedSnapshot,
+            decoderDropped: decoderDroppedSnapshot
         )
     }
 }
