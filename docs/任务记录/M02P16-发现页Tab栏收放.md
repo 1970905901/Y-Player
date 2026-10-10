@@ -51,4 +51,6 @@
 
 - 其它页面（搜索 / 追剧 / 直播 / 设置）不收起 Tab 栏 —— 这次只按原话改发现页；若要推广，
   把状态机与两个旁听手势提到公共容器即可，状态机本身与页面无关；
-- 进详情页不隐藏 Tab 栏（现状如此，也没要求）。
+- ~~进详情页不隐藏 Tab 栏（现状如此，也没要求）~~ → **已改**：沉浸页（详情 / 播放……）经
+  `ImmersiveTabBarState` 收起本 Tab 的底部栏（`Platform/AdaptiveTabBar.swift` 的
+  `ImmersiveTabBarPageModifier`，「沉浸视图」那个需求落地时做的）。
