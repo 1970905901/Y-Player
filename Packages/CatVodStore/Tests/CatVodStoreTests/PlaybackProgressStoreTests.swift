@@ -54,6 +54,25 @@ struct PlaybackProgressStoreTests {
         #expect(cleared == nil)
     }
 
+    @Test("片头 / 片尾随记录保存：默认 0，负数夹到 0（M03P16）")
+    func openingEnding() async {
+        let store = InMemoryPlaybackProgressStore()
+        let target = key("cat", "9")
+        await store.save(PlaybackProgress(key: target, position: 30, duration: 2700, opening: 90, ending: 120))
+
+        let loaded = await store.progress(for: target)
+        #expect(loaded?.opening == 90)
+        #expect(loaded?.ending == 120)
+
+        // 没标就是 0；写进来负数当 0（与 position / duration 同一口径）
+        let plain = PlaybackProgress(key: key("cat", "10"), position: 10, duration: 100)
+        #expect(plain.opening == 0)
+        #expect(plain.ending == 0)
+        let dirty = PlaybackProgress(key: key("cat", "11"), position: 10, duration: 100, opening: -5, ending: -1)
+        #expect(dirty.opening == 0)
+        #expect(dirty.ending == 0)
+    }
+
     @Test("all() 按更新时间倒序，不同站点的同一个 vodID 互不覆盖")
     func storeKeysAndOrdering() async {
         let store = InMemoryPlaybackProgressStore()

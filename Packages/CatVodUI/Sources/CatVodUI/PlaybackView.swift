@@ -107,6 +107,12 @@ public struct PlaybackView: View {
     @State private var errorText = ""
     @State private var eventTask: Task<Void, Never>?
     @State private var resumedFromText = ""
+    /// 片头 / 片尾标记（M03P16）：秒；0 = 没标。与进度写在同一份记录里（`opening` / `ending` 两列）。
+    /// 去掉 `private`：`PlaybackView+OpeningEnding.swift` 要用（与手势那组同一理由）。
+    @State var openingMark: Double = 0
+    @State var endingMark: Double = 0
+    /// 这一集已经因为片尾跳走了：别每个位置事件都再跳一次（换集时清）。
+    @State var didSkipEnding = false
     /// 最近一次的位置 / 总时长：手势换算要用（M03P12），跨文件扩展看不见 `private` —— 模块内。
     @State var latestPosition: Double = 0
     @State var latestDuration: Double = 0
@@ -216,6 +222,7 @@ public struct PlaybackView: View {
                         }
                     }
                 }
+                openingEndingSection
                 Section("媒体") {
                     Text(activeResource.url)
                         .font(.caption)
@@ -599,6 +606,7 @@ extension PlaybackView {
                 // 覆盖层：把「这一刻的位置 + 倍速」一起采下来，下一次上报之前靠外推补足。
                 playbackClock.sample(position: current, rate: clockRate(), at: Date())
                 await persist(force: false)
+                await skipEndingIfNeeded(current: current, duration: duration)
             case let .speedChanged(rate):
                 // 变速：**先外推再换速率** —— 直接改会把这一次上报之前已经走过的距离丢掉，弹幕往回跳。
                 playbackRate = Double(rate)
@@ -620,18 +628,28 @@ extension PlaybackView {
 
     /// 续播资源：有进度记录时把 `startPosition` 换成上次位置。
     func resumableResource() async -> MediaResource {
+        // 片头 / 片尾标记跟着这一集的记录走：先清零，免得上一条记录（上一集）的标记漏过来。
+        openingMark = 0
+        endingMark = 0
         guard let activeProgressContext, let progressStore,
               let saved = await progressStore.progress(for: activeProgressContext.key)
         else {
             return activeResource
         }
         let resume = saved.resumePosition()
-        guard resume > 0 else {
+        openingMark = saved.opening
+        endingMark = saved.ending
+        // 起播位置：片头与上次位置取靠后的那个（上游 `VodHistoryPolicy.startPositionMs`）。
+        let start = PlaybackOpeningEndingRules.startPosition(opening: saved.opening, resume: resume)
+        guard start > 0 else {
             return activeResource
         }
         var copy = activeResource
-        copy.startPosition = resume
-        resumedFromText = "已从上次位置续播（\(Self.timeText(resume))）"
+        copy.startPosition = start
+        // 两种起播位置分开说：片头比续播位置更靠后才是「跳过片头」，否则照旧说「续播」。
+        resumedFromText = saved.opening > resume
+            ? "已跳过片头（\(Self.timeText(start)) 起播）"
+            : "已从上次位置续播（\(Self.timeText(start))）"
         return copy
     }
 
@@ -651,6 +669,8 @@ extension PlaybackView {
                 position: latestPosition,
                 duration: latestDuration,
                 isFinished: isFinished,
+                opening: openingMark,
+                ending: endingMark,
                 episodeIndex: activeProgressContext.episodeIndex,
                 updatedAt: now,
                 metadata: activeProgressContext.metadata
@@ -675,7 +695,8 @@ extension PlaybackView {
     // MARK: - 换集（M12P1）
 
     /// 下一集下标；没有播放列表 / 已经是最后一集 → nil。
-    private var nextEpisodeIndex: Int? {
+    /// （去掉 `private`：`PlaybackView+OpeningEnding.swift` 的片尾跳集要用。）
+    var nextEpisodeIndex: Int? {
         playlist?.nextIndex(after: currentEpisodeIndex)
     }
 
@@ -701,6 +722,7 @@ extension PlaybackView {
         latestDuration = 0
         isFinished = false
         resumedFromText = ""
+        didSkipEnding = false
         errorText = ""
         audioTracks = []
         subtitleTracks = []

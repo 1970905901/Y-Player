@@ -7,7 +7,10 @@ import GRDB
 /// 存储形态：主键 ``PlaybackKey/storageKey``，另冗余 `siteKey` / `vodID` 两列；
 /// `metadata`（片名/封面/站源/线路/集名）存 JSON 文本，读取失败时退化为空元数据而不是整条记录失败。
 public struct GRDBPlaybackProgressStore: PlaybackProgressStore {
-    private static let columns = "vodKey, siteKey, vodID, position, duration, isFinished, episodeIndex, updatedAt, metadata"
+    private static let columns = [
+        "vodKey", "siteKey", "vodID", "position", "duration", "isFinished",
+        "opening", "ending", "episodeIndex", "updatedAt", "metadata",
+    ].joined(separator: ", ")
 
     private let database: GRDBDatabase
 
@@ -36,8 +39,8 @@ public struct GRDBPlaybackProgressStore: PlaybackProgressStore {
     public func save(_ progress: PlaybackProgress) async {
         let sql = """
         INSERT OR REPLACE INTO playbackProgress
-        (vodKey, siteKey, vodID, position, duration, isFinished, episodeIndex, updatedAt, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (vodKey, siteKey, vodID, position, duration, isFinished, opening, ending, episodeIndex, updatedAt, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         let metadata = Self.encode(progress.metadata)
         database.write { db in
@@ -50,6 +53,8 @@ public struct GRDBPlaybackProgressStore: PlaybackProgressStore {
                     progress.position,
                     progress.duration,
                     progress.isFinished ? 1 : 0,
+                    progress.opening,
+                    progress.ending,
                     progress.episodeIndex,
                     progress.updatedAt.timeIntervalSince1970,
                     metadata,
@@ -89,6 +94,8 @@ public struct GRDBPlaybackProgressStore: PlaybackProgressStore {
         let position: Double = row["position"]
         let duration: Double = row["duration"]
         let isFinished: Int = row["isFinished"]
+        let opening: Double = row["opening"]
+        let ending: Double = row["ending"]
         let episodeIndex: Int = row["episodeIndex"]
         let updatedAt: Double = row["updatedAt"]
         let metadata: String = row["metadata"]
@@ -97,6 +104,8 @@ public struct GRDBPlaybackProgressStore: PlaybackProgressStore {
             position: position,
             duration: duration,
             isFinished: isFinished != 0,
+            opening: opening,
+            ending: ending,
             episodeIndex: episodeIndex,
             updatedAt: Date(timeIntervalSince1970: updatedAt),
             metadata: decode(metadata)

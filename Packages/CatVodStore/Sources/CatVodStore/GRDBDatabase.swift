@@ -123,6 +123,13 @@ public final class GRDBDatabase: Sendable {
                 t.add(column: "resumeFingerprint", .text).notNull().defaults(to: "")
             }
         }
+        // v4：片头 / 片尾标记（M03P16）—— 记在进度记录上（上游把 opening/ending 存在 History 里）。
+        migrator.registerMigration("v4.playbackOpeningEnding") { db in
+            try db.alter(table: "playbackProgress") { t in
+                t.add(column: "opening", .double).notNull().defaults(to: 0)
+                t.add(column: "ending", .double).notNull().defaults(to: 0)
+            }
+        }
         try migrator.migrate(queue)
     }
 }

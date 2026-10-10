@@ -96,6 +96,8 @@ struct GRDBStoreTests {
                 position: 120,
                 duration: 600,
                 isFinished: false,
+                opening: 90,
+                ending: 30,
                 episodeIndex: 8,
                 updatedAt: Date(timeIntervalSince1970: 5000),
                 metadata: metadata
@@ -118,6 +120,8 @@ struct GRDBStoreTests {
         #expect(record.duration == 600)
         #expect(record.episodeIndex == 8)
         #expect(record.metadata == metadata)
+        #expect(record.opening == 90)
+        #expect(record.ending == 30)
         #expect(record.resumePosition() == 120)
         #expect(record.displayName == "片名")
 

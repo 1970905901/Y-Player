@@ -15,6 +15,16 @@ public struct PlaybackProgress: Sendable, Hashable {
     public var duration: Double
     /// 是否已看完（看完后再进应从头上播）。
     public var isFinished: Bool
+    /// 片头跳到哪（秒）：0 = 没标（M03P16，对齐上游 `History.opening`）。
+    ///
+    /// 记的是**片头结束的位置**（上游 `VideoActivity.onOpening` 存的就是当时的播放位置）：
+    /// 下次开播从 `max(opening, 续播位置)` 起（上游 `VodHistoryPolicy.startPositionMs`）。
+    public var opening: Double
+    /// 片尾长度（秒）：0 = 没标（M03P16，对齐上游 `History.ending`）。
+    ///
+    /// 记的是**还剩多久**（上游 `onEnding` 存的是 `duration - position`）：播到
+    /// `位置 + ending >= 总时长` 就进下一集（上游 `VodPlaybackController.onTimeChanged` 里那一行）。
+    public var ending: Double
     /// 最近观看的集下标（**当前线路内**，从 0 开始）；`-1` 表示未知。
     ///
     /// 说明：M2 只记录「线路内下标」——跨线路/跨站的集身份对齐（用集名或 url 匹配）留给 M8 一起做。
@@ -42,6 +52,8 @@ public struct PlaybackProgress: Sendable, Hashable {
         position: Double = 0,
         duration: Double = 0,
         isFinished: Bool = false,
+        opening: Double = 0,
+        ending: Double = 0,
         episodeIndex: Int = -1,
         updatedAt: Date = Date(),
         metadata: PlaybackEntryMetadata = PlaybackEntryMetadata()
@@ -50,6 +62,8 @@ public struct PlaybackProgress: Sendable, Hashable {
         self.position = max(position, 0)
         self.duration = max(duration, 0)
         self.isFinished = isFinished
+        self.opening = max(opening, 0)
+        self.ending = max(ending, 0)
         self.episodeIndex = episodeIndex
         self.updatedAt = updatedAt
         self.metadata = metadata
