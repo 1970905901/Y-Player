@@ -58,6 +58,24 @@ private actor DownloadStubTransport: HTTPTransport {
     }
 }
 
+/// 进度回调的记录器（回调从执行器的上下文来，得自己上锁）。
+private final class ProgressRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [DownloadProgress] = []
+
+    func append(_ progress: DownloadProgress) {
+        lock.lock()
+        defer { lock.unlock() }
+        items.append(progress)
+    }
+
+    var all: [DownloadProgress] {
+        lock.lock()
+        defer { lock.unlock() }
+        return items
+    }
+}
+
 /// 带「挂起」的假传输（M10m 的暂停用）：`hang` 里的地址先等再回。
 ///
 /// 默认的合作式等待（`Task.sleep`）在取消时**立刻抛** —— 真实 `URLSession` 就是这样；
@@ -113,20 +131,48 @@ private actor CancellableStubTransport: HTTPTransport {
     }
 }
 
+/// 一条标准下载任务（各用例共用；放文件级是为了让测试结构体的类型体留在 lint 上限里）。
+private func makeTask(_ url: String) -> DownloadTask {
+    DownloadTask(
+        siteKey: "wogg",
+        title: "某剧",
+        episode: "第 1 集",
+        line: "线路一",
+        url: url,
+        headers: ["User-Agent": "YPlayer", "Referer": "https://site.example"]
+    )
+}
+
+/// 造一个「上一趟下到第 1 片」的半成品 + 对应的任务账目（M10n 的续下用例共用）。
+private func partialTask(
+    _ index: String,
+    segments: Int = 1,
+    fileBytes: Int = 3,
+    fingerprint: String? = nil
+) throws -> (task: DownloadTask, fileName: String) {
+    let manifest = HLSManifestParser.parse(
+        text: "#EXTM3U\n#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-2.ts",
+        baseURL: index
+    )
+    var task = makeTask(index)
+    // 状态给 `.waiting`：队列把「继续」的暂停任务转成 `.waiting` 才交给执行器
+    // （`paused → running` 不是合法迁移，直接塞 `.paused` 会原地不动）。
+    task.status = .waiting
+    task.completedSegments = segments
+    task.receivedBytes = Int64(fileBytes)
+    task.resumeFingerprint = fingerprint ?? manifest.segmentFingerprint(prefix: segments)
+    let fileName = DownloadTask.sanitized("\(task.fileNameBase) · \(task.siteKey)") + ".ts"
+    return (task, fileName)
+}
+
+private func writePartial(_ text: String, named name: String, in directory: URL) throws {
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try Data(text.utf8).write(to: directory.appendingPathComponent(name))
+}
+
 @Suite("下载执行器：直链 / HLS 拼接 / 失败回退")
 struct DownloadRunnerTests {
     private let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("yplayer-download-tests")
-
-    private func makeTask(_ url: String) -> DownloadTask {
-        DownloadTask(
-            siteKey: "wogg",
-            title: "某剧",
-            episode: "第 1 集",
-            line: "线路一",
-            url: url,
-            headers: ["User-Agent": "YPlayer", "Referer": "https://site.example"]
-        )
-    }
 
     private func makeDirectory(_ name: String) throws -> URL {
         let url = root.appendingPathComponent(name)
@@ -351,6 +397,8 @@ struct DownloadRunnerTests {
         // 半成品留着 + 账目记着：下到第 1 片、3 字节
         #expect(outcome.task.completedSegments == 1)
         #expect(outcome.task.receivedBytes == 3)
+        // 半途不报总量（只见过前缀，不冒充整份的总长，M25）
+        #expect(outcome.task.expectedBytes == 0)
         #expect(!outcome.task.resumeFingerprint.isEmpty)
         let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
         #expect(files.count == 1)
@@ -375,34 +423,32 @@ struct DownloadRunnerTests {
         #expect(await fixed.requestedURLs() == [index, second])
     }
 
+    @Test("进度回调：按片段报数，中途不报总量（M25）")
+    func reportsProgress() async throws {
+        let directory = try makeDirectory("progress")
+        let index = "https://cdn.example/v/index.m3u8"
+        let transport = DownloadStubTransport([
+            index: playlist("#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-2.ts"),
+            "https://cdn.example/v/seg-1.ts": segment("AAA"),
+            "https://cdn.example/v/seg-2.ts": segment("BBBB"),
+        ])
+        let runner = DownloadRunner(transport: transport, directory: directory)
+        let recorder = ProgressRecorder()
+
+        let outcome = await runner.run(makeTask(index)) { progress in
+            recorder.append(progress)
+        }
+
+        #expect(outcome.task.status == .finished)
+        let recorded = recorder.all
+        #expect(recorded.map(\.receivedBytes) == [3, 7])
+        // 中途的 expectedBytes 恒为 0：总量要等所有片段收完才知道（不拿前缀冒充）
+        #expect(recorded.map(\.expectedBytes) == [0, 0])
+        #expect(recorded.map(\.completedSegments) == [1, 2])
+        #expect(recorded.map(\.totalSegments) == [2, 2])
+    }
+
     // MARK: - 续下（M10n）
-
-    /// 造一个「上一趟下到第 1 片」的半成品 + 对应的任务账目。
-    private func partialTask(
-        _ index: String,
-        segments: Int = 1,
-        fileBytes: Int = 3,
-        fingerprint: String? = nil
-    ) throws -> (task: DownloadTask, fileName: String) {
-        let manifest = HLSManifestParser.parse(
-            text: "#EXTM3U\n#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-2.ts",
-            baseURL: index
-        )
-        var task = makeTask(index)
-        // 状态给 `.waiting`：队列把「继续」的暂停任务转成 `.waiting` 才交给执行器
-        // （`paused → running` 不是合法迁移，直接塞 `.paused` 会原地不动）。
-        task.status = .waiting
-        task.completedSegments = segments
-        task.receivedBytes = Int64(fileBytes)
-        task.resumeFingerprint = fingerprint ?? manifest.segmentFingerprint(prefix: segments)
-        let fileName = DownloadTask.sanitized("\(task.fileNameBase) · \(task.siteKey)") + ".ts"
-        return (task, fileName)
-    }
-
-    private func writePartial(_ text: String, named name: String, in directory: URL) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try Data(text.utf8).write(to: directory.appendingPathComponent(name))
-    }
 
     @Test("续下：账目 + 指纹对上 → 只取剩下的片段，接着写")
     func resumesFromLedger() async throws {

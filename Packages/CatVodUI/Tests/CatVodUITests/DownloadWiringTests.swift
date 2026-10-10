@@ -198,6 +198,30 @@ struct DownloadWiringTests {
         #expect(!task.failureReason.isEmpty)
     }
 
+    @Test("启动恢复：库里的「下载中」降级成「排队中」，驱动随后接手（M25）")
+    func restoreDowngradesStaleRunning() async throws {
+        let url = "https://cdn.example/1.mp4"
+        let fixture = try AppModelFixture(downloadTransport: WiringTransport([url: direct("hello")]))
+        defer { fixture.tearDown() }
+        await fixture.load()
+
+        // 模拟「上次没跑完就被杀」：库里躺着一条 running（读路径原样读回，M25）
+        var stale = DownloadTask(siteKey: "a", title: "某剧", episode: "第 1 集", line: "线路一", url: url)
+        stale.status = .running
+        await fixture.model.downloadStore.save(stale)
+        await fixture.model.synchronizeDownloads()
+        #expect(fixture.model.downloadTasks.first?.status == DownloadTask.Status.running)
+
+        await fixture.model.restoreDownloads()
+        let restored = try #require(fixture.model.downloadTasks.first)
+        #expect(restored.status == DownloadTask.Status.waiting)
+        // 库里也降了（不是只改镜像）
+        #expect(await fixture.model.downloadStore.all().first?.status == DownloadTask.Status.waiting)
+        // 降级之后驱动能把它接手跑完
+        #expect(await fixture.model.runDownloadQueue() == 1)
+        #expect(fixture.model.downloadTasks.first?.status == DownloadTask.Status.finished)
+    }
+
     @Test("重开模型：任务还在（库是唯一来源）")
     func survivesReopen() async throws {
         let url = "https://cdn.example/1.mp4"
@@ -394,6 +418,15 @@ struct DownloadWiringTests {
         fixture.model.startDownloadDriverIfNeeded()
         let reachedSecond = await waitUntil { await transport.hasStarted(second) }
         #expect(reachedSecond)
+
+        // 下载中在镜像里就是「下载中」（M25：读路径不再把 running 降级成「排队中」），
+        // 进度也是活的：第 1 片已写完、片段数 1/2、总片数在跑的任务里
+        let progressed = await waitUntil { fixture.model.downloadTasks.first?.receivedBytes == 3 }
+        #expect(progressed)
+        let live = try #require(fixture.model.downloadTasks.first)
+        #expect(live.status == DownloadTask.Status.running)
+        #expect(live.completedSegments == 1)
+        #expect(fixture.model.downloadRunSegmentTotals[id] == 2)
 
         await fixture.model.pauseDownload(id: id)
         #expect(fixture.model.downloadTasks.first?.status == DownloadTask.Status.paused)

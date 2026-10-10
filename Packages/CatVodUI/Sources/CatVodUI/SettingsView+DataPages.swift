@@ -83,11 +83,12 @@ struct SettingsDownloadView: View {
                     .foregroundStyle(.secondary)
             }
             if task.status == .running {
-                if let progress = task.progress {
-                    ProgressView(value: progress)
-                } else {
-                    ProgressView()
-                }
+                runningProgress(task)
+            } else if task.status == .paused, task.receivedBytes > 0 {
+                // 暂停了也把「下了多少」说清楚：账目在暂停时并进了任务里（M25）。
+                Text("已下 \(StorageSpace.format(task.receivedBytes))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
             HStack(spacing: 16) {
                 if task.status == .finished, let file = model.localDownloadedFile(forRemoteURL: task.url) {
@@ -129,6 +130,29 @@ struct SettingsDownloadView: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    /// 下载中的进度（M25）：HLS 用**片段数**做比例 —— 中途唯一诚实的进度（字节总量要等所有
+    /// 片段收完才知道，M10a 的口径）；直链没有片段，总量知道就用字节比例，不知道就不确定态。
+    @ViewBuilder
+    private func runningProgress(_ task: DownloadTask) -> some View {
+        let total = model.downloadRunSegmentTotals[task.id] ?? 0
+        let done = total > 0 ? min(task.completedSegments, total) : 0
+        let caption = total > 0
+            ? "已下 \(StorageSpace.format(task.receivedBytes)) · \(done)/\(total) 片"
+            : "已下 \(StorageSpace.format(task.receivedBytes))"
+        VStack(alignment: .leading, spacing: 4) {
+            if total > 0 {
+                ProgressView(value: Double(done), total: Double(total))
+            } else if let progress = task.progress {
+                ProgressView(value: progress)
+            } else {
+                ProgressView()
+            }
+            Text(caption)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func title(of task: DownloadTask) -> String {

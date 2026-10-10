@@ -28,6 +28,31 @@ import Foundation
 ///
 /// 不持有 `FileManager`：`FileManager` 在 Swift 6 下不是 `Sendable`，各方法内部用 `.default`
 /// 反而更省事（与 ``StorageSpace`` 把 fileManager 当参数传是同一个理由）。
+///
+/// 一次下载的实时进度（M25）：`onProgress` 每收下一片回调一份。
+///
+/// 两个「中途不猜」的口径：
+/// - `expectedBytes` **只有整份的总长真的知道时才 > 0** —— HLS 要等所有片段都收完才知道总量，
+///   「收过的那些片长度之和」不是它，别拿来冒充（那会让进度条早早满格）；
+/// - HLS 中途唯一诚实的比例是**片段数**（`completedSegments / totalSegments`），直链没有片段。
+public struct DownloadProgress: Sendable, Equatable {
+    /// 已经写进文件的字节数（累计，含续下带进来的基数）。
+    public var receivedBytes: Int64
+    /// 整份的期望字节数；`0` = 还不知道（中途的常态）。
+    public var expectedBytes: Int64
+    /// 已经写完的片段数（直链恒为 0）。
+    public var completedSegments: Int
+    /// 这份清单一共多少片（直链恒为 0）。
+    public var totalSegments: Int
+
+    public init(receivedBytes: Int64, expectedBytes: Int64, completedSegments: Int, totalSegments: Int) {
+        self.receivedBytes = receivedBytes
+        self.expectedBytes = expectedBytes
+        self.completedSegments = completedSegments
+        self.totalSegments = totalSegments
+    }
+}
+
 public struct DownloadRunner: Sendable {
     /// 一次执行的结果。
     public struct Outcome: Sendable {
@@ -57,10 +82,10 @@ public struct DownloadRunner: Sendable {
     /// 失败 / 被取消时，返回的任务带着**账目**（``DownloadTask/completedSegments`` + 指纹 +
     /// 字节数）：半成品留在原地，下次（重试 / 继续）从账目那一片接着下（M10n）。
     ///
-    /// - Parameter onProgress: 每收下一片报一次「累计字节 / 期望字节」；总量未知时期望传 0。
+    /// - Parameter onProgress: 每收下一片报一次进度（``DownloadProgress``）；界面的进度条靠它动。
     public func run(
         _ task: DownloadTask,
-        onProgress: (@Sendable (Int64, Int64) -> Void)? = nil
+        onProgress: (@Sendable (DownloadProgress) -> Void)? = nil
     ) async -> Outcome {
         let running = task.transitioning(to: .running)
         do {
@@ -80,7 +105,6 @@ public struct DownloadRunner: Sendable {
                 stopped.completedSegments = partial.completedSegments
                 stopped.resumeFingerprint = partial.fingerprint
                 stopped.receivedBytes = partial.receivedBytes
-                stopped.expectedBytes = partial.expectedBytes
                 underlying = partial.underlying
             }
             // 句柄被取消 = 用户暂停 / 删除（AppModel 只在这两处取消它）。
@@ -112,10 +136,12 @@ public struct DownloadRunner: Sendable {
     ///
     /// 为什么包一层错误：账目是 `writeSegments` 的局部变量长出来的，抛错是它唯一能出去的通道 ——
     /// 不能再像 M10d 那样「失败就把半成品删了」（那样续下无从谈起）。
+    ///
+    /// **不带 `expectedBytes`**（M25）：中途停下只知道「收过的那些片」的长度之和，那不是整份
+    /// 总长 —— 宁可让进度保持「未知」，也不拿前缀冒充总量。
     private struct PartialStop: Error {
         var completedSegments: Int
         var receivedBytes: Int64
-        var expectedBytes: Int64
         var fingerprint: String
         var underlying: Error
     }
@@ -132,7 +158,7 @@ public struct DownloadRunner: Sendable {
 
     private func download(
         _ task: DownloadTask,
-        onProgress: (@Sendable (Int64, Int64) -> Void)?
+        onProgress: (@Sendable (DownloadProgress) -> Void)?
     ) async throws -> FetchDone {
         // 已经取消（暂停落在开跑之前）：一个请求都不发。
         try Task.checkCancellation()
@@ -143,7 +169,7 @@ public struct DownloadRunner: Sendable {
         if !manifest.hasContent {
             let fileURL = try write(Data(first.body), as: task, suffix: Self.suffix(for: task.url))
             let size = Int64(first.body.count)
-            onProgress?(size, size)
+            onProgress?(DownloadProgress(receivedBytes: size, expectedBytes: size, completedSegments: 0, totalSegments: 0))
             return FetchDone(received: size, expected: size, fileURL: fileURL, completedSegments: 0, fingerprint: "")
         }
 
@@ -264,7 +290,7 @@ public struct DownloadRunner: Sendable {
         to fileURL: URL,
         start: ResumeStart,
         task: DownloadTask,
-        onProgress: (@Sendable (Int64, Int64) -> Void)?
+        onProgress: (@Sendable (DownloadProgress) -> Void)?
     ) async throws -> FetchDone {
         var received = start.receivedBytes
         var expected = start.expectedBytes
@@ -295,7 +321,13 @@ public struct DownloadRunner: Sendable {
                     expectedKnown = false
                 }
                 written += 1
-                onProgress?(received, expectedKnown ? expected : 0)
+                onProgress?(DownloadProgress(
+                    receivedBytes: received,
+                    // 中途的总量还不知道（要等所有片段收完）—— 拿前缀之和冒充会让进度条满格。
+                    expectedBytes: 0,
+                    completedSegments: start.segment + written,
+                    totalSegments: manifest.segments.count
+                ))
             }
         } catch {
             try? handle.close()
@@ -303,7 +335,6 @@ public struct DownloadRunner: Sendable {
             throw PartialStop(
                 completedSegments: completed,
                 receivedBytes: received,
-                expectedBytes: expectedKnown ? expected : 0,
                 fingerprint: manifest.segmentFingerprint(prefix: completed),
                 underlying: error
             )

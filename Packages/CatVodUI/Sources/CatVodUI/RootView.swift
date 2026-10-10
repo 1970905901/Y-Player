@@ -76,9 +76,9 @@ public struct RootView: View {
             // 本机代理服务（M6）：启动时就起来，播放时才有端口可用
             // （`playbackResource(_:)` 是同步判定，不能在那里 await）。
             await model.ensureLocalServer()
-            // 上次没下完的（被系统挂起或被杀掉时留下的 `running` 会被降级成 `waiting`）：
-            // 回到前台接着跑，不必先进「下载管理」页（M10h）。
-            await model.synchronizeDownloads()
+            // 上次没下完的（被挂起 / 杀掉时留下的 `running` 在这里降级成 `waiting`，M10b/M25）：
+            // 启动就接着跑，不必先进「下载管理」页（M10h）。
+            await model.restoreDownloads()
             model.startDownloadDriverIfNeeded()
         }
         .onChange(of: scenePhase) { phase in
@@ -86,7 +86,8 @@ public struct RootView: View {
                 return
             }
             Task {
-                await model.synchronizeDownloads()
+                // 回前台同样走恢复：挂起期间没跑完的 `running` 降级回排队，再由驱动接手。
+                await model.restoreDownloads()
                 model.startDownloadDriverIfNeeded()
             }
         }

@@ -532,6 +532,10 @@ public final class AppModel: ObservableObject {
     /// 正在跑的任务句柄（任务 id → Task，M10m）：暂停 / 删除「正在下的那一条」要能取消它。
     var downloadRunTasks: [String: Task<DownloadRunner.Outcome, Never>] = [:]
 
+    /// 正在跑的任务**总片段数**（任务 id → 片数；M25）：只给界面看的过程态，不落库 ——
+    /// HLS 中途唯一诚实的进度比例是「已完成 / 总数」，而总片数只有执行器知道。
+    var downloadRunSegmentTotals: [String: Int] = [:]
+
     /// 下载任务存储（GRDB；打开失败时降级为内存实现，与进度 / 收藏同一套）。
     public let downloadStore: DownloadTaskStore
 

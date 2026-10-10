@@ -14,12 +14,25 @@ import Foundation
 //   （以前只有那页的 `.task` 会驱动队列，在详情页点完「整部下载」转身去看剧 = 队列一动不动）。
 
 public extension AppModel {
-    /// 载入库里的下载任务。
-    ///
-    /// 读回来的 `running` 会被降级成 `waiting`（M10b 的恢复策略）—— 上次没跑完就被杀掉的
-    /// 任务不能一直占着并发位。
+    /// 载入库里的下载任务（**纯读**，状态原样）。
     func synchronizeDownloads() async {
         downloadTasks = await Self.sortedDownloadTasks(downloadStore.all())
+    }
+
+    /// 启动 / 回前台时的恢复（M10b 的恢复策略，M25 起挪到这里）：库里存着的 `running` 是
+    /// 「上次没跑完就被杀 / 挂起」的那条 —— 降级成 `waiting` 并落库，让驱动能重新接手；
+    /// 不降的话它会一直占着一个并发位（``DownloadQueue/concurrencyLimit``）。
+    ///
+    /// 为什么不在读路径（``synchronizeDownloads()``）做：队列开跑时先落库 `running`、紧接着
+    /// 读回镜像 —— 读一遍就降级的话，**正在下**的那条在界面上永远是「排队中」，进度条也永远
+    /// 不出现（M25 修）。
+    func restoreDownloads() async {
+        let stored = await downloadStore.all()
+        let stale = stored.filter { $0.status == .running }
+        if !stale.isEmpty {
+            await downloadStore.save(stale.map { $0.transitioning(to: .waiting) })
+        }
+        await synchronizeDownloads()
     }
 
     /// 入队一批（详情页的「下载本集 / 整部下载」）。
@@ -175,11 +188,18 @@ public extension AppModel {
             // ⚠️ 建句柄与登记必须在**这一段没有任何 await**：登记之后再让出主线程，
             // 「选好任务 → 落库」之间用户按的暂停就一定找得到句柄（找不到 = 暂停成摆设）。
             // 反过来也**不要**拿 `downloadTasks` 里那条的 status 来判断「它还该不该跑」：
-            // M10b 的恢复策略是 `running` 读出来一律降级成 `waiting`（`recoveredStatus`），
-            // 拿它当开关永远不成立 —— 曾经因此把同一批任务挑了又跳，`while true` 空转烧 CPU。
+            // 镜像会被别的路径改（用户操作 / 启动恢复降级 / 迟到的结果），拿它当开关会挑了又跳，
+            // `while true` 空转烧 CPU（M10m 首验栽过 —— 当时 `running` 还被读路径降级，条件恒假）。
             var handles: [(id: String, handle: Task<DownloadRunner.Outcome, Never>)] = []
             for task in running {
-                handles.append((task.id, Task { await runner.run(task) }))
+                handles.append((task.id, Task {
+                    await runner.run(task, onProgress: { [weak self] progress in
+                        // 回调从执行器的上下文过来：蹦回主线程写镜像（只动内存，M25）。
+                        Task { @MainActor in
+                            self?.applyLiveProgress(id: task.id, progress)
+                        }
+                    })
+                }))
             }
             for (id, handle) in handles {
                 downloadRunTasks[id] = handle
@@ -196,6 +216,7 @@ public extension AppModel {
                 }
                 for await outcome in group {
                     downloadRunTasks[outcome.task.id] = nil
+                    downloadRunSegmentTotals[outcome.task.id] = nil
                     await applyDownloadOutcome(outcome)
                     completed += 1
                 }
@@ -245,6 +266,30 @@ public extension AppModel {
     }
 
     // MARK: - 内部
+
+    /// 把执行器报的实时进度写进镜像（M25）：**只动内存，不落库** —— 每收一片写一次库太吵；
+    /// 落库的时机仍是「停下 / 完成」那一笔（执行器交回结果，或 `pauseDownload` 合并账目）。
+    ///
+    /// 两个细节：
+    /// - 迟到的回调**不回退**进度（`receivedBytes` 只许往前走）—— 回调是从执行器的上下文
+    ///   蹦回主线程的，两个 Task 的落地顺序没有保证；
+    /// - 总片段数只留在 `downloadRunSegmentTotals` 里给界面用（不落库，跑完即清）。
+    func applyLiveProgress(id: String, _ progress: DownloadProgress) {
+        guard let index = downloadTasks.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        guard progress.receivedBytes >= downloadTasks[index].receivedBytes else {
+            return
+        }
+        downloadTasks[index].receivedBytes = progress.receivedBytes
+        if progress.expectedBytes > 0 {
+            downloadTasks[index].expectedBytes = progress.expectedBytes
+        }
+        if progress.totalSegments > 0 {
+            downloadTasks[index].completedSegments = min(progress.completedSegments, progress.totalSegments)
+            downloadRunSegmentTotals[id] = progress.totalSegments
+        }
+    }
 
     /// 把执行器交回的续下账目并进库里那条 —— **只动账目，不动状态**（M10n）。
     ///

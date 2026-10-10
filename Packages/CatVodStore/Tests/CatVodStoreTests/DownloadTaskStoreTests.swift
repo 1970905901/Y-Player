@@ -121,13 +121,14 @@ struct GRDBDownloadTaskStoreTests {
         #expect(loaded.first?.headers["Referer"] == "https://site.example/剧集")
     }
 
-    @Test("恢复：库里的「下载中」读出来必须降级成「排队中」")
-    func runningIsRecoveredAsWaiting() async throws {
+    @Test("读回状态原样：`running` 不降级（降级挪到启动恢复，M25）")
+    func runningIsReadAsIs() async throws {
         let store = try makeStore()
         await store.save(task(status: .running))
 
-        let loaded = await store.all()
-        #expect(loaded.first?.status == .waiting)
+        // 读路径不再降级 —— 不然正在下的那条在界面上永远是「排队中」（M25 修）
+        #expect(await store.all().first?.status == DownloadTask.Status.running)
+
         // 其余状态原样保留
         await store.clear()
         await store.save(task(status: .paused))
@@ -137,7 +138,7 @@ struct GRDBDownloadTaskStoreTests {
     @Test("认不出来的状态字符串回落「排队中」：版本回退时不留一条永远不动的记录")
     func unknownStatusFallsBack() {
         #expect(GRDBDownloadTaskStore.recoveredStatus("paused") == .paused)
-        #expect(GRDBDownloadTaskStore.recoveredStatus("running") == .waiting)
+        #expect(GRDBDownloadTaskStore.recoveredStatus("running") == .running)
         #expect(GRDBDownloadTaskStore.recoveredStatus("未来才有的状态") == .waiting)
         #expect(GRDBDownloadTaskStore.recoveredStatus("") == .waiting)
     }

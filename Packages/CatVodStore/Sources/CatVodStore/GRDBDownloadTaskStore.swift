@@ -10,8 +10,10 @@ import GRDB
 ///    （序号会错位，把「失败」读成「排队中」这种错最难查）；
 /// 2. `headers` 存 JSON，读取失败退化成**空表**而不是整条记录失败 —— 丢 header 顶多播放时
 ///    少了鉴权，丢整条会让用户看到「下载记录凭空少了一条」；
-/// 3. **恢复策略**：库里若存着 `running`（上次没跑完就被杀了），读出来一律降级成 `waiting`。
-///    不这么做，那条死任务会一直占着一个并发位（``DownloadQueue/concurrencyLimit``），
+/// 3. **恢复策略**：`running` 的降级（上次没跑完就被杀 / 挂起）**不在读路径做**（M25 起）——
+///    挪到启动 / 回前台那一次（`AppModel.restoreDownloads()`）：读路径降级会让**正在下**的那条
+///    在界面上永远是「排队中」（队列开跑先落库 `running`，紧接着读回镜像就被降级了）。
+///    降级本身仍然必要：不降，那条死任务会一直占着一个并发位（``DownloadQueue/concurrencyLimit``），
 ///    而且永远没有东西把它推向完成 —— 表现就是「明明只下着一条，第二条永远排队」。
 public struct GRDBDownloadTaskStore: DownloadTaskStore {
     private static let columns = """
@@ -153,15 +155,13 @@ public struct GRDBDownloadTaskStore: DownloadTaskStore {
         )
     }
 
-    /// 恢复时的状态降级：`running` → `waiting`。其余原样。
+    /// 存储字符串 → 状态：**认不出来的回落 `waiting`**（宁可让它重排一次，也不要留一条谁都不认识、
+    /// 永远不会动的记录 —— 版本回退时就会遇到这种行）；**`running` 原样返回**（M25 起）。
     ///
-    /// **认不出来的字符串也回落 `waiting`**：宁可让它重排一次，也不要留一条谁都不认识、
-    /// 永远不会动的记录（版本回退时就会遇到这种行）。
+    /// 「上次没跑完」的降级（`running` → `waiting`）挪到了启动 / 回前台那一次
+    /// （``AppModel/restoreDownloads()``）：读路径再降级会让正在下的那条在界面上永远是「排队中」。
     static func recoveredStatus(_ raw: String) -> DownloadTask.Status {
-        guard let status = DownloadTask.Status(rawValue: raw) else {
-            return .waiting
-        }
-        return status == .running ? .waiting : status
+        DownloadTask.Status(rawValue: raw) ?? .waiting
     }
 
     private static func encodeHeaders(_ headers: [String: String]) -> String {
