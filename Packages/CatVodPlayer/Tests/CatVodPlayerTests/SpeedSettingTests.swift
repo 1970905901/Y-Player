@@ -30,6 +30,20 @@ struct SpeedSettingTests {
         #expect(SpeedSetting.clamp(.nan) == 1.0)
     }
 
+    @Test("长按倍速：区间 2.0–5.0、步进 0.5、夹紧（NaN 回默认）")
+    func longPressClamping() {
+        #expect(SpeedSetting.longPress == 2.0)
+        #expect(SpeedSetting.longPressMinimum == 2.0)
+        #expect(SpeedSetting.longPressStep == 0.5)
+        // 比正常速度还慢的「加速」没有意义：下限就是 2.0
+        #expect(SpeedSetting.clampLongPress(1.0) == 2.0)
+        #expect(SpeedSetting.clampLongPress(2.5) == 2.5)
+        #expect(SpeedSetting.clampLongPress(9) == 5.0)
+        #expect(SpeedSetting.clampLongPress(.infinity) == 5.0)
+        #expect(SpeedSetting.clampLongPress(-.infinity) == 2.0)
+        #expect(SpeedSetting.clampLongPress(.nan) == 2.0)
+    }
+
     @Test("显示格式：一位小数够用就一位，否则两位，末尾带 x")
     func formatting() {
         #expect(SpeedSetting.format(1.0) == "1.0x")

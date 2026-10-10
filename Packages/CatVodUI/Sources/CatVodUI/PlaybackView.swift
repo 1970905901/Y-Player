@@ -87,6 +87,8 @@ public struct PlaybackView: View {
     @State var gestureHint = ""
     /// 当前音量（0...1）：自绘内核的手势改的是它；系统内核不碰（音量交给硬件键）。
     @State var volume: Double = 1
+    /// 长按临时加速的目标倍速（M03P13：可调，初值在 `start()` 里从存档读）—— 跨文件扩展要读。
+    @State var longPressSpeed: Float = SpeedSetting.longPress
     /// 长按已识别（这次触摸还没松手）：拖动不做事、点按要吞 —— **不管在不在播**
     /// （上游同款：不在播不加速，但手势照样接管）。
     @State var isSpeedBoostHolding = false
@@ -485,6 +487,7 @@ extension PlaybackView {
         let coordinator = PlayerCoordinator()
         engineText = settings.engine.displayName
         speed = PlaybackSpeedBook.speed()
+        longPressSpeed = PlaybackSpeedBook.longPressSpeed()
         // 弹幕倍速的初值：`speedChanged` 事件不一定在起播时发（引擎本来就是这个速度时它不会变），
         // 所以这里先把用户设的倍速当作真值用起来。
         playbackRate = Double(speed)
@@ -810,7 +813,7 @@ extension PlaybackView {
     ///
     /// 排版跟本页其它区一致（一行行文字），因为画面交给系统原生 `VideoPlayer`，我们不自绘播放控件
     /// （`docs/UI 规范.md`）。范围/步进/预设与显示格式全部对齐上游 `SpeedSetting`；
-    /// 上游那套的「长按倍速」「跳过静音」不改（前者是手势、后者要内核支持，见 M02P15）。
+    /// 上游那套里**还没做的只剩「跳过静音」**（要内核支持，见 M02P15）——「长按倍速」在 M03P13 接上。
     private var speedSection: some View {
         Section("播放速度") {
             HStack {
@@ -844,6 +847,21 @@ extension PlaybackView {
                 }
                 .padding(.vertical, 2)
             }
+            HStack {
+                Text("长按倍速")
+                Spacer()
+                Text(SpeedSetting.format(longPressSpeed))
+                    .monospacedDigit()
+                Button("恢复 \(SpeedSetting.format(SpeedSetting.longPress))") {
+                    setLongPressSpeed(SpeedSetting.longPress)
+                }
+                .disabled(SpeedSetting.isSame(longPressSpeed, SpeedSetting.longPress))
+            }
+            Slider(
+                value: longPressSpeedSlider,
+                in: SpeedSetting.longPressMinimum ... SpeedSetting.maximum,
+                step: SpeedSetting.longPressStep
+            )
         }
     }
 
@@ -852,6 +870,14 @@ extension PlaybackView {
         Binding(
             get: { speed },
             set: { newValue in setSpeed(newValue, persist: false) }
+        )
+    }
+
+    /// 长按倍速滑杆：只有 7 档（2.0–5.0、步进 0.5），**不用等松手** —— 每一档都写一次存档也不心疼。
+    private var longPressSpeedSlider: Binding<Float> {
+        Binding(
+            get: { longPressSpeed },
+            set: { newValue in setLongPressSpeed(newValue) }
         )
     }
 
@@ -867,6 +893,14 @@ extension PlaybackView {
             return
         }
         Task { await engine.setRate(target) }
+    }
+
+    /// 改长按倍速的**唯一出口**（M03P13）：夹紧 → 记进界面 → 落盘。
+    /// **不下发内核**：它只影响下一次长按，当前正在播的速度不该被它改。
+    private func setLongPressSpeed(_ value: Float) {
+        let target = SpeedSetting.clampLongPress(value)
+        longPressSpeed = target
+        PlaybackSpeedBook.saveLongPressSpeed(target)
     }
 
     /// 时间文本（`1:02:03` 或 `2:34`）。

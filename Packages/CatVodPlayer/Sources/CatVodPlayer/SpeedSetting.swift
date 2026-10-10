@@ -25,9 +25,13 @@ public enum SpeedSetting {
 
     /// 长按临时加速的目标速度（上游 `LONG_PRESS = 2.0`）。
     ///
-    /// 上游把这个值做成可调的（`setupLongPress`：2.0–5.0、步进 0.5、存 `speed_long_press`）；
-    /// 我们还没有对应的设置界面，先按上游默认值用 —— 要做时再补 `clampLongPress` 与存档（M03P12）。
+    /// 可调（M03P13：播放页「长按倍速」滑杆 = 上游 `setupLongPress`，范围见 ``longPressMinimum`` /
+    /// ``maximum``、步进见 ``longPressStep``），落盘在 UI 层（`PlaybackSpeedBook`）。
     public static let longPress: Float = 2.0
+    /// 长按倍速的下限（上游 `LONG_PRESS_MIN = 2.0`）：比正常速度还慢的「加速」没有意义。
+    public static let longPressMinimum: Float = 2.0
+    /// 长按倍速滑杆的步进（上游 `LONG_PRESS_STEP = 0.5`）。
+    public static let longPressStep: Float = 0.5
     /// 预设档位（上游 `PRESETS`，顺序一致）。
     public static let presets: [Float] = [0.5, 0.8, 1.0, 1.2, 1.5, 2.0, 3.0, 5.0]
     /// 浮点比较容差（上游 `EPSILON = 0.001`）。
@@ -41,6 +45,15 @@ public enum SpeedSetting {
             return normal
         }
         return min(max(speed, minimum), maximum)
+    }
+
+    /// 夹进长按倍速的区间（上游 `clampLongPress`）：``longPressMinimum`` ... ``maximum``。
+    public static func clampLongPress(_ speed: Float) -> Float {
+        // 与 ``clamp(_:)`` 同一口径：NaN 会一路传到内核，先挡一道回默认值。
+        guard !speed.isNaN else {
+            return longPress
+        }
+        return min(max(speed, longPressMinimum), maximum)
     }
 
     /// 是不是正常速度（UI 用来决定「恢复」按钮是否可用、预设打不打勾）。

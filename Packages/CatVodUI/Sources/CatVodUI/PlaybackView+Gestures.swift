@@ -183,7 +183,8 @@ extension PlaybackView {
     /// 长按识别到了：先记「这次触摸是长按」（拖动不做事、点按要吞 —— 不在播也一样），
     /// 能加速时才真把速度切过去（上游 `if (!player().isPlaying()) return;` 就是这一步）。
     ///
-    /// 提示直接用倍速文本（`2.0x`，上游 `play_speed_hint` 同款），按住期间一直亮着。
+    /// 提示直接用倍速文本（`2.0x`，上游 `play_speed_hint` 同款），按住期间一直亮着；
+    /// 加速到多少是**可调的**（M03P13：播放页「长按倍速」，上游 `speed_long_press`）。
     func beginSpeedBoost() {
         guard !isSpeedBoostHolding else {
             return
@@ -193,8 +194,8 @@ extension PlaybackView {
             return
         }
         isSpeedBoosting = true
-        gestureHint = SpeedSetting.format(SpeedSetting.longPress)
-        let boost = SpeedSetting.longPress
+        gestureHint = SpeedSetting.format(longPressSpeed)
+        let boost = longPressSpeed
         Task { await engine.setRate(boost) }
     }
 

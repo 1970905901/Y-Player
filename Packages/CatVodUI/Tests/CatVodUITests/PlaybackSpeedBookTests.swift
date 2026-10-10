@@ -54,6 +54,45 @@ struct PlaybackSpeedBookTests {
         #expect(PlaybackSpeedBook.speed(defaults: store) == SpeedSetting.normal)
     }
 
+    @Test("长按倍速：没有存档 → 上游默认 2.0x")
+    func longPressEmpty() {
+        #expect(PlaybackSpeedBook.longPressSpeed(defaults: defaults()) == SpeedSetting.longPress)
+    }
+
+    @Test("长按倍速：存了就用存的；越界先夹紧（下限 2.0 / 上限 5.0）")
+    func longPressRoundTrip() {
+        let store = defaults()
+        PlaybackSpeedBook.saveLongPressSpeed(3.5, defaults: store)
+        #expect(PlaybackSpeedBook.longPressSpeed(defaults: store) == 3.5)
+
+        // 比 2.0 还慢的档不存在：写进去就被夹到下限
+        PlaybackSpeedBook.saveLongPressSpeed(1.0, defaults: store)
+        #expect(PlaybackSpeedBook.longPressSpeed(defaults: store) == SpeedSetting.longPressMinimum)
+
+        PlaybackSpeedBook.saveLongPressSpeed(99, defaults: store)
+        #expect(PlaybackSpeedBook.longPressSpeed(defaults: store) == SpeedSetting.maximum)
+    }
+
+    @Test("长按倍速：坏存档（0 / 负数 / 非有限）→ 回默认；reset 回 2.0 并写一笔")
+    func longPressBadArchive() {
+        let store = defaults()
+        let key = PlaybackSpeedBook.longPressDefaultsKey
+
+        store.set(0, forKey: key)
+        #expect(PlaybackSpeedBook.longPressSpeed(defaults: store) == SpeedSetting.longPress)
+
+        store.set(-3.0, forKey: key)
+        #expect(PlaybackSpeedBook.longPressSpeed(defaults: store) == SpeedSetting.longPress)
+
+        store.set(Float.nan, forKey: key)
+        #expect(PlaybackSpeedBook.longPressSpeed(defaults: store) == SpeedSetting.longPress)
+
+        PlaybackSpeedBook.saveLongPressSpeed(4.0, defaults: store)
+        PlaybackSpeedBook.resetLongPressSpeed(defaults: store)
+        #expect(PlaybackSpeedBook.longPressSpeed(defaults: store) == SpeedSetting.longPress)
+        #expect(store.object(forKey: key) != nil)
+    }
+
     @Test("reset 回到正常速度，并且确实写了一笔存档")
     func reset() {
         let store = defaults()
