@@ -19,7 +19,8 @@ public extension AppModel {
     /// - **不抛错**：弹幕是锦上添花，失败只该影响播放页那一行提示，不该把播放流程带崩；
     /// - 开关关着、或四个槽位都空 → 什么都不做、也不提示（那是用户的设置，不是错误）；
     /// - 用 `search` + `lines(from:)` 而不是 `load`：这样能知道**是哪条源**给的弹幕，写进状态行；
-    /// - 传输复用 ``AppModel/transportForConfiguration()``：接口 header、代理、广告拦截都与站点一致；
+    /// - 传输复用 ``AppModel/transportForConfiguration()``：接口 header、代理、广告拦截都与站点一致
+    ///   （测试可注入，见下面的 `danmakuTransport`）；
     /// - **换集就清掉手动选择**（M03P25）：上游的选择活在本次播放的 `PlaySpec` 里，只有同一集
     ///   重新载入（换线路）才保留 —— 不同集对上的弹幕文件往往不是同一条，跟着走反而会串集。
     ///
@@ -33,7 +34,7 @@ public extension AppModel {
         }
         danmakuStatus = .loading
         danmakuLines = []
-        let service = DanmakuService(transport: transportForConfiguration())
+        let service = DanmakuService(transport: danmakuTransport())
 
         var searched: [DanmakuSource] = []
         if let api = danmakuAPI.filledAddresses.first {
@@ -74,7 +75,7 @@ public extension AppModel {
             return "还没填弹幕 API 地址（设置 → 播放 → 弹幕 API）"
         }
         do {
-            let searched = try await DanmakuService(transport: transportForConfiguration())
+            let searched = try await DanmakuService(transport: danmakuTransport())
                 .search(api: api, name: request.name, episode: request.episode)
             danmakuCandidates = PlaybackDanmakuSwitcher.candidates(embedded: danmakuCandidates, searched: searched)
             return nil
@@ -105,6 +106,17 @@ public extension AppModel {
         danmakuRequest = nil
     }
 
+    /// 弹幕取用链的传输：**测试注入优先**，否则与站点请求同一套（接口 header / 代理 / 广告拦截口径一致）。
+    /// 与 ``AppModel/downloadTransport()`` 同一套做法 —— 没有它，「搜索 → 候选 → 换一条」这段接线
+    /// 在单测里只能干看着（M03P25 补的）。
+    ///
+    /// 可见性是「模块内」而不是 `private`：注入口那个 `init` 参数与它同名（都是 `danmakuTransport`），
+    /// 而 `init` 体里的参数引用会被 `check_visibility.py` 当成「跨文件引 private 成员」误报
+    /// （`downloadTransport()` 之所以没这问题，也是因为它不是 private）。
+    func danmakuTransport() -> HTTPTransport {
+        danmakuTransportOverride ?? transportForConfiguration()
+    }
+
     /// 把选中的那条来源换成屏上的弹幕行（M03P25：从 `loadDanmaku` 里拆出来，换条 / 重搜都要用）。
     ///
     /// `nil` = 一条可用的都没有：如实给状态（没搜到 / 连地址都没填），别留上一集的旧行。
@@ -117,7 +129,7 @@ public extension AppModel {
         danmakuStatus = .loading
         danmakuLines = []
         do {
-            let lines = try await DanmakuService(transport: transportForConfiguration()).lines(from: source)
+            let lines = try await DanmakuService(transport: danmakuTransport()).lines(from: source)
             danmakuLines = lines
             // 文件是空的与「没搜到候选」分开说：这条的下一步是「换一条」，不是去改 API 地址。
             danmakuStatus = lines.isEmpty

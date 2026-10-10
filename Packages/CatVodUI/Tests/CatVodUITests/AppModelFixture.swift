@@ -20,7 +20,11 @@ final class AppModelFixture {
     /// 临时目录（缓存 / 数据库都在这里）。
     let directory: URL
 
-    init(downloadTransport: HTTPTransport? = nil, tmdbTransport: HTTPTransport? = nil) throws {
+    init(
+        downloadTransport: HTTPTransport? = nil,
+        tmdbTransport: HTTPTransport? = nil,
+        danmakuTransport: HTTPTransport? = nil
+    ) throws {
         suiteName = "yplayer-tests-\(UUID().uuidString)"
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(suiteName, isDirectory: true)
@@ -32,7 +36,8 @@ final class AppModelFixture {
             downloadDirectory: Self.downloadDirectory(in: directory),
             downloadTransport: downloadTransport,
             storageURL: Self.storageURL(in: directory),
-            tmdbTransport: tmdbTransport
+            tmdbTransport: tmdbTransport,
+            danmakuTransport: danmakuTransport
         )
     }
 

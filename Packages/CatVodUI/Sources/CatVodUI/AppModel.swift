@@ -542,6 +542,11 @@ public final class AppModel: ObservableObject {
     /// 测试注入的 TMDB 传输（`nil` = 按需新建 `URLSessionTransport`）：给「缓存 / 合流」的测试用。
     let tmdbTransportOverride: HTTPTransport?
 
+    /// 测试注入的**弹幕**传输（`nil` = 用 ``AppModel/transportForConfiguration()``）：
+    /// 「搜索 → 候选 → 下载 → 解析」这条链要能离线跑（M03P25 补的注入口 —— 在此之前
+    /// 只有 `danmakuStatus` 的文案有单测，接线是裸的）。
+    let danmakuTransportOverride: HTTPTransport?
+
     /// 已载入的弹幕行（M08c）：渲染层要用的原始数据（搜索与下载在 `CatVodSource.DanmakuService`）。
     @Published public internal(set) var danmakuLines: [DanmakuLine] = []
 
@@ -623,13 +628,15 @@ public final class AppModel: ObservableObject {
         downloadDirectory: URL? = nil,
         downloadTransport: HTTPTransport? = nil,
         storageURL: URL? = nil,
-        tmdbTransport: HTTPTransport? = nil
+        tmdbTransport: HTTPTransport? = nil,
+        danmakuTransport: HTTPTransport? = nil
     ) {
         let base = cacheDirectory ?? Self.defaultCacheDirectory()
         self.cacheDirectory = base
         self.downloadDirectory = downloadDirectory ?? Self.downloadDirectory
         downloadTransportOverride = downloadTransport
         tmdbTransportOverride = tmdbTransport
+        danmakuTransportOverride = danmakuTransport
         self.defaults = defaults
         sessionTransport = URLSessionTransport()
         // 存储：优先 GRDB 落库（M08b）；打开失败退回内存实现并如实说明（不许静默）。
