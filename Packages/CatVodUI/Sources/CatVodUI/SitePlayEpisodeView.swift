@@ -110,7 +110,9 @@ struct SitePlayEpisodeView: View {
                     episode: episode,
                     episodeIndex: episodeIndex,
                     detail: parseFallback,
-                    progressKey: progressKey
+                    progressKey: progressKey,
+                    isFavorite: isFavorite,
+                    onToggleFavorite: onToggleFavorite
                 )
             } else if errorText.isEmpty {
                 ProgressView("正在向站点请求播放地址…")
