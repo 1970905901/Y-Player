@@ -13,19 +13,23 @@ import SwiftUI
 extension PlaybackView {
     // MARK: - 覆盖层（弹幕 M08h / 字幕 M09f）
 
-    /// 该显示哪份字幕（**纯逻辑**，可单测）：
-    /// 1. **选了内嵌轨（引擎发来的那份非空）就用它** —— 「选了内嵌轨」就是「我就要这个」，外部那份不混进来；
-    /// 2. 用户明确「关闭」时谁都不显示（与 MPV 的 `sid=no` 同口径 —— 以前的写法会退回外部字幕，那是错的）；
-    /// 3. 其余情况用外部那份（字幕文件 / 字幕服务给的）。
+    /// 该显示哪份字幕（**纯逻辑**，可单测）。三条按优先级：
+    /// 1. 用户明确「关闭」→ **谁都不显示**（显式意图最大，与 MPV 的 `sid=no` 同口径 ——
+    ///    以前的写法会退回外部字幕，那是错的）；
+    /// 2. 选了内嵌轨（引擎发来的那份非空）→ 用它（外部那份不混进来）；
+    /// 3. 其余 → 外部那份（字幕文件 / 字幕服务给的）。
     static func effectiveSubtitleCues(
         embedded: [SubtitleCue],
         external: [SubtitleCue],
         selection: TrackSelection
     ) -> [SubtitleCue] {
+        if selection == .disabled {
+            return []
+        }
         if !embedded.isEmpty {
             return embedded
         }
-        return selection == .disabled ? [] : external
+        return external
     }
 
     /// 现在该显示哪份字幕（实例版）。
