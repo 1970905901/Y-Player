@@ -33,7 +33,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
     private var codecContext: UnsafeMutablePointer<AVCodecContext>?
     /// **借来的**（`LibavInput` 所有）：这里只读，不关。
     private var formatContext: UnsafeMutablePointer<AVFormatContext>?
-    private var streamIndex = -1
+    private(set) var streamIndex = -1
     private var timeBase = AVRational(num: 0, den: 1)
     /// 上一次 `decodeFrames` 是否撞到了文件尾（EOF）。会话据此收尾：drain + 报结束。
     private(set) var reachedEnd = false
@@ -51,21 +51,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
         guard let formatContext = input.rawFormatContext else {
             return "输入还没打开"
         }
-        var index = -1
-        if let list = formatContext.pointee.streams {
-            for candidate in 0 ..< Int(formatContext.pointee.nb_streams) {
-                guard let stream = list[candidate], let parameters = stream.pointee.codecpar else {
-                    continue
-                }
-                if let type = av_get_media_type_string(parameters.pointee.codec_type),
-                   String(cString: type) == "video"
-                {
-                    index = candidate
-                    break
-                }
-            }
-        }
-        guard index >= 0,
+        guard let index = input.firstStreamIndex(of: .video),
               let stream = formatContext.pointee.streams?[index],
               let parameters = stream.pointee.codecpar
         else {
@@ -131,17 +117,40 @@ final class LibavVideoDecoder: @unchecked Sendable {
         while frames.count < count {
             let readCode = av_read_frame(formatContext, packet)
             guard readCode >= 0 else {
-                reachedEnd = readCode == Self.eofCode
+                reachedEnd = readCode == LibavInput.eofCode
                 break
             }
             if packet.pointee.stream_index == Int32(streamIndex) {
-                feed(packet, frame: frame, into: &frames, limit: count)
+                push(packet, frame: frame, into: &frames, limit: count)
             }
             av_packet_unref(packet)
         }
         return frames
         #else
         _ = count
+        return []
+        #endif
+    }
+
+    /// 喂一只**已按流过滤**的包（会话统一 demux 的路：见 ``LibavInput/nextPacket()``）。
+    ///
+    /// 与 `decodeFrames` 的区别：包从外面来 —— 多流复用时只能有一个读包的人，
+    /// 那个人是会话。
+    func feed(_ packet: UnsafeMutablePointer<AVPacket>) -> [Frame] {
+        #if canImport(Libavcodec) && canImport(Libavformat) && canImport(Libavutil)
+        guard codecContext != nil, packet.pointee.stream_index == Int32(streamIndex) else {
+            return []
+        }
+        var frames: [Frame] = []
+        guard let frame = av_frame_alloc() else { return [] }
+        defer {
+            var framePointer: UnsafeMutablePointer<AVFrame>? = frame
+            av_frame_free(&framePointer)
+        }
+        push(packet, frame: frame, into: &frames, limit: Int.max)
+        return frames
+        #else
+        _ = packet
         return []
         #endif
     }
@@ -165,9 +174,6 @@ final class LibavVideoDecoder: @unchecked Sendable {
         return []
         #endif
     }
-
-    /// `AVERROR_EOF`（宏导不进来，值写死）：`FFERRTAG('E','O','F',' ')`。
-    private static let eofCode: Int32 = -541_478_725
 
     /// 关闭（**幂等**）。不碰借来的 `formatContext`。
     func close() {
@@ -195,7 +201,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
     // MARK: - 内部
 
     /// 把一只包喂给解码器，并尽力把解码器里已备好的帧收进 `frames`（上限 `limit`）。
-    private func feed(
+    private func push(
         _ packet: UnsafeMutablePointer<AVPacket>,
         frame: UnsafeMutablePointer<AVFrame>,
         into frames: inout [Frame],

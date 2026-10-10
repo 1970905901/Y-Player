@@ -59,4 +59,24 @@ struct LibavInputTests {
         #expect(video.height == 240)
         #expect(video.codecName == "h264")
     }
+
+    @Test("nextPacket：包按流下标读出，读到尾 isAtEnd 标上（统一 demux 的入口）")
+    func readsPackets() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("packets-\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await TinyMP4Fixture.write(to: url, width: 320, height: 240, fps: 30, frames: 30)
+
+        let input = LibavInput()
+        defer { input.close() }
+        #expect(input.open(url: url.path, headers: [:]) == nil)
+
+        var count = 0
+        while let packet = input.nextPacket() {
+            #expect(packet.streamIndex == 0)
+            count += 1
+        }
+        #expect(input.isAtEnd)
+        #expect(count >= 30)
+    }
 }

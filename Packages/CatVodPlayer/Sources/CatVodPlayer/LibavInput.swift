@@ -50,6 +50,14 @@ final class LibavInput: @unchecked Sendable {
         var height: Int
     }
 
+    /// 一只**借来的**包（见 ``nextPacket()`` 的生命周期约定）。
+    struct Packet {
+        /// 包属于哪条流（会话拿它分发）。
+        var streamIndex: Int
+        /// 包本体（借的，不用也不许 free）。
+        let pointer: UnsafeMutablePointer<AVPacket>
+    }
+
     /// 一次读取的媒体信息（纯值，给引擎 / 诊断用）。
     struct MediaInfo: Equatable, Sendable {
         /// 容器报的时长（秒）；读不到为 0。
@@ -60,6 +68,10 @@ final class LibavInput: @unchecked Sendable {
     }
 
     private var context: UnsafeMutablePointer<AVFormatContext>?
+    /// 复用的读包缓冲（`nextPacket()` 用；close 时释放）。
+    private var packetBuffer: UnsafeMutablePointer<AVPacket>?
+    /// 上一次 `nextPacket()` 是否读到文件尾。
+    private(set) var isAtEnd = false
 
     deinit {
         close()
@@ -74,6 +86,7 @@ final class LibavInput: @unchecked Sendable {
     func open(url: String, headers: [String: String]) -> String? {
         #if canImport(Libavformat) && canImport(Libavcodec) && canImport(Libavutil)
         close()
+        isAtEnd = false
         var options: OpaquePointer?
         for (name, value) in Self.httpOptions(from: headers) {
             av_dict_set(&options, name, value, 0)
@@ -139,6 +152,52 @@ final class LibavInput: @unchecked Sendable {
         #endif
     }
 
+    /// 读下一只包。
+    ///
+    /// 指针是**借来的**：到下一次 `nextPacket()` / `close()` 前有效 ——
+    /// 解码器要即取即喂，不许扣着留。EOF / 出错给 nil（``isAtEnd`` 标出 EOF）。
+    /// 这是统一 demux 的入口：会话按 `streamIndex` 分发给视频 / 音频解码器。
+    func nextPacket() -> Packet? {
+        #if canImport(Libavformat) && canImport(Libavcodec)
+        guard let context else { return nil }
+        if packetBuffer == nil {
+            packetBuffer = av_packet_alloc()
+        }
+        guard let packet = packetBuffer else { return nil }
+        av_packet_unref(packet)
+        let code = av_read_frame(context, packet)
+        guard code >= 0 else {
+            isAtEnd = code == Self.eofCode
+            return nil
+        }
+        return Packet(streamIndex: Int(packet.pointee.stream_index), pointer: packet)
+        #else
+        return nil
+        #endif
+    }
+
+    /// 找第一条指定类别的流（按媒体类型字符串判，不比 C 枚举 —— 与 `mediaInfo()` 同一口径）。
+    func firstStreamIndex(of kind: StreamInfo.Kind) -> Int? {
+        #if canImport(Libavformat) && canImport(Libavcodec) && canImport(Libavutil)
+        guard let context, let list = context.pointee.streams else { return nil }
+        for candidate in 0 ..< Int(context.pointee.nb_streams) {
+            guard let stream = list[candidate], let parameters = stream.pointee.codecpar else {
+                continue
+            }
+            guard let typePointer = av_get_media_type_string(parameters.pointee.codec_type) else {
+                continue
+            }
+            if StreamInfo.Kind(typeText: String(cString: typePointer)) == kind {
+                return candidate
+            }
+        }
+        return nil
+        #else
+        _ = kind
+        return nil
+        #endif
+    }
+
     /// 底层格式上下文的**借用口**（只给同模块的解码层：`LibavVideoDecoder.open(input:)`）。
     ///
     /// 句柄仍归本类所有（open / close 管生命周期）—— 借的人**不许**自己关它。
@@ -148,10 +207,12 @@ final class LibavInput: @unchecked Sendable {
 
     /// 关闭。**幂等**：没打开 / 关两次都安全。
     func close() {
-        #if canImport(Libavformat)
+        #if canImport(Libavformat) && canImport(Libavcodec)
         avformat_close_input(&context)
+        av_packet_free(&packetBuffer)
         #endif
         context = nil
+        isAtEnd = false
     }
 
     // MARK: - 纯映射（可单测）
@@ -185,6 +246,10 @@ final class LibavInput: @unchecked Sendable {
     /// 写成字面量：`AV_TIME_BASE` 是宏，Swift 能不能导入它取决于构建配置；
     /// 而「微秒」本身是 FFmpeg 的固定约定（`duration` 字段的文档单位）。
     private static let avTimeBase: Double = 1_000_000
+
+    /// `AVERROR_EOF`（宏导不进来，值写死）：`FFERRTAG('E','O','F',' ')`。
+    /// 读包层与解码层共用这一处定义。
+    static let eofCode: Int32 = -541_478_725
 
     #if canImport(Libavformat) && canImport(Libavutil)
     /// `av_strerror` 的人话版（FFmpeg 惯例缓冲区 256 字节）。

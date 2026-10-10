@@ -1,4 +1,5 @@
 import AVFoundation
+@testable import CatVodPlayer
 import CoreMedia
 import CoreVideo
 import Foundation
@@ -8,7 +9,8 @@ import Foundation
 /// 为什么不用真网络流：单测打网络 = 红绿看运气。这个夹具用 AVAssetWriter 现场编出来，
 /// M04P7 的 demux 测试可以接着用。
 enum TinyMP4Fixture {
-    /// 写一个 `frames` 帧（`fps` 帧率）、黑/灰交替的 H.264 MP4。
+    /// 写一个 `frames` 帧（`fps` 帧率）、黑/灰交替的 H.264 MP4；
+    /// `audioSeconds > 0` 时再加一条等长的 AAC 静音音轨（M04P10 起）。
     ///
     /// 失败原因都带着走（writer.error 优先），别让调用方对着一个空文件猜。
     static func write(
@@ -16,7 +18,8 @@ enum TinyMP4Fixture {
         width: Int = 320,
         height: Int = 240,
         fps: Int = 30,
-        frames: Int = 30
+        frames: Int = 30,
+        audioSeconds: Double = 0
     ) async throws {
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
@@ -34,6 +37,23 @@ enum TinyMP4Fixture {
                 kCVPixelBufferHeightKey as String: height,
             ]
         )
+        let audioInput: AVAssetWriterInput?
+        if audioSeconds > 0 {
+            let candidate = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: 44100,
+                AVNumberOfChannelsKey: 2,
+                AVEncoderBitRateKey: 64000,
+            ])
+            candidate.expectsMediaDataInRealTime = false
+            guard writer.canAdd(candidate) else {
+                throw FixtureError.writerRejectedInput
+            }
+            writer.add(candidate)
+            audioInput = candidate
+        } else {
+            audioInput = nil
+        }
         guard writer.canAdd(input) else {
             throw FixtureError.writerRejectedInput
         }
@@ -64,11 +84,49 @@ enum TinyMP4Fixture {
         }
 
         input.markAsFinished()
+        if let audioInput, audioSeconds > 0 {
+            try await appendSilence(to: audioInput, seconds: audioSeconds)
+            audioInput.markAsFinished()
+        }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             writer.finishWriting { continuation.resume() }
         }
         guard writer.status == .completed else {
             throw writer.error ?? FixtureError.finishFailed
+        }
+    }
+
+    /// 往音轨写静音：LPCM 块（复用 `LibavAudioSampleBuffer` 的封装）→ writer input 自己编 AAC。
+    private static func appendSilence(
+        to input: AVAssetWriterInput,
+        seconds: Double,
+        sampleRate: Double = 44100,
+        channels: Int = 2
+    ) async throws {
+        let chunkFrames = 1024
+        let totalFrames = Int(seconds * sampleRate)
+        var written = 0
+        while written < totalFrames {
+            while !input.isReadyForMoreMediaData {
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            let frames = min(chunkFrames, totalFrames - written)
+            let byteCount = frames * channels * MemoryLayout<Float>.size
+            guard let raw = malloc(byteCount) else {
+                throw FixtureError.noAudioBuffer
+            }
+            memset(raw, 0, byteCount)
+            guard let sample = LibavAudioSampleBuffer.make(
+                ownedPCM: raw,
+                frameCount: frames,
+                sampleRate: sampleRate,
+                channels: channels,
+                presentationSeconds: Double(written) / sampleRate,
+                durationSeconds: Double(frames) / sampleRate
+            ), input.append(sample) else {
+                throw FixtureError.appendFailed
+            }
+            written += frames
         }
     }
 
@@ -87,5 +145,6 @@ enum TinyMP4Fixture {
         case noPixelBuffer
         case appendFailed
         case finishFailed
+        case noAudioBuffer
     }
 }
