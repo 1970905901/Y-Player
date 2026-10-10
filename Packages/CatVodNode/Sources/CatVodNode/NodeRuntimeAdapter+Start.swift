@@ -74,7 +74,7 @@ extension NodeRuntimeAdapter {
         return try await waitForReadiness()
         #else
         throw NodeRuntimeError.runtimeUnavailable(
-            reason: "iOS 需要 nodejs-mobile 的 libnode 产物（M1.6 未接入），当前只实现了 macOS 的进程路径"
+            reason: "进程方式只在 macOS 可用；iOS 走随包 libnode（NodeMobileRuntime，M16P4）"
         )
         #endif
     }

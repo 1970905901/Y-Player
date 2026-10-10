@@ -9,7 +9,7 @@ import Foundation
 /// 这里保持同样的时序（累积 → 应用到频道）。
 ///
 /// 与上游的差别（均已记录）：
-/// - DRM 相关（`license_key` / `license_type` / `drm_legacy`）本阶段**不解析**，属后续阶段；
+/// - DRM 相关（`license_key` / `license_type` / `drm_legacy`）**不解析**（M07a 的未做清单里就是这个口径）；
 /// - 取值一律「取关键字**第一次**出现之后到行尾」，而上游 `split(key)[1]` 在「值里又出现同名 key」时行为不同。
 struct LivePlaylistSettings: Sendable {
     private(set) var ua = ""

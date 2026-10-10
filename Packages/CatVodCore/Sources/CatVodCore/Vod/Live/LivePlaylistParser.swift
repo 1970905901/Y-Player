@@ -11,7 +11,7 @@ import Foundation
 /// - txt：`分组名,#genre#` 切分组，`频道名,url1#url2` 加频道（按**第一个**逗号切分）；
 /// - 收尾：给没有号的频道按顺序补 `001`、`002`…，并把直播源级设置补进频道（``LiveChannel/inherit(from:)``）。
 ///
-/// 与上游的差别（均已记录）：DRM（`license_key` 等）与 EPG 拉取/时移时间格式化属后续阶段；
+/// 与上游的差别（均已记录）：DRM（`license_key` 等）仍不解析（见 M07a 的未做清单）；EPG 与时移已接（M07b / M07c）。
 /// 上游用「元信息频道名」（`更新时间…`）过滤的行，这里同样过滤（``isMetaChannel(_:)``）。
 public struct LivePlaylistParser: Sendable {
     public init() { }

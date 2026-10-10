@@ -3,7 +3,7 @@ import Foundation
 /// 解析结果的校验与提取规则（逐条对齐上游 `ParseJob`）。
 ///
 /// 单独放一个类型的原因：这些是**协议事实**，不是某个执行器的实现细节 ——
-/// M5b（`type=1` JSON）、M5c（Web 嗅探）与后续的 JAR/Python 通道都要用同一套判定。
+/// M5b（`type=1` JSON）与 M5c（Web 嗅探）都用同一套判定；JAR / Python 通道已明确不支持，别再当待办。
 public enum ParseResultValidator {
     /// `type=1` JSON 解析的响应取址：先 `url`，为空再 `data.url`（上游 `jsonParse`）。
     public static func playURL(fromJSON body: AnyJSONValue) -> String {
