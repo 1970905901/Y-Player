@@ -96,6 +96,7 @@ js2p（JS 源）宿主契约见 [`docs/js2p宿主契约.md`](docs/js2p宿主契�
 | `github_bootstrap.py` | 创建 GitHub 仓库（幂等，已存在则跳过）、推送本地提交、把 `origin` 重置为不含 token 的干净地址 |
 | `gh_probe.py` | 查询仓库工作流状态、最近运行、指定提交的 check-runs |
 | `gh_actions_report.py` | 列出运行与作业步骤，抓取失败作业日志并抽取关键错误行 |
+| `Scripts/check.sh` | 本地闸门：三条 Python 检查 + SwiftFormat 格式检查（见下） |
 
 用法示例：
 
@@ -104,6 +105,27 @@ python Tools/analyze_js2p.py
 python Tools/gh_probe.py <token> <owner>/<repo> [sha]
 python Tools/gh_actions_report.py <token> <owner>/<repo> [run-id]
 ```
+
+### 本地闸门（`Scripts/`，M21P1）
+
+改完代码、提交之前跑这一条（macOS / Linux；Windows 上逐个 `python -X utf8 Scripts\<脚本>.py`）：
+
+```bash
+bash Scripts/check.sh
+```
+
+| 脚本 | 检查什么 |
+| --- | --- |
+| `Scripts/check_braces.py` | 括号/引号平衡、连续空行、行尾空白（结构性错误，本地就能抓） |
+| `Scripts/check_lint.py` | `.swiftlint.yml` 里**能静态匹配**的 opt_in 规则（force_unwrapping / empty_string / line_length…） |
+| `Scripts/audit_duplicate_types.py` | 同模块顶层同名类型（否则编译期 `ambiguous for type lookup`，会挡住整个 job） |
+
+**它们以前住在 `Tools/out/`**（不进版本库、路径写死 Windows 的 `d:\worka\1`）—— M21P1 搬进 `Scripts/`：
+路径按脚本位置推、**退出码**可直接当闸门，Mac 与 Windows 跑的是同一份规则。
+
+⚠️ 闸门**抓不到编译错误**（那要 Swift 编译器）：改完代码先跑
+`swift test --package-path Packages/<包>` —— 它同时是编译闸门，比 xcodebuild 快得多；
+碰了跨模块的 public 签名时尤其别跳（「public 位置 + internal 类型」这类错本地闸门看不见）。
 
 > 安全约定：token 仅作为命令行参数传入，**不写入任何文件、不提交、不进 remote 配置**；脚本会把日志中的 token 替换为 `***`。
 > 日志与缓存目录 `Tools/out/`、`Tools/.cache/` 已在 `.gitignore` 中。
