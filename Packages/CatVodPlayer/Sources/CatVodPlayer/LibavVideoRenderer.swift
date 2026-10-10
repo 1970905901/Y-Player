@@ -18,6 +18,9 @@ protocol FFmpegVideoRendering: AnyObject, Sendable {
     func flush()
     /// 跳转：清显示队列，把时间轴挪到指定秒数（保持播放 / 暂停与倍速）。
     func reset(to seconds: Double, playing: Bool, rate: Float)
+    /// 逐帧步进（M04P23）：把时间轴停到「当前显示位置之后、最近的那一帧」上。
+    /// **不 flush、不喂帧** —— 层里排着的帧自己会顶上来。返回 false = 队里没有下一帧（停在原地）。
+    func stepToNextFrame() -> Bool
 }
 
 /// 自研内核的**显示渲染器**（M04P8）：把解码帧送进 ``FFmpegVideoSurface`` 的显示层，
@@ -39,6 +42,12 @@ final class LibavVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
     private(set) var enqueuedCount = 0
     private(set) var conversionFailureCount = 0
     private(set) var failedStatusCount = 0
+
+    /// 已喂进层、还没被 flush 的帧 pts（M04P23）：`AVSampleBufferDisplayLayer` 的队列读不回来，
+    /// 而「当前之后最近那一帧的 pts」是逐帧步进唯一的输入 —— 自己记一份就够（过期的步进时随手清）。
+    /// 并发：`enqueue` 在解码线程追加、`stepToNextFrame` 在控制线程读 —— 用锁串。
+    private var queuedSeconds: [Double] = []
+    private let queueLock = NSLock()
 
     /// 生产入口：跟音频共用**一条** synchronizer（音画同步的结构基础）。
     init(surface: FFmpegVideoSurface, synchronizer: AVSampleBufferRenderSynchronizer) {
@@ -88,6 +97,9 @@ final class LibavVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
         }
         layer.enqueue(sample)
         enqueuedCount += 1
+        queueLock.lock()
+        queuedSeconds.append(presentationSeconds)
+        queueLock.unlock()
         // 首帧必打；之后每 120 帧打一次，够看出「在进帧但层不渲染」这类怪事。
         if enqueuedCount == 1 || enqueuedCount % 120 == 0 {
             let enqueued = "第 \(enqueuedCount) 帧入层：pts=\(presentationSeconds)s "
@@ -116,13 +128,33 @@ final class LibavVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
     /// 清掉已排队未显示的帧（跳转 / 重开时用）。
     func flush() {
         layer.flush()
+        queueLock.lock()
+        queuedSeconds.removeAll()
+        queueLock.unlock()
     }
 
     func reset(to seconds: Double, playing: Bool, rate: Float) {
-        layer.flush()
+        flush()
         synchronizer.setRate(
             playing ? rate : 0,
             time: CMTime(seconds: seconds, preferredTimescale: 1_000_000)
         )
+    }
+
+    /// 逐帧步进（M04P23）：把时间轴停到「比当前显示位置晚、最近的那一帧」上。
+    ///
+    /// - 不 flush 也不喂帧：层里排着的那批帧就是队列，时间轴挪过去，显示层自然把那一帧顶上来
+    ///   （往前挪一帧的时间，显示的是**下一帧**，不是重新解一帧 —— 解码线程本来就一直解在前头）；
+    /// - 顺手清掉「当前之前 1 秒外」的过期 pts：长片一直播、台账里堆着几十万条也不怕；
+    /// - 迟到帧被层自己丢掉的那些算不进来（我们只记喂过的）—— 最多是那一格偏差，不会乱跳。
+    func stepToNextFrame() -> Bool {
+        let current = currentSeconds
+        queueLock.lock()
+        queuedSeconds.removeAll { $0 < current - 1 }
+        let next = queuedSeconds.lazy.filter { $0 > current + 0.001 }.min()
+        queueLock.unlock()
+        guard let next else { return false }
+        synchronizer.setRate(0, time: CMTime(seconds: next, preferredTimescale: 1_000_000))
+        return true
     }
 }

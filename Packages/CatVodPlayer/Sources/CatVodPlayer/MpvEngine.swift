@@ -28,6 +28,10 @@ public actor MpvEngine: PlayerEngine, PlaybackStatsProviding {
     private var duration: Double = 0
     /// 最近一次已知播放位置（`duration` 变化时补发的 `timeChanged` 要用）。
     private var lastTime: Double = 0
+    /// 用户音量（0...1）与音量增益（1.0 = 原声）**分开记**（M04P23）：mpv 只有一只 `volume` 旋钮。
+    /// 增益的范围 / 夹紧见 ``AudioGain``（上限那份账在它那儿，这里不再写一遍）。
+    private var currentVolume: Float = 1
+    private var currentGain: Float = 1
 
     public init(decoderMode: DecoderMode = .hardware, videoSurface: MpvVideoSurface? = nil) {
         self.init(
@@ -117,10 +121,35 @@ public actor MpvEngine: PlayerEngine, PlaybackStatsProviding {
     }
 
     /// 音量：mpv 的 `volume` 属性是 0–100（100 = 原声），这里把 0...1 换算过去。
+    ///
+    /// 与增益（M04P23）分开记：mpv 那边只有一只 `volume` 旋钮，写它时要把两者乘起来。
     public func setVolume(_ volume: Float) async {
+        currentVolume = min(max(volume, 0), 1)
+        applyVolume()
+    }
+
+    /// 音量增益（M04P23）：mpv 的 `volume` 可以超过 100（这就是它的「放大」）——
+    /// `volume-max` 放到 200（mpv 默认 130，不放会被削掉一半增益）。
+    public func setAudioGain(_ gain: Float) async {
+        currentGain = AudioGain.clamp(gain)
         guard let session else { return }
-        let clamped = min(max(volume, 0), 1)
-        _ = session.command(["set", "volume", Self.number(Double(clamped) * 100)])
+        _ = session.command(["set", "volume-max", Self.number(Double(AudioGain.maximum) * 100)])
+        applyVolume()
+    }
+
+    /// 逐帧步进（M04P23）：mpv 的 `frame-step` —— **播放中调它会先暂停再走一帧**（mpv 的语义），
+    /// 状态跟着报「暂停」（别让界面还以为在播）。
+    public func stepFrame() async {
+        guard let session else { return }
+        _ = session.command(["frame-step"])
+        update(.paused)
+    }
+
+    /// 把「用户音量 × 增益」一起写给 mpv（唯一的 `volume` 旋钮）。
+    private func applyVolume() {
+        guard let session else { return }
+        let value = Double(currentVolume) * Double(currentGain) * 100
+        _ = session.command(["set", "volume", Self.number(min(value, Double(AudioGain.maximum) * 100))])
     }
 
     public func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async {

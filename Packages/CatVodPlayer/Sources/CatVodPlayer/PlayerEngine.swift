@@ -153,6 +153,14 @@ public protocol PlayerEngine: AnyObject, Sendable {
     func setRate(_ rate: Float) async
     /// 音量（0...1）。系统内核写 `AVPlayer.volume`；MPV 写 `volume`（0–100，100 = 原声）。
     func setVolume(_ volume: Float) async
+    /// 音量增益（M04P23）：在用户音量之上再乘一个倍数（范围见 ``AudioGain``，1.0 = 原声）。
+    /// 系统内核做不到（`AVPlayer.volume` 上限就是 1）—— 空实现，界面按
+    /// ``PlayerEngineKind/supportsAudioGain`` 不摆那个控件。
+    func setAudioGain(_ gain: Float) async
+    /// 逐帧步进（M04P23）：暂停态往前走**一帧**（播放中调 = 先暂停再走一帧）。
+    /// 三个内核都支持：系统 `AVPlayerItem.step(byCount:)`、MPV `frame-step`、
+    /// 自研 FFmpeg 把时间轴挪到显示队列里排着的下一帧（见会话侧 `stepFrame`）。
+    func stepFrame() async
     func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async
     /// 画面比例 / 缩放（M03P9）。各内核的落实方式见 ``PlaybackScaleMode`` 的支持矩阵：
     /// 系统内核没有这个能力（空实现），界面也不会对它显示这一项。
@@ -192,6 +200,41 @@ public enum DecoderMode: String, Sendable, CaseIterable {
         case .system: false
         case .mpv, .ffmpeg: true
         }
+    }
+}
+
+extension PlayerEngineKind {
+    /// 这个内核能不能做「音量增益」（M04P23）。
+    ///
+    /// 系统内核的 `AVPlayer.volume` 上限就是 1（原声）—— 放大不了，界面据此不摆那个滑杆
+    /// （与「解码方式对系统内核无效」「画面比例对系统内核不支持」同一套「拿不到就不摆」的规矩）。
+    public var supportsAudioGain: Bool {
+        self != .system
+    }
+}
+
+/// 音量增益（M04P23）：在用户音量之上再乘一个倍数（1.0 = 原声，最高 2.0 —— 再高只剩削波了）。
+///
+/// **上下限与夹紧只此一份**：引擎下发前夹、会话记账时夹、播放页滑杆的区间也用它 ——
+/// 别在各自那层再写一遍数字（要改上限只改这里）。
+public enum AudioGain {
+    /// 原声（不放大）。
+    public static let minimum: Float = 1
+    /// 上限：2 倍（再高只剩削波）。
+    public static let maximum: Float = 2
+    /// 播放页滑杆的步进。
+    public static let step: Float = 0.1
+
+    /// 夹进合法区间。NaN 先挡一道回原声 —— 与 ``SpeedSetting/clamp(_:)`` 同一理由
+    /// （NaN 会一路传到内核，把音量带进怪状态）。
+    public static func clamp(_ gain: Float) -> Float {
+        guard !gain.isNaN else { return minimum }
+        return min(max(gain, minimum), maximum)
+    }
+
+    /// 展示文本：`1.0x` / `1.5x`（与倍速的 ``SpeedSetting/format(_:)`` 同款，步进 0.1 一位小数够用）。
+    public static func format(_ gain: Float) -> String {
+        String(format: "%.1f", clamp(gain)) + "x"
     }
 }
 

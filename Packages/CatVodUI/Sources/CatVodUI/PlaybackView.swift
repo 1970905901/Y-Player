@@ -157,6 +157,10 @@ public struct PlaybackView: View {
     /// 上游把 scale 存在 LiveSetting 里（按直播页）；我们没有「按页面分的播放设置」这套容器，
     /// 而一个全局落盘的值会把下一部片也按上一部选的比例放，所以先不做存档。
     @State private var scaleMode: PlaybackScaleMode = .fit
+    /// 音量增益（M04P23，1.0 = 原声，范围见 ``AudioGain``）：**页面内偏好**（不落盘）——
+    /// 与画面比例同一口径（「这一次播放」的听感偏好，不该把下一部片也放大；要按片记忆另开一片）。
+    /// 跨文件扩展（`+Speed` 的音量增益区）要读写，所以是模块内。
+    @State var audioGain: Float = AudioGain.minimum
     @State private var isFinished = false
     /// 单集循环（M03P20，对齐上游控制条的 `repeat`）：播完（或到片尾标记）回到本集开头，不连播。
     /// 页面内偏好、不落盘 —— 与上游一样是「本次播放」的开关。
@@ -312,6 +316,9 @@ public struct PlaybackView: View {
                 }
                 if engine != nil {
                     speedSection
+                    if settings.engine.supportsAudioGain {
+                        audioGainSection
+                    }
                 }
                 if !resumedFromText.isEmpty {
                     Section("进度") {
@@ -594,6 +601,8 @@ extension PlaybackView {
             await created.setRate(speed)
             // 画面比例也要在加载**之后**套：引擎换资源时会把显示方式复位（与倍速同一条理由）。
             await created.setScaleMode(scaleMode)
+            // 音量增益同理（M04P23）：换资源后重套，页面内偏好不丢。
+            await created.setAudioGain(audioGain)
         } catch let error as PlayerError {
             errorText = error.message
         } catch {
@@ -872,6 +881,7 @@ extension PlaybackView {
             await engine.play()
             await engine.setRate(speed)
             await engine.setScaleMode(scaleMode)
+            await engine.setAudioGain(audioGain)
         } catch let error as PlayerError {
             errorText = error.message
         } catch {

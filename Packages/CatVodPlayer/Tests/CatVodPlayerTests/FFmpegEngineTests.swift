@@ -17,6 +17,8 @@ final class FakeFFmpegSession: FFmpegSession, @unchecked Sendable {
         case seek(to: Double)
         case rate(Float)
         case volume(Float)
+        case gain(Float)
+        case step
         case select(TrackSelection, TrackKind)
         case stats
         case close
@@ -92,6 +94,14 @@ final class FakeFFmpegSession: FFmpegSession, @unchecked Sendable {
 
     func setVolume(_ volume: Float) async {
         record(.volume(volume))
+    }
+
+    func setAudioGain(_ gain: Float) async {
+        record(.gain(gain))
+    }
+
+    func stepFrame() async {
+        record(.step)
     }
 
     func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async {
@@ -175,7 +185,7 @@ struct FFmpegEngineTests {
         #expect(state == .loading)
     }
 
-    @Test("命令：play / pause / seek（负数夹 0）/ 倍速 / 音量（夹 0...1）/ 轨道 都下发给会话")
+    @Test("命令：play / pause / seek（负数夹 0）/ 倍速 / 音量（夹 0...1）/ 增益（夹 1...2）/ 步进 / 轨道 都下发给会话")
     func commands() async throws {
         let (engine, session) = makeEngine()
         try await engine.load(MediaResource(url: "https://cdn.example.com/a.m3u8"))
@@ -186,10 +196,14 @@ struct FFmpegEngineTests {
         await engine.setRate(1.5)
         await engine.setVolume(0.5)
         await engine.setVolume(1.5)
+        await engine.setAudioGain(1.5)
+        await engine.setAudioGain(3)
+        await engine.setAudioGain(0.5)
+        await engine.stepFrame()
         await engine.selectTrack(.disabled, for: .subtitle)
         await engine.selectTrack(.index(2), for: .audio)
 
-        // 第一条是 open，剩下的是上面这九条（顺序即调用顺序）
+        // 第一条是 open，剩下的是上面这些（顺序即调用顺序）
         let issued = Array(session.recorded.dropFirst())
         #expect(issued == [
             .play,
@@ -199,6 +213,10 @@ struct FFmpegEngineTests {
             .rate(1.5),
             .volume(0.5),
             .volume(1),
+            .gain(1.5),
+            .gain(2),
+            .gain(1),
+            .step,
             .select(.disabled, .subtitle),
             .select(.index(2), .audio),
         ])

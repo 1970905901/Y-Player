@@ -116,6 +116,18 @@ public actor FFmpegEngine: PlayerEngine, PlaybackStatsProviding {
         await session.setVolume(min(max(volume, 0), 1))
     }
 
+    /// 音量增益（M04P23）：1.0 = 原声，范围见 ``AudioGain``（再高只剩削波了）。
+    public func setAudioGain(_ gain: Float) async {
+        guard let session else { return }
+        await session.setAudioGain(AudioGain.clamp(gain))
+    }
+
+    /// 逐帧步进（M04P23）：先暂停，再把时间轴挪到显示队列里排着的下一帧（见会话侧）。
+    public func stepFrame() async {
+        guard let session else { return }
+        await session.stepFrame()
+    }
+
     public func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async {
         guard let session else { return }
         await session.selectTrack(selection, for: kind)

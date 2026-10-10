@@ -29,6 +29,10 @@ public protocol FFmpegSession: AnyObject, Sendable {
     func setRate(_ rate: Float) async
     /// 音量（0...1）。
     func setVolume(_ volume: Float) async
+    /// 音量增益（M04P23）：见 `PlayerEngine.setAudioGain(_:)`（1.0 = 原声，最高 2.0）。
+    func setAudioGain(_ gain: Float) async
+    /// 逐帧步进（M04P23）：暂停态往前走一帧，停在那一帧上。
+    func stepFrame() async
     /// 轨道选择（`.auto` / `.disabled` / `.index`，含义见 `TrackSelection`）。
     func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async
     /// 播放信息快照（M04 口径：内核报什么读什么，读不到给空值，不抛错）。

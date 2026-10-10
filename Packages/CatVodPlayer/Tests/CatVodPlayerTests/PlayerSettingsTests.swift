@@ -54,6 +54,20 @@ struct PlayerSettingsTests {
         #expect(PlaybackSettings(engine: .mpv, decoderMode: .software).isDecoderModeEffective)
     }
 
+    @Test("音量增益（M04P23）：支持矩阵与范围 —— 系统内核没有（音量封顶 1），另外两个都有")
+    func audioGainSupport() {
+        #expect(!PlayerEngineKind.system.supportsAudioGain)
+        #expect(PlayerEngineKind.mpv.supportsAudioGain)
+        #expect(PlayerEngineKind.ffmpeg.supportsAudioGain)
+        // 范围 / 夹紧 / 展示文本只此一份（AudioGain）：别在引擎或界面各写一遍
+        #expect(AudioGain.minimum == 1)
+        #expect(AudioGain.maximum == 2)
+        #expect(AudioGain.clamp(3) == 2)
+        #expect(AudioGain.clamp(0.5) == 1)
+        #expect(AudioGain.clamp(.nan) == 1)
+        #expect(AudioGain.format(1.5) == "1.5x")
+    }
+
     @Test("系统内核记录解码方式并报告初始状态")
     func systemEngineLifecycle() async throws {
         let engine = AVPlayerEngine(decoderMode: .software)

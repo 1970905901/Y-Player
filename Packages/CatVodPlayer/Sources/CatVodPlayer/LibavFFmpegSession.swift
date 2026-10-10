@@ -8,7 +8,6 @@ import Foundation
 /// 音频走 libavcodec + swresample 进音频渲染器；两者挂**同一条** synchronizer。
 ///
 /// 当前已知缺口（**如实说，别让界面以为它全能**；M04P13 已把它接进界面）：
-/// - 逐帧步进 / 音频增益还没做（M04P13 / M04P14 记的「内核专属控制」留的口）；
 /// - 字幕只出**文本**轨、样式不还原（位图轨 / ASS 不做；M04P19）；
 /// - 网络读阻塞期间 `close()` 不保证立刻收线程 —— 在没有 interrupt callback 之前，
 ///   宁可让线程自然退出，也不释放它可能正在读的上下文；
@@ -66,6 +65,9 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     private var pendingAudioTrack: PendingAudioTrack?
     /// 待办的换字幕请求（与换音轨同一套；M04P19）。
     private var pendingSubtitleTrack: PendingSubtitleTrack?
+    /// 音量增益（M04P23，1.0 = 原声，范围见 `AudioGain`）：控制线程写（走锁）、解码线程读。
+    /// 解码器那边的 `gain` 只能由解码线程写（读它的也是那条线），所以这里只记账、循环里抄给它。
+    private var audioGain: Float = AudioGain.minimum
 
     /// 饥饿看门狗（M04P17）：解码线程喂帧、看门狗线程心跳；状态机与判定是纯逻辑（``FeedStarvationWatchdog``）。
     private var starvationWatchdog = FeedStarvationWatchdog()
@@ -213,6 +215,20 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         audioRenderer.setVolume(min(max(volume, 0), 1))
     }
 
+    /// 音量增益（M04P23）：只记账 —— 真正抄给解码器由解码线程做（`applyAudioGainIfNeeded`）。
+    func setAudioGain(_ gain: Float) async {
+        requestAudioGain(gain)
+    }
+
+    /// 逐帧步进（M04P23）：先暂停（播放中调 = 先停再走一帧），再让渲染器把时间轴挪到下一帧。
+    /// 判定与挪表都在渲染器里（它带着自己的锁，时间轴本来就归控制路径）；队里没有下一帧也不假装。
+    func stepFrame() async {
+        leavePlaying()
+        _ = videoRenderer.stepToNextFrame()
+        emit(.time(current: videoRenderer.currentSeconds, duration: durationSeconds))
+        emit(.state(.paused))
+    }
+
     func close() async {
         stopRunning()
         // 等解码线程自己退出。没有 interrupt callback 之前**不能**释放
@@ -264,6 +280,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
                 performSubtitleSwitch(to: request)
                 continue
             }
+            applyAudioGainIfNeeded()
             if isFinishedEof() {
                 Thread.sleep(forTimeInterval: 0.05)
                 continue
@@ -832,6 +849,25 @@ extension LibavFFmpegSession {
     }
 }
 
+// MARK: - 音频增益（M04P23）
+
+/// 音频增益：**只在解码线程抄给解码器**（`gain` 由解码线程读，写也只能同一条线写）。
+/// 逐帧步进不走这条线（它只动渲染器的时间轴，见 ``FFmpegSession/stepFrame()``）。
+///
+/// 为什么拆成扩展：类型体行数会把 CI 的 lint 顶红（同 M04P16 / M04P17 那几组的理由）。
+extension LibavFFmpegSession {
+    /// 把增益抄给当前音频解码器：**以解码器自己那份为准**（它没有记录 = 还没抄过 / 是换轨新建的）。
+    /// 在解码循环顶部每轮查一次 —— 换轨新建的解码器下一轮就带上，不必在换轨那边再写一遍。
+    private func applyAudioGainIfNeeded() {
+        guard let decoder = audioDecoder else { return }
+        lock.lock()
+        let gain = audioGain
+        lock.unlock()
+        guard gain != decoder.gain else { return }
+        decoder.gain = gain
+    }
+}
+
 // MARK: - 同步临界区（M03P11）
 
 /// 控制方法的锁都收在这一组**同步**小方法里。
@@ -899,6 +935,13 @@ extension LibavFFmpegSession {
         case let .index(index): pendingSubtitleTrack = .stream(index)
         case .disabled: pendingSubtitleTrack = .disabled
         }
+        lock.unlock()
+    }
+
+    /// 记一个待办增益（解码线程会在循环顶部抄给解码器）。
+    private func requestAudioGain(_ gain: Float) {
+        lock.lock()
+        audioGain = AudioGain.clamp(gain)
         lock.unlock()
     }
 

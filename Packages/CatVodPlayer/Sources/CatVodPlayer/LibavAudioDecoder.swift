@@ -32,6 +32,9 @@ final class LibavAudioDecoder: @unchecked Sendable {
     private var outputChannels = 0
     private var outputSampleRate: Int32 = 0
     private var timeBase = AVRational(num: 0, den: 1)
+    /// 音量增益（M04P23，1.0 = 原声）：**由会话在喂包前抄一份过来**（解码线程写、解码线程读）。
+    /// `AVSampleBufferAudioRenderer.volume` 上限是 1，放大只能在样本上自己做。
+    var gain: Float = 1
 
     deinit {
         close()
@@ -150,6 +153,11 @@ final class LibavAudioDecoder: @unchecked Sendable {
         timeBase = AVRational(num: 0, den: 1)
     }
 
+    /// 增益的核心（**纯函数**，有单测）：乘上倍数、夹到 ±1。
+    static func gained(_ sample: Float, gain: Float) -> Float {
+        min(max(sample * gain, -1), 1)
+    }
+
     // MARK: - 内部
 
     /// 收一块。返回 false = 这次没得收（EAGAIN / EOF / 出错都算）。
@@ -183,6 +191,14 @@ final class LibavAudioDecoder: @unchecked Sendable {
         guard produced > 0 else {
             free(raw)
             return nil
+        }
+        // 音量增益（M04P23）：乘在**转换后的 Float32 交错样本**上（`plane` 被 swr 挪过了，
+        // 用原始的 `raw` 指针）。乘完夹到 ±1 —— 超过满刻度的样本会绕回去，那是破音里最难听的一种。
+        if gain != 1 {
+            let samples = raw.assumingMemoryBound(to: Float.self)
+            for index in 0 ..< (Int(produced) * outputChannels) {
+                samples[index] = Self.gained(samples[index], gain: gain)
+            }
         }
         let seconds = LibavVideoDecoder.seconds(
             pts: frame.pointee.pts,

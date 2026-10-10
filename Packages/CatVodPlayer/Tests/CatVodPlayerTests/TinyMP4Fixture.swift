@@ -11,7 +11,8 @@ import VideoToolbox
 /// M04P7 的 demux 测试可以接着用。
 enum TinyMP4Fixture {
     /// 写一个 `frames` 帧（`fps` 帧率）、黑/灰交替的 H.264 MP4；
-    /// `audioSeconds > 0` 时再加一条等长的 AAC 静音音轨（M04P10 起）；
+    /// `audioSeconds > 0` 时再加一条等长的 AAC 音轨（M04P10 起；默认静音，
+    /// `toneAmplitude > 0` 时写 440Hz 正弦 —— M04P23 增益测试要有声音可量）；
     /// `secondAudioSampleRate > 0` 时再加**第二条**不同采样率的音轨（M04P16 换轨测试用
     /// —— 换过去之后，喂来的样本采样率会变，那就是「真的换了」的证据）。
     ///
@@ -23,7 +24,8 @@ enum TinyMP4Fixture {
         fps: Int = 30,
         frames: Int = 30,
         audioSeconds: Double = 0,
-        secondAudioSampleRate: Double = 0
+        secondAudioSampleRate: Double = 0,
+        toneAmplitude: Double = 0
     ) async throws {
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
@@ -107,11 +109,11 @@ enum TinyMP4Fixture {
 
         input.markAsFinished()
         if let audioInput, audioSeconds > 0 {
-            try await appendSilence(to: audioInput, seconds: audioSeconds)
+            try await appendAudio(to: audioInput, seconds: audioSeconds, amplitude: toneAmplitude)
             audioInput.markAsFinished()
         }
         if let secondAudioInput, audioSeconds > 0, secondAudioSampleRate > 0 {
-            try await appendSilence(
+            try await appendAudio(
                 to: secondAudioInput,
                 seconds: audioSeconds,
                 sampleRate: secondAudioSampleRate
@@ -126,12 +128,17 @@ enum TinyMP4Fixture {
         }
     }
 
-    /// 往音轨写静音：LPCM 块（复用 `LibavAudioSampleBuffer` 的封装）→ writer input 自己编 AAC。
-    private static func appendSilence(
+    /// 正弦测试音的频率（440Hz，够量增益、也不至于给 AAC 编出怪东西）。
+    private static let toneFrequency: Double = 440
+
+    /// 往音轨写 PCM：默认静音；`amplitude > 0` 写正弦（M04P23 增益测试的音源）。
+    /// LPCM 块复用 `LibavAudioSampleBuffer` 的封装 → writer input 自己编 AAC。
+    private static func appendAudio(
         to input: AVAssetWriterInput,
         seconds: Double,
         sampleRate: Double = 44100,
-        channels: Int = 2
+        channels: Int = 2,
+        amplitude: Double = 0
     ) async throws {
         let chunkFrames = 1024
         let totalFrames = Int(seconds * sampleRate)
@@ -145,7 +152,18 @@ enum TinyMP4Fixture {
             guard let raw = malloc(byteCount) else {
                 throw FixtureError.noAudioBuffer
             }
-            memset(raw, 0, byteCount)
+            if amplitude > 0 {
+                let samples = raw.assumingMemoryBound(to: Float.self)
+                for frame in 0 ..< frames {
+                    let phase = 2 * Double.pi * toneFrequency * Double(written + frame) / sampleRate
+                    let value = Float(amplitude * sin(phase))
+                    for channel in 0 ..< channels {
+                        samples[frame * channels + channel] = value
+                    }
+                }
+            } else {
+                memset(raw, 0, byteCount)
+            }
             guard let sample = LibavAudioSampleBuffer.make(
                 ownedPCM: raw,
                 frameCount: frames,
@@ -157,6 +175,31 @@ enum TinyMP4Fixture {
             }
             written += frames
         }
+    }
+
+    /// 读一块 Float32 交错音频样本的**峰值**（M04P23 增益测试用）：
+    /// 增益是乘在样本上的，峰值之比就是增益之比（同一份源解两遍，解码器输出逐样本一致）。
+    static func peak(of sample: CMSampleBuffer) -> Float {
+        guard let block = CMSampleBufferGetDataBuffer(sample) else { return 0 }
+        var length = 0
+        var pointer: UnsafeMutablePointer<Int8>?
+        guard CMBlockBufferGetDataPointer(
+            block,
+            atOffset: 0,
+            lengthAtOffsetOut: nil,
+            totalLengthOut: &length,
+            dataPointerOut: &pointer
+        ) == noErr, let pointer else {
+            return 0
+        }
+        let count = length / MemoryLayout<Float>.size
+        guard count > 0 else { return 0 }
+        let floats = UnsafeRawPointer(pointer).assumingMemoryBound(to: Float.self)
+        var peak: Float = 0
+        for index in 0 ..< count {
+            peak = max(peak, abs(floats[index]))
+        }
+        return peak
     }
 
     /// 写一个 **10bit（HEVC Main10）** 的小 MP4：给软解 10bit 那条路当输入（M04P21）。

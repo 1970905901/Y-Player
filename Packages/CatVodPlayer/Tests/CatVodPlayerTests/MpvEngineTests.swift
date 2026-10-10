@@ -264,7 +264,7 @@ struct MpvEngineTests {
         #expect(resumed == .playing)
     }
 
-    @Test("命令：play / pause / seek / 倍速 / 音量 / 轨道选择 都下发给会话")
+    @Test("命令：play / pause / seek / 倍速 / 音量 / 增益（乘进 volume）/ 步进 / 轨道选择 都下发给会话")
     func commands() async throws {
         let (engine, session) = makeEngine()
         try await engine.load(MediaResource(url: "https://cdn.example.com/a.m3u8"))
@@ -273,11 +273,14 @@ struct MpvEngineTests {
         await engine.seek(to: 90)
         await engine.setRate(1.5)
         await engine.setVolume(0.5)
+        await engine.setAudioGain(1.5)
+        await engine.stepFrame()
         await engine.selectTrack(.disabled, for: .subtitle)
         await engine.selectTrack(.index(2), for: .audio)
         await engine.selectTrack(.auto, for: .video)
 
-        // 第一条是 loadfile，剩下的是上面这七条（顺序即调用顺序）
+        // 第一条是 loadfile，剩下的是上面这些（顺序即调用顺序）
+        // 增益走的是「volume-max 放到 200 + 音量乘起来写 75」—— mpv 只有一只 volume 旋钮。
         let issued = Array(session.commands.dropFirst())
         #expect(issued == [
             ["set", "pause", "no"],
@@ -285,11 +288,14 @@ struct MpvEngineTests {
             ["seek", "90.000", "absolute"],
             ["set", "speed", "1.500"],
             ["set", "volume", "50.000"],
+            ["set", "volume-max", "200.000"],
+            ["set", "volume", "75.000"],
+            ["frame-step"],
             ["set", "sid", "no"],
             ["set", "aid", "2"],
             ["set", "vid", "auto"],
         ])
-        // 跳转后状态与进度要跟上（UI 立刻画，不等内核回属性）
+        // 跳转后状态与进度要跟上（UI 立刻画，不等内核回属性）；步进会报「暂停」
         let state = await engine.currentState()
         #expect(state == .paused)
     }

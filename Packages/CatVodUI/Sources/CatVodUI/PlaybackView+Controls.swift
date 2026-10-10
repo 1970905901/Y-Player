@@ -11,6 +11,8 @@ import SwiftUI
 ///
 /// 为什么拆出去：`PlaybackView.swift` 的行数又贴到 SwiftLint 的 `file_length` error（800）——
 /// 与 `+Speed` / `+Gestures` / `+OpeningEnding` / `+Lines` 同一套做法。
+///
+/// 逐帧步进按钮（M04P23）也落在这一条上：播放 / 暂停旁边，播放中按 = 内核先暂停再走一帧。
 extension PlaybackView {
     /// 最小控制条：播放 / 暂停 + 进度 + 时间（变速 / 画面比例在信息区，不在这儿）。
     var playerControls: some View {
@@ -41,6 +43,17 @@ extension PlaybackView {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(playerState.isPlaying ? "暂停" : "播放")
+
+            Button {
+                Task { await engine?.stepFrame() }
+            } label: {
+                Image(systemName: "forward.frame")
+                    .font(.title3)
+                    .foregroundStyle(.white)
+                    .frame(width: 28)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("逐帧步进")
 
             Text(Self.timeText(latestPosition))
                 .font(.caption.monospacedDigit())

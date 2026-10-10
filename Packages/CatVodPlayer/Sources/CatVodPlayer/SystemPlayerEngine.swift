@@ -120,6 +120,22 @@ public final class AVPlayerEngine: PlayerEngine {
         player.volume = min(max(volume, 0), 1)
     }
 
+    /// 音量增益（M04P23）：系统内核做不到 —— `AVPlayer.volume` 上限就是 1，放大不了。
+    /// 空实现（界面按 ``PlayerEngineKind/supportsAudioGain`` 不给它摆控件，不摆假开关）。
+    public func setAudioGain(_ gain: Float) async { }
+
+    /// 逐帧步进（M04P23）：`AVPlayerItem.step(byCount:)` **要求先暂停** ——
+    /// 播放中调它就把播放停下（与另外两个内核「先暂停再走一帧」同一口径）。
+    /// `canStepForward` 为假时什么都不做（不假装走了）。
+    public func stepFrame() async {
+        guard let item = player.currentItem else { return }
+        if player.rate != 0 {
+            await pause()
+        }
+        guard item.canStepForward else { return }
+        item.step(byCount: 1)
+    }
+
     /// 轨道选择（M03P7）：音轨 / 字幕轨走 `AVMediaSelectionGroup`。
     ///
     /// 三态与上游一致：`auto` = 该组的默认轨、`disabled` = 空选择（字幕「关闭」）、
