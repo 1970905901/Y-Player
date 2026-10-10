@@ -46,6 +46,10 @@ public struct VodDetailView: View {
     @State var isEpisodeDrawerPresented = false
     /// 「⋯」→ 手动匹配元信息（M11 片 5）的面板是否打开。
     @State var isShowingMetadataMatch = false
+    /// 「整部下载（逐集换地址）」是否正在跑：按钮据此置灰，避免点两遍并行换地址。
+    @State var isResolvingDownloads = false
+    /// 上面那件事的进度 / 结果文案（换地址串行做，一格一格更新）。
+    @State var resolvingDownloadsText = ""
 
     public init(model: AppModel, site: Site?, vodID: String) {
         self.model = model
@@ -76,41 +80,8 @@ public struct VodDetailView: View {
         currentLine?.episodes ?? []
     }
 
-    /// 「整部下载」能排的集：**现在就能直接播**的那些。
-    ///
-    /// 判定用详情页自己那套 ``makeResource(for:)``（也就是 `PlayRequestBuilder` 说「直链且无需解析」）
-    /// —— 不另立一套规则，免得「按钮说能下、点进去播不了」。
-    var directDownloadEpisodes: [PlaylistParser.Episode] {
-        episodes.filter { makeResource(for: $0) != nil }
-    }
-
-    /// 「整部下载」入口（M10i）。两种视图形态（精简 / Emby）共用这一行，免得只有一种形态有入口。
-    ///
-    /// 只排上面那批，原因不藏：`type=3/4` 站点的播放地址要**逐集**去站点异步换
-    /// （``SitePlayEpisodeView`` 那条路），整条线路的批量换地址还没接 —— 所以被跳过的集数
-    /// 直接写在下面，不假装整部都排上了。
-    @ViewBuilder
-    // （internal：拆分出的 `VodDetailView+Emby.swift` 也要用，不能是 private。）
-    var wholeLineDownloadsRow: some View {
-        if let site, !directDownloadEpisodes.isEmpty {
-            Button {
-                let requests = directDownloadEpisodes.map {
-                    DownloadRequest(episode: $0.displayName, line: currentLine?.name ?? "", url: $0.url)
-                }
-                Task {
-                    // 入队即开跑（M10h）：不用等用户再进「下载管理」页。
-                    await model.enqueueDownloadsAndStart(requests, siteKey: site.key, title: vod?.vodName ?? "")
-                }
-            } label: {
-                Label("整部下载（\(directDownloadEpisodes.count) 集）", systemImage: "arrow.down.circle")
-            }
-            if episodes.count > directDownloadEpisodes.count {
-                Text("另有 \(episodes.count - directDownloadEpisodes.count) 集要逐集向站点换地址，暂不支持整部下载。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
+    // 下载入口那一簇（`directDownloadEpisodes` / `siteDownloadEpisodes` / `wholeLineDownloadsRow`）
+    // 已拆到 `VodDetailView+Downloads.swift`（类型体余量，见该文件说明）。
 
     // Emby 视图的成员已拆到 VodDetailView+Emby.swift（类型体超过 SwiftLint 上限，见该文件说明）。
 

@@ -248,6 +248,46 @@ extension VodDetailView {
         ))
     }
 
+    /// 逐集换地址后入队（M10i 下半场）：**串行**换（一次一集），换到一集立刻入队并开跑；
+    /// 换不到的记着，最后用 ``SiteDownloadSummary`` 如实报账。
+    ///
+    /// 为什么串行：宿主是单进程的（内嵌 node），站点 `/play` 也共享同一条连接 ——
+    /// 换来的是「进度可读、失败能归因」，比省几秒重要。
+    func enqueueSiteDownloads(site: Site) async {
+        let targets = siteDownloadEpisodes
+        guard !targets.isEmpty, !isResolvingDownloads else {
+            return
+        }
+        isResolvingDownloads = true
+        defer { isResolvingDownloads = false }
+
+        var queued = 0
+        var existing = 0
+        var failed = 0
+        for (offset, episode) in targets.enumerated() {
+            resolvingDownloadsText = "正在换地址 \(offset + 1)/\(targets.count)：\(episode.displayName)"
+            guard let resource = await siteResource(site: site, episode: episode) else {
+                failed += 1
+                continue
+            }
+            let outcome = await model.enqueueDownloadsAndStart(
+                [DownloadRequest(episode: episode.displayName, line: currentLine?.name ?? "", url: resource.url)],
+                siteKey: site.key,
+                title: vod?.vodName ?? "",
+                headers: resource.headers
+            )
+            switch outcome {
+            case .added:
+                queued += 1
+            case .alreadyQueued:
+                existing += 1
+            case .unsupported:
+                failed += 1
+            }
+        }
+        resolvingDownloadsText = SiteDownloadSummary.text(queued: queued, alreadyQueued: existing, failed: failed)
+    }
+
     /// 该集是否应该交给解析链（M5b/M5c）。
     ///
     /// 判定条件与 ``PlayRequestBuilder`` 一致：`type 0/1/2/4` 的站点、地址非空、且 `parse/jx = 1`
