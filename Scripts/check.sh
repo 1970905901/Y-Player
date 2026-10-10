@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Y-Player 本地闸门（M21P1）：三个 Python 检查 + （装了的话）SwiftFormat --lint。
+# Y-Player 本地闸门（M21P1）：四个 Python 检查 + （装了的话）SwiftFormat --lint。
 #
 # 用法：bash Scripts/check.sh     （在仓库任意目录都行，脚本会自己 cd 到仓库根）
 # 退出码：全过 0，有任意一项没过 1 —— 可以直接当提交前的闸门。
@@ -28,6 +28,7 @@ run() {
 run "$PY" Scripts/check_braces.py
 run "$PY" Scripts/check_lint.py
 run "$PY" Scripts/audit_duplicate_types.py
+run "$PY" Scripts/check_visibility.py
 
 if command -v swiftformat >/dev/null 2>&1; then
     run swiftformat --lint . --config .swiftformat \
