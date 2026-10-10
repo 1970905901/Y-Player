@@ -188,7 +188,9 @@ struct LibavFFmpegSessionTests {
 
         await session.pause()
         #expect(renderer.pauseCallCount == 1)
-        #expect(box.all.contains(.state(.paused)))
+        // 事件是异步消费的：等它进箱子，别跟消费任务抢时间（M04P9 首轮就是这么红的）
+        let paused = await waitUntil { box.all.contains(.state(.paused)) }
+        #expect(paused)
 
         await session.play()
         #expect(renderer.playCallCount == 2)
