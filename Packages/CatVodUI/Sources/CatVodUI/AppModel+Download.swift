@@ -211,16 +211,18 @@ public extension AppModel {
         }
         // 「旧结果不盖新决定」（M10m）：按**结果的状态**分派 —— 不能拿「当前是不是 running」
         // 当开关（库读回来的 `running` 一律是 `waiting`，见 `recoveredStatus`）。
-        // - 取消结果（`.paused`）只落给仍停着的任务：暂停后马上点继续时，晚到的取消结果
-        //   不能把任务按回暂停，否则队列卡死（没人再启动它）；
+        // - 取消结果（`.paused`）**不落库**：暂停状态是用户按出来的（``pauseDownload`` 先写
+        //   「已暂停」再取消句柄），执行器这趟不带新信息。「读镜像再判断」挡不住它 ——
+        //   `downloadStore.save` 是**离 actor 的 await**（非隔离 async 跑在全局执行器上），
+        //   两次 save 的落地顺序没有保证：暂停 → 继续写下 `.waiting` 之后，这里迟到的
+        //   `.paused` 可能后落库，把 `.waiting` 盖回「已暂停」，任务就停住没人启动了
+        //   （M10m 首验二连红就是这个）。不写，就没得抢；
         // - 失败结果不盖暂停：否则会把用户按下的暂停拉回自动重试；
         // - 「已完成」是文件完整落盘的既成事实，永远落库。
         switch outcome.task.status {
-        case .paused:
-            guard current.status == .paused else {
-                return
-            }
-        case .waiting, .failed, .running:
+        case .paused, .running:
+            return
+        case .waiting, .failed:
             guard current.status != .paused else {
                 return
             }
