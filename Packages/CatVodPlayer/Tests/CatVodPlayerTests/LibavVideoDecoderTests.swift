@@ -138,6 +138,40 @@ struct LibavVideoDecoderTests {
         #expect(LibavVideoDecoder.transferName("Unknown") == nil)
     }
 
+    @Test("软解 10bit：HEVC Main10 源 → x420 输出，不压成 8bit（M04P21）")
+    func softwareDecodeTenBitPath() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("libavsoft10-\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await TinyMP4Fixture.write(
+            to: url,
+            width: 320,
+            height: 240,
+            fps: 30,
+            frames: 30,
+            tenBitHEVC: true
+        )
+
+        let input = LibavInput()
+        defer { input.close() }
+        #expect(input.open(url: url.path, headers: [:]) == nil)
+
+        let decoder = LibavVideoDecoder()
+        defer { decoder.close() }
+        #expect(decoder.open(input: input, decoderMode: .software) == nil)
+
+        let frames = decoder.decodeFrames(3)
+        #expect(frames.count == 3)
+        let first = try #require(frames.first)
+        // 10bit 源直通 P010 → x420（10bit 双平面）：不压成 8bit 的 420v —— M04P21 的断言
+        let format = CVPixelBufferGetPixelFormatType(first.pixelBuffer)
+        #expect(format == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange)
+        #expect(CVPixelBufferGetPlaneCount(first.pixelBuffer) == 2)
+        #expect(CVPixelBufferGetWidth(first.pixelBuffer) == 320)
+        #expect(CVPixelBufferGetHeight(first.pixelBuffer) == 240)
+        #expect(abs(first.seconds) < 0.001)
+    }
+
     /// 8×8 的 420v buffer：只用来挂 / 读色彩附件，不参与解码。
     private static func makePixelBuffer() -> CVPixelBuffer? {
         var buffer: CVPixelBuffer?

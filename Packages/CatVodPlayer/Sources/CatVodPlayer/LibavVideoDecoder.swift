@@ -57,7 +57,8 @@ final class LibavVideoDecoder: @unchecked Sendable {
     private var sourceTransfer: Int32 = 0
     private var sourceMatrix: Int32 = 0
 
-    /// 软解那条路的像素转换器（M04P14）：`yuv*` → **420v（NV12）**。按「源格式 + 尺寸」缓存，变了才重建。
+    /// 软解那条路的像素转换器（M04P14；M04P21 起 10bit 直通）：`yuv*` → **420v（8bit）/ x420（10bit）**。
+    /// 按「源格式 + 尺寸」缓存，变了才重建（目标格式由源格式推出，不用另记）。
     ///
     /// 类型是 `UnsafeMutablePointer<SwsContext>`：libswscale 的头里 `struct SwsContext` 是**前向声明**，
     /// Swift 把它导成一个没有成员的 `SwsContext` —— 只在指针后面用（不是 `OpaquePointer`，别猜）。
@@ -339,22 +340,30 @@ final class LibavVideoDecoder: @unchecked Sendable {
         #endif
     }
 
-    /// 软解帧 → **420v（NV12）** 的 `CVPixelBuffer`（M04P14 起；M04P18 从 BGRA 换过来）。
+    /// 软解帧 → 显示层吃的 `CVPixelBuffer`（M04P14 起；M04P18 从 BGRA 换成 420v；M04P21 起 10bit 走 x420）。
     ///
-    /// 为什么是 420v 而不是 BGRA：
-    /// - **省一档带宽**：BGRA 每像素 4 字节、还要先做一遍 YUV→RGB；420v 每像素 1.5 字节，
+    /// 为什么不用 BGRA：
+    /// - **省一档带宽**：BGRA 每像素 4 字节、还要先做一遍 YUV→RGB；420v 每像素 1.5 字节（x420 是 3 字节），
     ///   sws 只做尺寸 / 排布上的事，不做色彩换算 —— 软解那条路的每帧成本直接降一档；
-    /// - **显示层原生吃它**：VT 硬解出来的帧本来就是 420v —— 软硬两条路交出去的东西长得一样。
+    /// - **显示层原生吃它**：VT 硬解出来的帧本来就是 420v / x420 —— 软硬两条路交出去的东西长得一样。
     ///
     /// buffer 自己建而不是用 sws 的：显示层要 **IOSurface 背书**的 buffer，sws 分配的不是。
-    /// 代价如实说：8bit，10bit / HDR 会被压下去（软解是兼容路线，HDR / 画质靠硬解那条）。
+    /// 10bit 源（M04P21 起）直通 `P010` → `x420`，色彩标签照挂（PQ / HLG 能传到显示层）；
+    /// 8bit 源照旧 `420v`。软解仍是兼容路线（不做 tone mapping，HDR 画质靠硬解那条）。
     private func makeSoftwarePixelBuffer(from frame: UnsafeMutablePointer<AVFrame>) -> CVPixelBuffer? {
         #if canImport(Libswscale) && canImport(Libavutil)
         let width = Int(frame.pointee.width)
         let height = Int(frame.pointee.height)
         guard width > 0, height > 0,
               let sourceFormat = Self.softwareSourceFormat(frame.pointee.format),
-              let context = swsConverter(width: width, height: height, sourceFormat: sourceFormat)
+              let targetFormat = Self.softwareTargetFormat(sourceFormat),
+              let pixelFormat = Self.coreVideoPixelFormat(forSoftwareTarget: targetFormat),
+              let context = swsConverter(
+                  width: width,
+                  height: height,
+                  sourceFormat: sourceFormat,
+                  targetFormat: targetFormat
+              )
         else {
             return nil
         }
@@ -366,7 +375,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
         }
         target.pointee.width = Int32(width)
         target.pointee.height = Int32(height)
-        target.pointee.format = Int32(AV_PIX_FMT_NV12.rawValue)
+        target.pointee.format = Int32(targetFormat.rawValue)
         guard av_frame_get_buffer(target, 0) >= 0, sws_scale_frame(context, target, frame) >= 0 else {
             return nil
         }
@@ -377,7 +386,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
             kCFAllocatorDefault,
             width,
             height,
-            kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            pixelFormat,
             attributes as CFDictionary,
             &pixelBuffer
         )
@@ -386,7 +395,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
         else {
             return nil
         }
-        // 挂上**源的**色彩标签：420v 什么都不带时 CoreVideo 会自己猜矩阵（对 1080p 这类片子常常猜错）；
+        // 挂上**源的**色彩标签：420v / x420 什么都不带时 CoreVideo 会自己猜矩阵（对 1080p 这类片子常常猜错）；
         // 播放信息的「输出」那行读的就是这里挂上去的东西（硬解那条读 VT 挂的）。
         Self.attachColorTags(
             to: pixelBuffer,
@@ -410,6 +419,8 @@ final class LibavVideoDecoder: @unchecked Sendable {
     }
 
     /// 把一个平面的有效行拷进 `CVPixelBuffer` 的对应平面（行宽取两边小的那个）。
+    ///
+    /// 10bit（P010 ↔ x420）走的是同一条：两边都是「2 字节/样本、双平面」的同一套排布，字节级拷贝即可。
     private func copyPlane(
         _ plane: Int,
         rows: Int,
@@ -432,10 +443,14 @@ final class LibavVideoDecoder: @unchecked Sendable {
     }
 
     /// 缓存 sws 转换器（源格式 / 尺寸变了才重建）；建不出来给 nil。
+    ///
+    /// 目标格式由调用方按 ``softwareTargetFormat(_:)`` 推好传进来（10bit → P010，其余 NV12）——
+    /// 缓存键因此还是「源格式 + 尺寸」，不用另记目标。
     private func swsConverter(
         width: Int,
         height: Int,
-        sourceFormat: AVPixelFormat
+        sourceFormat: AVPixelFormat,
+        targetFormat: AVPixelFormat
     ) -> UnsafeMutablePointer<SwsContext>? {
         #if canImport(Libswscale) && canImport(Libavutil)
         let format = Int32(sourceFormat.rawValue)
@@ -449,7 +464,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
         // SWS_BILINEAR = 2：枚举常量导进来没有 int 重载，值写死（同 `LibavInput.avseekFlagBackward` 的写法）。
         let created = sws_getContext(
             Int32(width), Int32(height), sourceFormat,
-            Int32(width), Int32(height), AV_PIX_FMT_NV12,
+            Int32(width), Int32(height), targetFormat,
             2, nil, nil, nil
         )
         swsContext = created
@@ -458,7 +473,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
         swsHeight = height
         return created
         #else
-        _ = (width, height, sourceFormat)
+        _ = (width, height, sourceFormat, targetFormat)
         return nil
         #endif
     }
@@ -542,7 +557,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
             }
             return true
         }
-        // 软解帧（`.software`）：过 sws 转成 420v 再送显示层 ——
+        // 软解帧（`.software`）：过 sws 转成显示层吃的格式（8bit 420v / 10bit x420）再送显示层 ——
         // 以前这里直接丢（只吃 VT 帧），界面上就是「有声音没画面」。
         guard let converted = makeSoftwarePixelBuffer(from: frame) else {
             droppedFrameCount += 1
@@ -556,8 +571,9 @@ final class LibavVideoDecoder: @unchecked Sendable {
         softwareFrameCount += 1
         decodedFrameCount += 1
         if softwareFrameCount == 1 {
+            let output = Self.fourCC(CVPixelBufferGetPixelFormatType(converted))
             let size = "\(CVPixelBufferGetWidth(converted))x\(CVPixelBufferGetHeight(converted))"
-            let first = "第一帧软解帧：format=\(Int(frame.pointee.format)) → 420v \(size)"
+            let first = "第一帧软解帧：format=\(Int(frame.pointee.format)) → \(output) \(size)"
             LibavTrace.logger.notice("\(first, privacy: .public)")
         }
         frames.append(Frame(pixelBuffer: converted, seconds: seconds, isHardware: false))
@@ -651,6 +667,39 @@ extension LibavVideoDecoder {
         if tag == (kCVImageBufferTransferFunction_ITU_R_2100_HLG as String) { return "hlg" }
         if tag == (kCVImageBufferTransferFunction_ITU_R_709_2 as String) { return "bt.709" }
         if tag == (kCVImageBufferTransferFunction_Linear as String) { return "linear" }
+        return nil
+    }
+}
+
+// MARK: - 软解像素格式（M04P21）
+
+/// 软解的像素格式映射：源格式 → 目标格式 → CoreVideo 格式。
+///
+/// 为什么拆成扩展：类型体行数（`type_body_length`）会把 lint 顶红（同 M04P16~P20 那几组的理由）；
+/// 这几个 `static` 纯映射不碰实例状态，拆出来零成本。
+extension LibavVideoDecoder {
+    /// 软解的**目标**像素格式（M04P21）：10bit 源进 10bit 出 —— `yuv420p10le` / `p010le` → `P010LE`
+    /// （macOS 侧就是 `x420`：10bit 双平面、高位对齐，sws 直出不用自己搬位）；其余照旧 NV12（420v）。
+    static func softwareTargetFormat(_ source: AVPixelFormat) -> AVPixelFormat? {
+        #if canImport(Libavutil)
+        let code = Int32(source.rawValue)
+        if code == Int32(AV_PIX_FMT_YUV420P10LE.rawValue) || code == Int32(AV_PIX_FMT_P010LE.rawValue) {
+            return AV_PIX_FMT_P010LE
+        }
+        if softwareSourceFormat(code) != nil {
+            return AV_PIX_FMT_NV12
+        }
+        #endif
+        return nil
+    }
+
+    /// 软解目标（libav）→ CoreVideo 的像素格式（M04P21）：`P010LE` = **x420**、`NV12` = **420v**。
+    static func coreVideoPixelFormat(forSoftwareTarget target: AVPixelFormat) -> OSType? {
+        #if canImport(Libavutil)
+        let code = Int32(target.rawValue)
+        if code == Int32(AV_PIX_FMT_P010LE.rawValue) { return kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange }
+        if code == Int32(AV_PIX_FMT_NV12.rawValue) { return kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange }
+        #endif
         return nil
     }
 }
