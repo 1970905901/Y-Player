@@ -31,6 +31,8 @@ public enum PlayerEngineKind: String, Sendable, CaseIterable {
     ///
     /// MPV 另有一条：引擎实装后**还要**等渲染路径就绪（没有画面 = 不能用），
     /// 所以 `.mpv` 要 `isEngineImplemented && isVideoOutputReady` 两个都真。
+    /// 自研 FFmpeg（M04P13 接进创建路径）要 `isEngineImplemented && isComplete`：
+    /// 引擎实装 + Libav 六件套真能 import、真能链接（「链接上了」不算数，能播才算）。
     ///
     /// **策略（M02P3）**：不可用时由 UI 明确提示并引导用户改设置，**不自动退回 `.system`**。
     public var isAvailable: Bool {
@@ -40,7 +42,7 @@ public enum PlayerEngineKind: String, Sendable, CaseIterable {
         case .mpv:
             return MpvAvailability.isEngineImplemented && MpvAvailability.isVideoOutputReady
         case .ffmpeg:
-            return FFmpegAvailability.isEngineImplemented
+            return FFmpegAvailability.isEngineImplemented && FFmpegAvailability.isComplete
         }
     }
 }
@@ -217,16 +219,19 @@ public struct PlayerCoordinator {
         return .ready(settings.engine)
     }
 
-    /// 创建内核实例；未接入的内核（`.ffmpeg`，对应 M4）返回 nil。
+    /// 创建内核实例；**没给画面层的自绘内核返回 nil**（`.system` 不需要画面层）。
     ///
     /// 这不是降级：调用方必须把 nil 视为“该内核不可用”并提示用户，不得改用其它内核。
     ///
-    /// MPV 要 `videoSurface`（M03P1 第 3 步的渲染路径：MoltenVK 画进 `CAMetalLayer`）：
-    /// **没给画面层就返回 nil** —— 宁可说「不可用」，也不给一个没有画面的播放器。
+    /// 两个自绘内核都要画面层，但形状不同：
+    /// - MPV 要 `videoSurface`（M03P1 第 3 步的渲染路径：MoltenVK 画进 `CAMetalLayer`）；
+    /// - 自研 FFmpeg 要 `ffmpegSurface`（M04P5 定的路径：`AVSampleBufferDisplayLayer`）。
+    /// 宁可说「不可用」，也不给一个没有画面的播放器。
     public func makeEngine(
         kind: PlayerEngineKind,
         decoderMode: DecoderMode,
-        videoSurface: MpvVideoSurface? = nil
+        videoSurface: MpvVideoSurface? = nil,
+        ffmpegSurface: FFmpegVideoSurface? = nil
     ) -> (any PlayerEngine)? {
         switch kind {
         case .system:
@@ -237,7 +242,10 @@ public struct PlayerCoordinator {
             }
             return MpvEngine(decoderMode: decoderMode, videoSurface: videoSurface)
         case .ffmpeg:
-            return nil
+            guard let ffmpegSurface else {
+                return nil
+            }
+            return FFmpegEngine(decoderMode: decoderMode, videoSurface: ffmpegSurface)
         }
     }
 
@@ -252,10 +260,9 @@ public struct PlayerCoordinator {
             // 依赖事实由 `FFmpegAvailability` 提供（M04P4 起），这里只说人话，不再重复探测。
             guard FFmpegAvailability.isComplete else {
                 let missing = FFmpegAvailability.missingNames.joined(separator: "、")
-                return "自研 FFmpeg 内核（M4）依赖不全：缺 \(missing)"
+                return "自研 FFmpeg 内核依赖不全：缺 \(missing)"
             }
-            let libav = "\(FFmpegAvailability.availableCount)/\(FFmpegAvailability.probes.count)"
-            return "自研 FFmpeg 内核（M4）依赖已就绪（Libav \(libav)），引擎尚未实装"
+            return "自研 FFmpeg 内核当前不可用：建引擎时没有给它画面层"
         }
     }
 }

@@ -95,8 +95,9 @@ struct SettingsPlayerUISettingsView: View {
             PlaybackPageSettingsSection(model: model)
             Section("说明") {
                 Text("系统内核（AVPlayer）的画面控件与手势由系统提供（`docs/UI 规范.md`：不自绘播放控件）；"
-                    + "MPV 内核自带一套最小控制条与手势（双击暂停 / 横拖进度 / 纵拖音量），音轨与字幕在播放页选。"
-                    + "自研 FFmpeg 内核（M4）接入后，这里再补它自己的渲染与音视频选项。")
+                    + "MPV 与自研 FFmpeg 内核共用自绘的最小控制条与手势（双击暂停 / 横拖进度 / 纵拖音量），"
+                    + "MPV 的音轨与字幕在播放页选。自研 FFmpeg 内核（M04P13 起可播）当前只有硬解 + 默认音轨，"
+                    + "软解与音轨切换在后面补。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -116,7 +117,7 @@ struct SettingsPlayerControlView: View {
         switch model.preferredEngine {
         case .system: "系统播放器（AVPlayer）"
         case .mpv: "MPV 自带最小控制条 + 播放页手势"
-        case .ffmpeg: "自研 FFmpeg（尚未接入）"
+        case .ffmpeg: "自研 FFmpeg（自绘最小控制条 + 播放页手势）"
         }
     }
 
@@ -129,7 +130,8 @@ struct SettingsPlayerControlView: View {
             "MPV 的画面由我们自己渲染（MoltenVK → Metal），只配了一条最小控制条（播放 / 暂停、进度、倍速、音轨 / 字幕）；"
                 + "画面上的手势是自绘的：双击暂停、横向拖进度、纵向拖音量。"
         case .ffmpeg:
-            "自研 FFmpeg 内核还没接入，选它时播放页会明确提示并让你改设置（不自动降级）。"
+            "自研 FFmpeg 的画面由我们自己解出来交给系统渲染管线（VideoToolbox 硬解 → AVSampleBufferDisplayLayer），"
+                + "配同一条最小控制条与自绘手势；当前只有硬解 + 默认音轨，软解与音轨切换在后面补。"
         }
     }
 
@@ -144,7 +146,7 @@ struct SettingsPlayerControlView: View {
                     .foregroundStyle(.secondary)
             }
             Section("后续") {
-                Text("自研 FFmpeg 内核（M4）接入后，这里再补它的内核专属控制：逐帧步进、音频增益、渲染选项等。"
+                Text("自研 FFmpeg 内核的专属控制（逐帧步进、音频增益、渲染选项等）等它补齐软解 / 音轨切换后再加；"
                     + "上游的「长按屏幕临时加速」要接管手势、与既有手势冲突，暂不做（见 M02P15）。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)

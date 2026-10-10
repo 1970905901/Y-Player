@@ -7,17 +7,15 @@ import Testing
 @MainActor
 @Suite("播放设置：手动选择，不自动降级")
 struct PlayerSettingsTests {
-    @Test("选中的内核不可用时不降级，只返回原因")
+    @Test("三个内核都按用户选择解析为 ready：不降级、不替换")
     func strictNoFallback() {
         let coordinator = PlayerCoordinator()
-        // MPV 在 M3 第 3/4 步之后已就绪；现在「未接入」的样本是 FFmpeg（M4）。
-        let resolution = coordinator.resolve(settings: PlaybackSettings(engine: .ffmpeg, decoderMode: .hardware))
-        guard case let .unavailable(kind, reason) = resolution else {
-            Issue.record("FFmpeg 未接入时应返回 unavailable，而不是悄悄换成别的内核")
-            return
+        // M04P13 起自研 FFmpeg 也进了创建路径：不再有「未接入」的内核。
+        // 于是三种内核都必须**原样**返回用户选的那个 —— 这才是「不降级」的可断言形态。
+        for kind in PlayerEngineKind.allCases {
+            let resolution = coordinator.resolve(settings: PlaybackSettings(engine: kind, decoderMode: .hardware))
+            #expect(resolution == .ready(kind))
         }
-        #expect(kind == .ffmpeg)
-        #expect(reason.contains("M4"))
     }
 
     @Test("MPV 就绪：引擎 + 渲染路径都齐，解析为 ready")
@@ -34,11 +32,17 @@ struct PlayerSettingsTests {
         #expect(coordinator.makeEngine(kind: .system, decoderMode: .software) != nil)
     }
 
-    @Test("未接入的内核不创建实例（需提示用户修改设置，而不是降级）")
-    func unimplementedEngines() {
+    @Test("自绘内核没画面层就不创建实例（需提示用户修改设置，而不是降级）")
+    func surfacelessEngines() {
         let coordinator = PlayerCoordinator()
+        // 系统内核不用画面层，照建。
+        #expect(coordinator.makeEngine(kind: .system, decoderMode: .hardware) != nil)
+        // 两个自绘内核（MPV / 自研 FFmpeg）没给画面层都建不出来 —— 宁可说「不可用」。
         #expect(coordinator.makeEngine(kind: .mpv, decoderMode: .hardware) == nil)
         #expect(coordinator.makeEngine(kind: .ffmpeg, decoderMode: .hardware) == nil)
+        // 给了各自的画面层就建得出来（M04P13：自研 FFmpeg 也进了创建路径）。
+        #expect(coordinator.makeEngine(kind: .mpv, decoderMode: .hardware, videoSurface: MpvVideoSurface()) != nil)
+        #expect(coordinator.makeEngine(kind: .ffmpeg, decoderMode: .hardware, ffmpegSurface: FFmpegVideoSurface()) != nil)
     }
 
     @Test("解码方式有效性：系统内核不支持强制硬解/软解")

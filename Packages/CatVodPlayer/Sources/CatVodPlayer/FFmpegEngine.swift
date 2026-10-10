@@ -7,9 +7,9 @@ import Foundation
 /// - ``FFmpegSession``（seam）：与真管线的边界，C 调用不越界到这里；
 /// - 真会话（M04P6 起）：demux / 解码 / 渲染 / 音频，全部收在一个文件里。
 ///
-/// **可用性口径**：引擎骨架 ≠ 能用。``FFmpegAvailability/isEngineImplemented`` 仍是 false，
-/// `PlayerCoordinator` 也不会创建本引擎 —— 等真会话落成、真的出得了画面再翻
-/// （与 MPV 的 `isVideoOutputReady` 同一条纪律：没有画面 = 不能宣称可用）。
+/// **可用性口径**（M04P13 翻过来）：``FFmpegAvailability/isEngineImplemented`` 已为 true，
+/// `PlayerCoordinator` 会在**拿到画面层**时创建本引擎；没画面层照样建不出来 ——
+/// 没有画面 = 不宣称可用（与 MPV 的 `isVideoOutputReady` 同一条纪律）。
 ///
 /// **状态口径**：状态以会话事件为准（会话知道自己在缓冲还是真的在播），
 /// 只有 `.loading` 由引擎在 `open` 成功后发；`seek` / `setRate` 的回执由引擎立刻补发，

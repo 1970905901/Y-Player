@@ -17,7 +17,8 @@ struct MpvAvailabilityTests {
         #expect(MpvAvailability.isEngineImplemented)
         #expect(MpvAvailability.isVideoOutputReady)
         #expect(PlayerEngineKind.mpv.isAvailable)
-        #expect(PlayerEngineKind.ffmpeg.isAvailable == false)
+        // 自研 FFmpeg 在 M04P13 接进创建路径后同样可用 —— 三个内核都不再有「未接入」的。
+        #expect(PlayerEngineKind.ffmpeg.isAvailable)
         #expect(PlayerEngineKind.system.isAvailable)
     }
 

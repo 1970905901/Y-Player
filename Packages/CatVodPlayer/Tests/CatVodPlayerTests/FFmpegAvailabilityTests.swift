@@ -31,18 +31,19 @@ struct FFmpegAvailabilityTests {
         #expect(FFmpegAvailability.versionText(0) == "0.0.0")
     }
 
-    @Test("依赖就绪 ≠ 引擎可用：没实装就老实说不可用")
-    func engineStillUnavailable() {
-        #expect(FFmpegAvailability.isEngineImplemented == false)
-        #expect(PlayerEngineKind.ffmpeg.isAvailable == false)
+    @Test("引擎已实装 + 依赖全齐 ⇒ .ffmpeg 可用（M04P13 接线）")
+    func engineImplemented() {
+        #expect(FFmpegAvailability.isEngineImplemented)
+        #expect(FFmpegAvailability.isComplete)
+        #expect(PlayerEngineKind.ffmpeg.isAvailable)
     }
 
-    @Test("不可用原因跟着依赖事实走：缺说缺哪个，齐说未实装")
+    @Test("不可用原因跟着依赖事实走：缺说缺哪个，齐说没给画面层")
     func reasonFollowsFacts() {
         let reason = PlayerCoordinator.unavailableReason(for: .ffmpeg)
-        #expect(reason.contains("M4"))
         if FFmpegAvailability.isComplete {
-            #expect(reason.contains("未实装"))
+            // 依赖齐时唯一还能挡住播放的，就是建引擎没给画面层（UI 不该走到这里，但原因得说真话）。
+            #expect(reason.contains("画面层"))
         } else {
             let first = FFmpegAvailability.missingNames.first ?? ""
             #expect(!first.isEmpty)

@@ -25,8 +25,8 @@ import Libass
 ///
 /// 两层事实刻意分开（与 MPV 那边同一条纪律，别混用）：
 /// - **依赖事实**：六个模块的 import 结论 + 运行期版本号（``probes``）；
-/// - **实装事实**：``isEngineImplemented`` —— 引擎没实装前 `.ffmpeg` 始终「不可用」，
-///   哪怕依赖全齐（「能链接上」不等于「播得了」）。
+/// - **实装事实**：``isEngineImplemented`` —— 引擎有没有接进 `PlayerCoordinator` 的创建路径；
+///   没接之前 `.ffmpeg` 始终「不可用」，哪怕依赖全齐（「能链接上」不等于「播得了」）。
 ///
 /// 只探**引擎真会用的**六个模块：demux（Libavformat）、解码（Libavcodec）、基础（Libavutil）、
 /// 软解路径的像素 / 采样转换（Libswscale / Libswresample）、字幕（Libass）。
@@ -62,11 +62,12 @@ public enum FFmpegAvailability {
         missingNames.isEmpty
     }
 
-    /// 自研 `FFmpegEngine` 是否已实装（M4 进行中 → false）。
+    /// 自研 `FFmpegEngine` 是否已接进创建路径（**M04P13 接线 → true**）。
     ///
-    /// **依赖就绪 ≠ 能用**：就算上面全绿，也要等引擎接进 ``PlayerCoordinator`` 的创建路径
-    /// （与 MPV 的 ``MpvAvailability/isVideoOutputReady`` 同一条纪律）才能翻 true。
-    public static let isEngineImplemented = false
+    /// **依赖就绪 ≠ 能用**：这里说的是「引擎在 + 接线通了」；具体到一次播放，
+    /// 还要 `PlayerCoordinator.makeEngine` 时真的拿到画面层（与 MPV 的
+    /// ``MpvAvailability/isVideoOutputReady`` 同一条纪律：没有画面 = 不给播放器）。
+    public static let isEngineImplemented = true
 
     /// 供界面 / 日志展示的一行说明（诊断报告直接用）。
     public static var summary: String {

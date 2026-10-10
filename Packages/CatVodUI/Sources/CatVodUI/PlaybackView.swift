@@ -9,9 +9,9 @@ import SwiftUI
 ///
 /// 使用**系统原生播放器 UI**（`AVKit.VideoPlayer`）承载 `.system` 内核：
 /// 按 `docs/UI 规范.md`，各系统版本使用各自的原生控件与手势，不自绘播放控件。
-/// **系统内核**用 `AVKit.VideoPlayer`；**MPV 内核**用自绘的 `MpvVideoView`（MoltenVK → Metal）
-/// 加一条最小控制条与手势（M03P4/M03P6）。自研 FFmpeg 内核（M4）接入后同样替换中间那块，
-/// 状态区与错误提示保持不变。
+/// **系统内核**用 `AVKit.VideoPlayer`；**MPV 内核**用自绘的 `MpvVideoView`（MoltenVK → Metal）、
+/// **自研 FFmpeg 内核**（M04P13）用 `FFmpegVideoView`（`AVSampleBufferDisplayLayer`），
+/// 都配同一条最小控制条与手势。状态区与错误提示保持不变。
 @MainActor
 public struct PlaybackView: View {
     /// 当前正在播的资源：**换集时会换**（见 `switchEpisode(to:)`），所以是 `@State`。
@@ -63,9 +63,11 @@ public struct PlaybackView: View {
     @State private var player: AVPlayer?
     /// MPV 的画面层（只有选了 MPV 才有）：引擎拿它当 `wid`，`MpvVideoView` 把它挂进画面区。
     @State private var mpvSurface: MpvVideoSurface?
+    /// 自研 FFmpeg 内核的画面层（只有选了它才有）：会话往这层喂样本，`FFmpegVideoView` 把它挂进画面区。
+    @State private var ffmpegSurface: FFmpegVideoSurface?
     /// 正在拖进度条：拖动期间不采纳内核报回的位置，否则滑杆会被顶回去。
     @State private var isScrubbing = false
-    /// 最近一次读到的播放信息（M4 前置）：只有报得出来的内核（当前是 MPV）才有这一块。
+    /// 最近一次读到的播放信息：只有报得出来的内核（MPV 与自研 FFmpeg 都认这个协议）才有这一块。
     @State private var playbackStats: PlaybackStats?
     /// 内核上报的轨道（系统内核现在不上报，只有 MPV 会报，见 M03P3/M03P5）。
     @State private var audioTracks: [Int] = []
@@ -258,7 +260,7 @@ public struct PlaybackView: View {
 
     @ViewBuilder
     private var playerArea: some View {
-        if player != nil || mpvSurface != nil {
+        if player != nil || mpvSurface != nil || ffmpegSurface != nil {
             GeometryReader { proxy in
                 ZStack {
                     // 纯黑衬底：视频按 aspect-fit 居中，留边永远是黑（不是页面底色）。
@@ -286,9 +288,9 @@ public struct PlaybackView: View {
                         )
                         .clipped()
                     }
-                    // MPV 没有系统播放器控件（画面就是一层 metal）：补一条最小控制条。
-                    if mpvSurface != nil {
-                        mpvControls
+                    // 自绘内核（MPV / 自研 FFmpeg）没有系统播放器控件：补一条最小控制条。
+                    if mpvSurface != nil || ffmpegSurface != nil {
+                        playerControls
                     }
                     // 手势提示（进度预览 / 音量）：只显示、不拦触摸。
                     if !gestureHint.isEmpty {
@@ -322,31 +324,38 @@ public struct PlaybackView: View {
         }
     }
 
-    /// 画面本体：系统内核走系统播放器控件；MPV 走自绘的 metal 层（``MpvVideoView``）。
+    /// 画面本体：系统内核走系统播放器控件；自绘内核（MPV / 自研 FFmpeg）走各自的层宿主视图。
     ///
-    /// 手势**只挂在 MPV 这边**：系统内核的画面是 `VideoPlayer`，它自带一整套手势，
+    /// 手势**只挂在自绘内核这边**：系统内核的画面是 `VideoPlayer`，它自带一整套手势，
     /// 我们再叠一层只会互相打架（M02P15 的「长按临时加速」不做，同一条理由）。
     @ViewBuilder
     private func videoLayer(size: CGSize) -> some View {
         if let player {
             VideoPlayer(player: player)
         } else if let mpvSurface {
-            MpvVideoView(surface: mpvSurface)
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) {
-                    // 双击 = 播放 / 暂停。
-                    Task { await togglePlayback() }
-                }
-                .gesture(mpvGesture(width: size.width))
+            interactiveLayer(MpvVideoView(surface: mpvSurface), size: size)
+        } else if let ffmpegSurface {
+            interactiveLayer(FFmpegVideoView(surface: ffmpegSurface), size: size)
         }
     }
 
-    /// MPV 画面上的手势：
+    /// 自绘内核画面的共同外壳：双击播放 / 暂停 + 拖动手势。
+    private func interactiveLayer(_ content: some View, size: CGSize) -> some View {
+        content
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                // 双击 = 播放 / 暂停。
+                Task { await togglePlayback() }
+            }
+            .gesture(playerGesture(width: size.width))
+    }
+
+    /// 自绘内核画面上的手势：
     /// - **双击**：播放 / 暂停（上面那条）；
     /// - **横向拖**：调进度 —— 拖动中只显示预览，**松手才 seek**（一次拖动几十个中间值，
     ///   逐个 seek 会把内核打爆）；换算固定为「拖满一屏宽 ≈ 120 秒」；
     /// - **纵向拖**：音量 —— 向上加、向下减，200pt 满量程，松手下发内核。
-    private func mpvGesture(width: CGFloat) -> some Gesture {
+    private func playerGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 24)
             .onChanged { value in
                 let dx = value.translation.width
@@ -389,11 +398,11 @@ public struct PlaybackView: View {
     static let seekSecondsPerScreen: Double = 120
     static let volumePointsForFullRange: Double = 200
 
-    /// MPV 的最小控制条：播放 / 暂停 + 进度 + 时间。
+    /// 自绘内核的最小控制条：播放 / 暂停 + 进度 + 时间。
     ///
-    /// 为什么必须自绘：系统内核的控件是 `VideoPlayer` 自带的，MPV 这边只有一层 metal ——
+    /// 为什么必须自绘：系统内核的控件是 `VideoPlayer` 自带的，自绘内核这边只有一层画面层 ——
     /// 没有这条，用户就只能看，不能停、不能拖。变速不在这里（在信息区的「播放速度」）。
-    private var mpvControls: some View {
+    private var playerControls: some View {
         VStack {
             Spacer()
             HStack(spacing: 12) {
@@ -412,7 +421,7 @@ public struct PlaybackView: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.white)
                 Slider(
-                    value: mpvSeekBinding,
+                    value: seekBinding,
                     in: 0 ... max(latestDuration, 1),
                     onEditingChanged: { editing in
                         isScrubbing = editing
@@ -433,8 +442,8 @@ public struct PlaybackView: View {
         }
     }
 
-    /// 进度条绑定：拖动只改界面上的位置（松手才真 seek，见 ``mpvControls`` 的 `onEditingChanged`）。
-    private var mpvSeekBinding: Binding<Double> {
+    /// 进度条绑定：拖动只改界面上的位置（松手才真 seek，见 ``playerControls`` 的 `onEditingChanged`）。
+    private var seekBinding: Binding<Double> {
         Binding(
             get: { latestPosition },
             set: { newValue in latestPosition = newValue }
@@ -600,17 +609,25 @@ extension PlaybackView {
             errorText = "播放地址为空"
             return
         }
-        // MPV 的画面层要在建引擎**之前**准备好：`wid` 是启动期选项，会话一建就固定了（见 `LibmpvSession`）。
+        // 画面层要在建引擎**之前**准备好：MPV 的 `wid` 是启动期选项、自研 FFmpeg 的层是会话的落点
+        // （见 `LibmpvSession` / `FFmpegSession.make(surface:)`），都得在会话建起来之前交出去。
         var videoSurface: MpvVideoSurface?
         if settings.engine == .mpv {
             let surface = MpvVideoSurface()
             videoSurface = surface
             mpvSurface = surface
         }
+        var ffmpegVideoSurface: FFmpegVideoSurface?
+        if settings.engine == .ffmpeg {
+            let surface = FFmpegVideoSurface()
+            ffmpegVideoSurface = surface
+            ffmpegSurface = surface
+        }
         guard let created = coordinator.makeEngine(
             kind: settings.engine,
             decoderMode: settings.decoderMode,
-            videoSurface: videoSurface
+            videoSurface: videoSurface,
+            ffmpegSurface: ffmpegVideoSurface
         ) else {
             errorText = "\(settings.engine.displayName) 内核当前不可用，无法播放（不会自动切换其他内核）。"
             return
@@ -643,8 +660,8 @@ extension PlaybackView {
                 stateText = describe(state)
                 playerState = state
                 if state == .playing {
-                    // 起播后读一次播放信息（M4 前置）：等一小会儿 —— `video-params` 是 file-loaded
-                    // 之后才填上的，立刻读会拿到一排空。
+                    // 起播后读一次播放信息：等一小会儿 —— MPV 的 `video-params` 是 file-loaded 之后
+                    // 才填上的，立刻读会拿到一排空（自研 FFmpeg 打开时就有，等这一下也不亏）。
                     Task {
                         try? await Task.sleep(nanoseconds: 800_000_000)
                         await refreshPlaybackStats()
@@ -811,7 +828,7 @@ extension PlaybackView {
         }
     }
 
-    /// 「播放信息」（M4 前置）：**只有报得出来的内核才显示**（当前是 MPV）—— 与「轨道」同一口径，
+    /// 「播放信息」：**只有报得出来的内核才显示**（MPV 与自研 FFmpeg 报得出）—— 与「轨道」同一口径，
     /// 拿不到就不显示，不放一排「未知」。
     ///
     /// 一行行照抄内核报的值，不做换算以外的加工：「设置里选了硬解、实际到底是不是硬解」
@@ -840,10 +857,10 @@ extension PlaybackView {
         }
     }
 
-    /// 当前内核报不报得出播放信息（MPV 报得出、系统内核报不出）—— 决定那一块显不显示。
+    /// 当前内核报不报得出播放信息（MPV 与自研 FFmpeg 认这个协议、系统内核认不了）—— 决定那一块显不显示。
     ///
-    /// 用「引擎认不认这个协议」判，而不是写死 `kind == .mpv`：自研 FFmpeg 内核接进来时
-    /// 它同样会认这个协议，界面这行不用改。
+    /// 用「引擎认不认这个协议」判，而不是写死 `kind == .mpv`：M04P13 自研 FFmpeg 接进来时
+    /// 它同样认这个协议，界面这行一个字没改。
     private var supportsPlaybackStats: Bool {
         guard let engine else {
             return false

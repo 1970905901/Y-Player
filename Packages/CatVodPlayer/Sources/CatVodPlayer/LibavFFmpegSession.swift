@@ -5,7 +5,7 @@ import Foundation
 /// 统一 demux（`LibavInput.nextPacket`）→ 视频走 VT 硬解进显示层、
 /// 音频走 libavcodec + swresample 进音频渲染器；两者挂**同一条** synchronizer。
 ///
-/// 还没有的（**接线进界面之前必须补齐**，别让界面以为它全能）：
+/// 当前已知缺口（**如实说，别让界面以为它全能**；M04P13 已把它接进界面）：
 /// - **软解**：`decoderMode == .software` 直接拒绝（不假装生效）；
 /// - **音轨切换**：`selectTrack` 是空操作（只有默认轨）；
 /// - 网络读阻塞期间 `close()` 不保证立刻收线程 —— 在没有 interrupt callback 之前，
