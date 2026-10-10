@@ -61,7 +61,7 @@ final class AppModelFixture {
     }
 
     /// 载入一份内联配置（不联网）。默认给一条能出分组的站点。
-    func load(_ json: String = AppModelFixture.defaultConfig) async {
+    func load(_ json: String = fixtureDefaultConfig) async {
         model.configURL = json
         await model.load()
     }
@@ -72,13 +72,21 @@ final class AppModelFixture {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    /// 站点 api 用**完整回环地址**：`/spider/x` 这种相对写法会被可用性判定判成
-    /// 「无法识别的 Spider api」，站点全部不可见 —— 夹具要的是「真能用的站点」。
-    ///
-    /// 站名形态是给用例用的：a 同时带方括号与竖线两种标签（`[主力]` + `4K`）；
-    /// b 的「首页」走**方括号** —— 关竖线规则的用例要求它不受竖线规则影响。
-    static let defaultConfig = """
-    {"sites":[{"key":"a","name":"[主力]甲站|4K","type":3,"api":"http://127.0.0.1:9988/spider/a"},
-              {"key":"b","name":"[首页]乙站","type":3,"api":"http://127.0.0.1:9988/spider/b"}]}
-    """
 }
+
+/// 夹具的默认内联配置。
+///
+/// **为什么放文件级**：`@MainActor` 类里的 `static let` 会被主 actor 隔离，而 `load(_:)` 的
+/// **默认参数**是在非隔离上下文里求值的 —— 引用它就是那条
+/// 「main actor-isolated static property … can not be referenced from a nonisolated context」
+/// 警告（Swift 6 语言模式下是错误，M03P10 首验的日志里看到）。文件级的 `let` 没有这个问题。
+///
+/// 站点 api 用**完整回环地址**：`/spider/x` 这种相对写法会被可用性判定判成
+/// 「无法识别的 Spider api」，站点全部不可见 —— 夹具要的是「真能用的站点」。
+///
+/// 站名形态是给用例用的：a 同时带方括号与竖线两种标签（`[主力]` + `4K`）；
+/// b 的「首页」走**方括号** —— 关竖线规则的用例要求它不受竖线规则影响。
+private let fixtureDefaultConfig = """
+{"sites":[{"key":"a","name":"[主力]甲站|4K","type":3,"api":"http://127.0.0.1:9988/spider/a"},
+          {"key":"b","name":"[首页]乙站","type":3,"api":"http://127.0.0.1:9988/spider/b"}]}
+"""
