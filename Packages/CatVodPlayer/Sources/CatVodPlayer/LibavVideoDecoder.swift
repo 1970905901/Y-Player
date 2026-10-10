@@ -22,12 +22,12 @@ import Libswscale
 ///
 /// - `.hardware`：VT 直出 `CVPixelBuffer`（`AVFrame.data[3]`）。本机（或这个编码）硬解不可用时
 ///   **明确报错**，让用户去改设置；libav 中途掉回软解也**不算数**（记旗标，由会话停下并提示）；
-/// - `.software`：帧经 libswscale 转成 BGRA。
+/// - `.software`：帧经 libswscale 转成 **420v（NV12）**。
 ///
 /// 硬解那条：
 /// - M4 的口径是「HDR 与流畅度」，硬解是这两件事的地基；
 /// - VT 解出来的帧**本身就是 `CVPixelBuffer`**（在 `AVFrame.data[3]` 里），不需要 sws 转换，
-///   也不会把 10bit / HDR 压成 8bit BGRA（软解 → BGRA 那条路会丢）。
+///   也不会把 10bit / HDR 压成 8bit（软解 → 420v 那条路会丢）。
 ///   软解回退是后话（等「软解」这个设置项真的有引擎去消费时再说）。
 ///
 /// 并发：`@unchecked Sendable` —— 句柄由持有者串行使用（将来是会话的解码线程）。
@@ -38,7 +38,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
         var pixelBuffer: CVPixelBuffer
         /// 显示时间（秒，按流时基换算）。
         var seconds: Double
-        /// 这一帧走的是哪条路：true = VT 硬解直出；false = 软解 + sws 转 BGRA。
+        /// 这一帧走的是哪条路：true = VT 硬解直出；false = 软解 + sws 转 420v。
         ///
         /// 为什么要带上它：libav 会在硬解不可用时**自己掉回软解**，只有帧自己知道实情 ——
         /// 播放信息那行「解码」就靠它说实话。
@@ -52,7 +52,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
     private(set) var streamIndex = -1
     private var timeBase = AVRational(num: 0, den: 1)
 
-    /// 软解那条路的像素转换器（M04P14）：`yuv*` → BGRA。按「源格式 + 尺寸」缓存，变了才重建。
+    /// 软解那条路的像素转换器（M04P14）：`yuv*` → **420v（NV12）**。按「源格式 + 尺寸」缓存，变了才重建。
     ///
     /// 类型是 `UnsafeMutablePointer<SwsContext>`：libswscale 的头里 `struct SwsContext` 是**前向声明**，
     /// Swift 把它导成一个没有成员的 `SwsContext` —— 只在指针后面用（不是 `OpaquePointer`，别猜）。
@@ -88,7 +88,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
     /// 两条路（M04P14，**严格按设置、不自动降级**）：
     /// - `.hardware`：本机没硬解（`VTIsHardwareDecodeSupported`）或 VT 设备建不出来 → **返回错误**，
     ///   让用户去把设置改成软解；中途掉回软解也由会话停下报错（见 ``hardwareFallbackCount``）；
-    /// - `.software`：不建设备，纯软解（帧由 sws 转成 BGRA）。
+    /// - `.software`：不建设备，纯软解（帧由 sws 转成 420v）。
     ///
     /// 挑流用的也是「媒体类型字符串」而不是 C 枚举（同 `LibavInput`：少一类互操作坑）。
     func open(input: LibavInput, decoderMode: DecoderMode) -> String? {
@@ -330,13 +330,15 @@ final class LibavVideoDecoder: @unchecked Sendable {
         #endif
     }
 
-    /// 软解帧 → BGRA 的 `CVPixelBuffer`（M04P14）。
+    /// 软解帧 → **420v（NV12）** 的 `CVPixelBuffer`（M04P14 起；M04P18 从 BGRA 换过来）。
     ///
-    /// 为什么用 sws 而不是自己算色彩：libswscale 本来就在依赖清单里（M04P4 探的六个模块之一），
-    /// 而且它有一对 `AVFrame` 的接口（`sws_scale_frame`）—— 不用在 Swift 里摆 C 数组指针。
+    /// 为什么是 420v 而不是 BGRA：
+    /// - **省一档带宽**：BGRA 每像素 4 字节、还要先做一遍 YUV→RGB；420v 每像素 1.5 字节，
+    ///   sws 只做尺寸 / 排布上的事，不做色彩换算 —— 软解那条路的每帧成本直接降一档；
+    /// - **显示层原生吃它**：VT 硬解出来的帧本来就是 420v —— 软硬两条路交出去的东西长得一样。
     ///
-    /// 代价如实说：**8bit BGRA**，10bit / HDR 会被压下去，色彩矩阵也是 sws 的默认（按尺寸猜）。
-    /// 软解是**兼容路线**（HDR / 画质靠硬解那条），这笔账划算。
+    /// buffer 自己建而不是用 sws 的：显示层要 **IOSurface 背书**的 buffer，sws 分配的不是。
+    /// 代价如实说：8bit，10bit / HDR 会被压下去（软解是兼容路线，HDR / 画质靠硬解那条）。
     private func makeSoftwarePixelBuffer(from frame: UnsafeMutablePointer<AVFrame>) -> CVPixelBuffer? {
         #if canImport(Libswscale) && canImport(Libavutil)
         let width = Int(frame.pointee.width)
@@ -355,7 +357,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
         }
         target.pointee.width = Int32(width)
         target.pointee.height = Int32(height)
-        target.pointee.format = Int32(AV_PIX_FMT_BGRA.rawValue)
+        target.pointee.format = Int32(AV_PIX_FMT_NV12.rawValue)
         guard av_frame_get_buffer(target, 0) >= 0, sws_scale_frame(context, target, frame) >= 0 else {
             return nil
         }
@@ -366,30 +368,50 @@ final class LibavVideoDecoder: @unchecked Sendable {
             kCFAllocatorDefault,
             width,
             height,
-            kCVPixelFormatType_32BGRA,
+            kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
             attributes as CFDictionary,
             &pixelBuffer
         )
         guard code == kCVReturnSuccess, let pixelBuffer,
-              CVPixelBufferLockBaseAddress(pixelBuffer, []) == kCVReturnSuccess,
-              let base = CVPixelBufferGetBaseAddress(pixelBuffer),
-              let source = target.pointee.data.0
+              CVPixelBufferLockBaseAddress(pixelBuffer, []) == kCVReturnSuccess
         else {
             return nil
         }
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
-        let sourceRowBytes = Int(target.pointee.linesize.0)
-        let copyBytes = min(CVPixelBufferGetBytesPerRow(pixelBuffer), sourceRowBytes)
-        for row in 0 ..< height {
-            let destinationRow = base.advanced(by: row * CVPixelBufferGetBytesPerRow(pixelBuffer))
-            let sourceRow = UnsafeRawPointer(source).advanced(by: row * sourceRowBytes)
-            destinationRow.copyMemory(from: sourceRow, byteCount: copyBytes)
+        // 两个平面各拷各的：Y 是 height 行，CbCr 交织（420）是 ceil(height / 2) 行。
+        let chromaRows = (height + 1) / 2
+        guard copyPlane(0, rows: height, from: target.pointee.data.0, linesize: target.pointee.linesize.0, into: pixelBuffer),
+              copyPlane(1, rows: chromaRows, from: target.pointee.data.1, linesize: target.pointee.linesize.1, into: pixelBuffer)
+        else {
+            return nil
         }
         return pixelBuffer
         #else
         _ = frame
         return nil
         #endif
+    }
+
+    /// 把一个平面的有效行拷进 `CVPixelBuffer` 的对应平面（行宽取两边小的那个）。
+    private func copyPlane(
+        _ plane: Int,
+        rows: Int,
+        from source: UnsafeMutablePointer<UInt8>?,
+        linesize: Int32,
+        into buffer: CVPixelBuffer
+    ) -> Bool {
+        guard let source, CVPixelBufferGetPlaneCount(buffer) > plane else { return false }
+        guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, plane) else { return false }
+        let sourceRowBytes = Int(linesize)
+        guard sourceRowBytes > 0 else { return false }
+        let destinationRowBytes = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
+        let copyBytes = min(destinationRowBytes, sourceRowBytes)
+        for row in 0 ..< rows {
+            let destinationRow = base.advanced(by: row * destinationRowBytes)
+            let sourceRow = UnsafeRawPointer(source).advanced(by: row * sourceRowBytes)
+            destinationRow.copyMemory(from: sourceRow, byteCount: copyBytes)
+        }
+        return true
     }
 
     /// 缓存 sws 转换器（源格式 / 尺寸变了才重建）；建不出来给 nil。
@@ -410,7 +432,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
         // SWS_BILINEAR = 2：枚举常量导进来没有 int 重载，值写死（同 `LibavInput.avseekFlagBackward` 的写法）。
         let created = sws_getContext(
             Int32(width), Int32(height), sourceFormat,
-            Int32(width), Int32(height), AV_PIX_FMT_BGRA,
+            Int32(width), Int32(height), AV_PIX_FMT_NV12,
             2, nil, nil, nil
         )
         swsContext = created
@@ -503,7 +525,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
             }
             return true
         }
-        // 软解帧（`.software`）：过 sws 转成 BGRA 再送显示层 ——
+        // 软解帧（`.software`）：过 sws 转成 420v 再送显示层 ——
         // 以前这里直接丢（只吃 VT 帧），界面上就是「有声音没画面」。
         guard let converted = makeSoftwarePixelBuffer(from: frame) else {
             droppedFrameCount += 1
@@ -518,7 +540,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
         decodedFrameCount += 1
         if softwareFrameCount == 1 {
             let size = "\(CVPixelBufferGetWidth(converted))x\(CVPixelBufferGetHeight(converted))"
-            let first = "第一帧软解帧：format=\(Int(frame.pointee.format)) → BGRA \(size)"
+            let first = "第一帧软解帧：format=\(Int(frame.pointee.format)) → 420v \(size)"
             LibavTrace.logger.notice("\(first, privacy: .public)")
         }
         frames.append(Frame(pixelBuffer: converted, seconds: seconds, isHardware: false))

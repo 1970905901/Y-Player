@@ -43,7 +43,7 @@ struct LibavVideoDecoderTests {
         #expect(LibavVideoDecoder.videoToolboxCodecType(codecName: "av1") == nil)
     }
 
-    @Test("软解：sws 把 yuv420p 转成 BGRA 的 CVPixelBuffer（M04P14）")
+    @Test("软解：sws 把 yuv420p 转成 420v（NV12）的 CVPixelBuffer（M04P14/M04P18）")
     func softwareDecodePath() async throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("libavsoft-\(UUID().uuidString).mp4")
@@ -63,8 +63,9 @@ struct LibavVideoDecoderTests {
         let allSoftware = frames.allSatisfy { !$0.isHardware }
         #expect(allSoftware)
         let first = try #require(frames.first)
-        // 软解统一转 BGRA：到了显示层那边，硬解帧与软解帧走的是同一条路
-        #expect(CVPixelBufferGetPixelFormatType(first.pixelBuffer) == kCVPixelFormatType_32BGRA)
+        // 软解统一转 420v：到了显示层那边，硬解帧与软解帧走的是同一条路
+        #expect(CVPixelBufferGetPixelFormatType(first.pixelBuffer) == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+        #expect(CVPixelBufferGetPlaneCount(first.pixelBuffer) == 2)
         #expect(CVPixelBufferGetWidth(first.pixelBuffer) == 320)
         #expect(CVPixelBufferGetHeight(first.pixelBuffer) == 240)
         #expect(abs(first.seconds) < 0.001)

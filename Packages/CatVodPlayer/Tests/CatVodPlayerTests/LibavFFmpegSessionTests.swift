@@ -200,7 +200,7 @@ struct LibavFFmpegSessionTests {
         await session.close()
     }
 
-    @Test("软解：也能播 —— sws 转 BGRA 后照常喂帧、播放信息如实写「软件解码」（M04P14）")
+    @Test("软解：也能播 —— sws 转 420v 后照常喂帧、播放信息如实写「软件解码」（M04P14）")
     func softwareDecodePath() async throws {
         let url = try await makeFixtureURL()
         defer { try? FileManager.default.removeItem(at: url) }
@@ -219,10 +219,10 @@ struct LibavFFmpegSessionTests {
         #expect(ended)
         #expect(renderer.enqueued.count == 30)
 
-        // 「解码 / 输出」两行由第一帧实测：软解模式必须写软解，且输出是我们转的 BGRA
+        // 「解码 / 输出」两行由第一帧实测：软解模式必须写软解，且输出是我们转的 420v
         let stats = await session.stats()
         #expect(stats.decodeText == "软件解码")
-        #expect(stats.outputPixelFormat == "BGRA")
+        #expect(stats.outputPixelFormat == "420v")
         await session.close()
     }
 
