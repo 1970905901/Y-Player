@@ -36,6 +36,13 @@ final class LibavVideoDecoder: @unchecked Sendable {
     private(set) var streamIndex = -1
     private var timeBase = AVRational(num: 0, den: 1)
 
+    /// 排障计数（M04P13 起）：「有声音没画面」得能取证 —— 解出几帧、丢了几帧、报了什么错。
+    /// **只在解码线程里读写**（会话的日志也从那条线上打），所以不加锁。
+    private(set) var decodedFrameCount = 0
+    private(set) var droppedNonVTCount = 0
+    private(set) var decodeErrorCount = 0
+    private(set) var lastDecodeErrorText: String?
+
     deinit {
         close()
     }
@@ -87,6 +94,12 @@ final class LibavVideoDecoder: @unchecked Sendable {
         self.formatContext = formatContext
         streamIndex = index
         timeBase = stream.pointee.time_base
+        // 硬解有没有真的生效，看这一行：输出不是 VT 帧的话，后面每一帧都会被丢掉（= 有声音没画面）。
+        let codecName = String(cString: avcodec_get_name(parameters.pointee.codec_id))
+        let vtActive = codecContext.pointee.pix_fmt == Int32(AV_PIX_FMT_VIDEOTOOLBOX.rawValue)
+        let ready = "视频解码器就绪：流=\(index) 解码器=\(codecName) "
+            + "输出格式=\(Int(codecContext.pointee.pix_fmt)) VT=\(vtActive)"
+        LibavTrace.logger.notice("\(ready, privacy: .public)")
         return nil
         #else
         _ = input
@@ -202,6 +215,22 @@ final class LibavVideoDecoder: @unchecked Sendable {
         return Double(pts) * Double(timeBaseNumerator) / Double(timeBaseDenominator)
     }
 
+    /// 像素格式的 fourCC 写法（日志用）：`420v` / `x420` / `BGRA` 这种。
+    ///
+    /// CoreVideo 的类型本身就是 fourCC（`OSType`）：高位在前拼成 4 个字符。
+    /// 看它是因为**有些显示层 / 设备组合渲染不了 10bit（`x420`）** —— 黑屏时先看这一格。
+    static func fourCC(_ type: OSType) -> String {
+        let bytes = [
+            UInt8((type >> 24) & 0xFF),
+            UInt8((type >> 16) & 0xFF),
+            UInt8((type >> 8) & 0xFF),
+            UInt8(type & 0xFF),
+        ]
+        let text = String(bytes: bytes, encoding: .ascii) ?? ""
+        let printable = text.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        return printable ? text : "0x\(String(type, radix: 16))"
+    }
+
     // MARK: - 内部
 
     /// 把一只包喂给解码器，并尽力把解码器里已备好的帧收进 `frames`（上限 `limit`）。
@@ -229,16 +258,46 @@ final class LibavVideoDecoder: @unchecked Sendable {
         limit: Int
     ) -> Bool {
         guard let codecContext, frames.count < limit else { return false }
-        guard avcodec_receive_frame(codecContext, frame) >= 0 else { return false }
+        let code = avcodec_receive_frame(codecContext, frame)
+        guard code >= 0 else {
+            // EAGAIN / EOF 是常规返回；别的都是解码器在报错 —— 记下来（以前这里全吞了）。
+            if code != LibavInput.againCode, code != LibavInput.eofCode {
+                decodeErrorCount += 1
+                let text = LibavInput.errorText(code)
+                lastDecodeErrorText = text
+                if decodeErrorCount <= 3 {
+                    LibavTrace.logger.error(
+                        "视频解码出错（第 \(decodeErrorCount, privacy: .public) 次）：\(text, privacy: .public)"
+                    )
+                }
+            }
+            return false
+        }
         defer { av_frame_unref(frame) }
-        // 这版只吃 VideoToolbox 的硬解帧：不是就当「没接到」（不悄悄降级成软解）。
-        guard frame.pointee.format == Int32(AV_PIX_FMT_VIDEOTOOLBOX.rawValue) else { return true }
+        // 这版只吃 VideoToolbox 的硬解帧：不是就丢掉（不悄悄降级成软解）—— 但**要说出来**，
+        // 否则「硬解没生效」在界面上只表现为黑屏。
+        guard frame.pointee.format == Int32(AV_PIX_FMT_VIDEOTOOLBOX.rawValue) else {
+            droppedNonVTCount += 1
+            if droppedNonVTCount <= 3 {
+                LibavTrace.logger.error(
+                    "丢帧：硬解没生效，收到非 VT 帧（format=\(Int(frame.pointee.format), privacy: .public)）"
+                )
+            }
+            return true
+        }
         guard let raw = frame.pointee.data.3 else { return true }
         // data[3] 就是 CVPixelBufferRef 本体；帧一还回解码器 buffer 就没了，所以这里要 retain。
         let pixelBuffer = Unmanaged<CVPixelBuffer>
             .fromOpaque(UnsafeRawPointer(raw))
             .retain()
             .takeRetainedValue()
+        decodedFrameCount += 1
+        if decodedFrameCount == 1 {
+            let format = Self.fourCC(CVPixelBufferGetPixelFormatType(pixelBuffer))
+            let size = "\(CVPixelBufferGetWidth(pixelBuffer))x\(CVPixelBufferGetHeight(pixelBuffer))"
+            let first = "第一帧硬解帧：pts=\(frame.pointee.pts) 像素格式=\(format) 尺寸=\(size)"
+            LibavTrace.logger.notice("\(first, privacy: .public)")
+        }
         frames.append(Frame(
             pixelBuffer: pixelBuffer,
             seconds: Self.seconds(

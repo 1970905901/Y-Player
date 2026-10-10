@@ -27,6 +27,14 @@ struct LibavVideoDecoderTests {
         #expect(LibavVideoDecoder.seconds(pts: 100, timeBaseNumerator: 1, timeBaseDenominator: 0) == 0)
     }
 
+    @Test("fourCC：像素格式的日志写法（高位在前；不可打印退回十六进制）")
+    func fourCCFormatting() {
+        #expect(LibavVideoDecoder.fourCC(0x3432_3076) == "420v")
+        #expect(LibavVideoDecoder.fourCC(0x7834_3230) == "x420")
+        #expect(LibavVideoDecoder.fourCC(0x4247_5241) == "BGRA")
+        #expect(LibavVideoDecoder.fourCC(0) == "0x0")
+    }
+
     @Test("VideoToolbox 硬解：前 5 帧 CVPixelBuffer，尺寸与时间戳对得上")
     func decodeFirstFrames() async throws {
         let url = FileManager.default.temporaryDirectory

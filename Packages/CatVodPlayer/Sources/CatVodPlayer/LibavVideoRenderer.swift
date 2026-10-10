@@ -34,6 +34,12 @@ final class LibavVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
     private let layer: AVSampleBufferDisplayLayer
     private let synchronizer: AVSampleBufferRenderSynchronizer
 
+    /// 排障计数（M04P13 起）：进层多少帧、样本转换失败多少次、显示层 failed 过多少次。
+    /// **只在解码线程里读写**（日志也从那条线上打）。
+    private(set) var enqueuedCount = 0
+    private(set) var conversionFailureCount = 0
+    private(set) var failedStatusCount = 0
+
     /// 生产入口：跟音频共用**一条** synchronizer（音画同步的结构基础）。
     init(surface: FFmpegVideoSurface, synchronizer: AVSampleBufferRenderSynchronizer) {
         layer = surface.layer
@@ -59,9 +65,36 @@ final class LibavVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
             presentationSeconds: presentationSeconds,
             durationSeconds: durationSeconds
         ) else {
+            conversionFailureCount += 1
+            if conversionFailureCount <= 3 {
+                let size = "\(CVPixelBufferGetWidth(pixelBuffer))x\(CVPixelBufferGetHeight(pixelBuffer))"
+                let failure = "帧转样本失败（第 \(conversionFailureCount) 次）：\(size)"
+                LibavTrace.logger.error("\(failure, privacy: .public)")
+            }
             return false
         }
+        // 层一旦 failed / 要求 flush，再喂多少都是白喂 —— 这是「有声音没画面」最常见的根：
+        // 先 flush（Apple 的规矩）再喂，并把它打出来，别让证据烂在内存里。
+        if layer.status == .failed {
+            failedStatusCount += 1
+            LibavTrace.logger.error(
+                "显示层 failed：\(layer.error.map { String(describing: $0) } ?? "无详情", privacy: .public)；flush 后继续"
+            )
+            layer.flush()
+        }
+        if layer.requiresFlushToResumeDecoding {
+            LibavTrace.logger.notice("显示层要求 flush（被中断过）；先 flush 再喂")
+            layer.flush()
+        }
         layer.enqueue(sample)
+        enqueuedCount += 1
+        // 首帧必打；之后每 120 帧打一次，够看出「在进帧但层不渲染」这类怪事。
+        if enqueuedCount == 1 || enqueuedCount % 120 == 0 {
+            let enqueued = "第 \(enqueuedCount) 帧入层：pts=\(presentationSeconds)s "
+                + "层状态=\(layer.status.rawValue) 可喂=\(layer.isReadyForMoreMediaData) "
+                + "时间轴=\(currentSeconds)s"
+            LibavTrace.logger.notice("\(enqueued, privacy: .public)")
+        }
         return true
     }
 

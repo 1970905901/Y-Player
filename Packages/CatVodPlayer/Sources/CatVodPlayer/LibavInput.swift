@@ -274,6 +274,10 @@ final class LibavInput: @unchecked Sendable {
     /// 读包层与解码层共用这一处定义。
     static let eofCode: Int32 = -541_478_725
 
+    /// `AVERROR(EAGAIN)` = `-EAGAIN`：常规的「这次没得收 / 先收帧腾位置」。
+    /// **不写死数字**：`EAGAIN` 是平台常量（Darwin 35、Linux 11），写死就会在其中一个平台上判错。
+    static let againCode: Int32 = -EAGAIN
+
     /// `AVSEEK_FLAG_BACKWARD`（同样是宏，值写死）：跳到目标**之前**最近的关键帧。
     private static let avseekFlagBackward: Int32 = 1
 

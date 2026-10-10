@@ -43,6 +43,14 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     private var lastEmittedSeconds = -10.0
     private var finishedEof = false
 
+    /// 排障计数（M04P13 起，**只在解码线程里读写**）：两侧各喂进去多少、开跑多久。
+    /// 「有声音没画面」的判断就靠它们（见 `reportVideoSilenceIfNeeded()`）。
+    private var routedVideoPackets = 0
+    private var videoFramesAccepted = 0
+    private var audioSamplesEnqueued = 0
+    private var loopStartedAt = Date()
+    private var loggedVideoSilence = false
+
     /// 生产入口：给画面层 —— 音视频挂**同一条** synchronizer（音画同步结构自带）。
     ///
     /// `convenience`：类的 designated init **不能** `self.init` 委派（actor 那套写法不能照搬，
@@ -99,6 +107,12 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
             }
             videoRenderer.reset(to: resource.startPosition, playing: false, rate: 1)
         }
+        let video = info?.streams.first { $0.kind == .video }
+        let audio = info?.streams.first { $0.kind == .audio }
+        let opened = "会话打开：视频=\(video?.codecName ?? "无") 音频=\(audio?.codecName ?? "无") "
+            + "时长=\(durationSeconds)s 起点=\(resource.startPosition)s"
+        LibavTrace.logger.notice("\(opened, privacy: .public)")
+        loopStartedAt = Date()
         startDecodeLoop()
         return nil
     }
@@ -230,6 +244,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
             }
             route(packet)
             emitTimeIfNeeded()
+            reportVideoSilenceIfNeeded()
         }
     }
 
@@ -280,6 +295,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     /// 按流下标分发（只会命中两条被打开的流；其它流的包直接丢）。
     private func route(_ packet: LibavInput.Packet) {
         if packet.streamIndex == videoDecoder.streamIndex {
+            routedVideoPackets += 1
             for frame in videoDecoder.feed(packet.pointer) {
                 consume(frame)
             }
@@ -288,6 +304,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         if let audioDecoder, packet.streamIndex == audioDecoder.streamIndex {
             for sample in audioDecoder.feed(packet.pointer) {
                 audioRenderer.enqueue(sample)
+                audioSamplesEnqueued += 1
             }
         }
     }
@@ -302,8 +319,13 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         if let audioDecoder {
             for sample in audioDecoder.drain() {
                 audioRenderer.enqueue(sample)
+                audioSamplesEnqueued += 1
             }
         }
+        let summary = "读到尾：视频包=\(routedVideoPackets) 帧入层=\(videoFramesAccepted) "
+            + "解出=\(videoDecoder.decodedFrameCount) 丢非VT=\(videoDecoder.droppedNonVTCount) "
+            + "解码错误=\(videoDecoder.decodeErrorCount) 音频样本=\(audioSamplesEnqueued)"
+        LibavTrace.logger.notice("\(summary, privacy: .public)")
         emitEndedOnce()
     }
 
@@ -332,6 +354,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
             durationSeconds: duration
         )
         guard accepted else { return }
+        videoFramesAccepted += 1
         // 第一帧真的排上了，才算「开始播」—— 在此之前界面那边还是 loading。
         if !startedPlaying {
             startedPlaying = true
@@ -342,6 +365,21 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
             videoRenderer.play(rate: rate)
             emit(.state(.playing))
         }
+    }
+
+    /// 「有声音没画面」的取证（M04P13）：解码跑起来 3 秒还是一帧没进显示层，就把两侧计数打出来。
+    ///
+    /// 放在这条循环里是因为：这些计数只有解码线程在碰，读它们不用锁；
+    /// 打过一次就不再查（连 `Date()` 也不再多花）。
+    private func reportVideoSilenceIfNeeded() {
+        guard !loggedVideoSilence, videoFramesAccepted == 0, audioSamplesEnqueued > 0 else { return }
+        guard Date().timeIntervalSince(loopStartedAt) >= 3 else { return }
+        loggedVideoSilence = true
+        let silence = "解码 3 秒后仍没有一帧进显示层：视频包=\(routedVideoPackets) "
+            + "解出=\(videoDecoder.decodedFrameCount) 丢非VT=\(videoDecoder.droppedNonVTCount) "
+            + "解码错误=\(videoDecoder.decodeErrorCount) "
+            + "最后一次=\(videoDecoder.lastDecodeErrorText ?? "无") 音频样本=\(audioSamplesEnqueued)"
+        LibavTrace.logger.error("\(silence, privacy: .public)")
     }
 
     private func emitTimeIfNeeded() {
