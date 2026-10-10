@@ -9,13 +9,16 @@ import SwiftUI
 ///
 /// | 手势 | 行为 |
 /// | --- | --- |
-/// | 双击 | 播放 / 暂停 |
+/// | 双击 | 播放 / 暂停（**锁上之后不做**，见下） |
 /// | 单击 | 显隐控制条（双击优先，M03P10） |
 /// | 长按 | 临时加速，松手回到用户那份倍速（M03P12）；不在播不加速，但手势照样接管 |
 /// | 横拖 | 调进度：拖动中只预览，**松手才 seek**（一次拖动几十个中间值，逐个 seek 会把内核打爆） |
 /// | 双指捏合 | 缩放画面 1.0–5.0x（中心锚点），捏回 1.0 就是归位（M03P14） |
 /// | 左半屏纵拖 | 调屏幕亮度：拖动中即时生效；拿不到亮度（macOS）则这次拖动不做事 |
 /// | 右半屏纵拖 | 调音量：拖动中只看百分比，**松手下发内核** |
+///
+/// **锁屏**（M03P21，`PlaybackView/isLocked`）：锁上之后双击、拖动、长按加速、捏合全停，
+/// 只留单击 —— 锁上时控制条只剩解锁按钮，单击是把它叫回来的唯一办法（``LockedGesturePolicy``）。
 ///
 /// 这次拖动调什么由**起点**决定（``DragMode``），开始那一刻定下就不再变 ——
 /// 横向拖到一半拐弯也不会突然跳成调音量。
@@ -94,8 +97,8 @@ extension PlaybackView {
             .gesture(
                 TapGesture(count: 2)
                     .onEnded { _ in
-                        // 双击 = 播放 / 暂停。
-                        guard !shouldSwallowTap() else {
+                        // 双击 = 播放 / 暂停；锁上之后不做（M03P21，上游 onDoubleTap 同款早退）。
+                        guard Self.lockedGesturePolicy(isLocked: isLocked) == .all, !shouldSwallowTap() else {
                             return
                         }
                         Task { await togglePlayback() }
@@ -148,7 +151,7 @@ extension PlaybackView {
     private func playerGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 24)
             .onChanged { value in
-                guard !isSpeedBoostHolding, !isZooming else {
+                guard !isSpeedBoostHolding, !isZooming, !isLocked else {
                     return
                 }
                 let dx = value.translation.width
@@ -178,7 +181,7 @@ extension PlaybackView {
                 }
             }
             .onEnded { value in
-                guard !isSpeedBoostHolding, !isZooming else {
+                guard !isSpeedBoostHolding, !isZooming, !isLocked else {
                     return
                 }
                 if gestureDrag == .seek, let base = gestureBasePosition {
@@ -202,6 +205,10 @@ extension PlaybackView {
 
     /// 捏合过程中的倍数：两种 API 的入口都走这里（基准值进一次、后面都按它乘）。
     private func applyZoom(magnification: CGFloat) {
+        // 锁上之后捏合也不缩放（M03P21；上游 `onScaleBegin` 里 checks 了 lock）。
+        guard !isLocked else {
+            return
+        }
         isZooming = true
         let base = gestureBaseZoom ?? zoomScale
         gestureBaseZoom = base
@@ -224,7 +231,8 @@ extension PlaybackView {
     /// 提示直接用倍速文本（`2.0x`，上游 `play_speed_hint` 同款），按住期间一直亮着；
     /// 加速到多少是**可调的**（M03P13：播放页「长按倍速」，上游 `speed_long_press`）。
     func beginSpeedBoost() {
-        guard !isSpeedBoostHolding else {
+        // 锁上之后长按不加速、也不接管手势（M03P21）—— 上游 `onLongPress` 里就是这一条早退。
+        guard !isSpeedBoostHolding, !isLocked else {
             return
         }
         isSpeedBoostHolding = true

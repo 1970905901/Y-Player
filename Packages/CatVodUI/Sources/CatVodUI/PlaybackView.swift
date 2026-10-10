@@ -74,7 +74,9 @@ public struct PlaybackView: View {
     /// 自研 FFmpeg 内核的画面层（只有选了它才有）：会话往这层喂样本，`FFmpegVideoView` 把它挂进画面区。
     @State private var ffmpegSurface: FFmpegVideoSurface?
     /// 正在拖进度条：拖动期间不采纳内核报回的位置，否则滑杆会被顶回去。
-    @State private var isScrubbing = false
+    /// 正在拖控制条的进度条：拖动期间不采纳内核报回的位置，否则滑杆会被顶回去。
+    /// （去掉 `private`：`PlaybackView+Controls.swift` 要用。）
+    @State var isScrubbing = false
     /// 最近一次读到的播放信息：只有报得出来的内核（MPV 与自研 FFmpeg 都认这个协议）才有这一块。
     @State var playbackStats: PlaybackStats?
     /// 内核上报的轨道（系统内核现在不上报，只有 MPV 会报，见 M03P3/M03P5）。
@@ -136,6 +138,9 @@ public struct PlaybackView: View {
     /// 单集循环（M03P20，对齐上游控制条的 `repeat`）：播完（或到片尾标记）回到本集开头，不连播。
     /// 页面内偏好、不落盘 —— 与上游一样是「本次播放」的开关。
     @State var isRepeatOne = false
+    /// 锁屏 / 防误触（M03P21，对齐上游 `setLock`）：锁上之后画面手势全停，控制条只剩解锁按钮。
+    /// 页面内状态、不落盘；退到后台自动解锁（上游 `onUserLeaveHint` 的规矩）。
+    @State var isLocked = false
     @State private var lastPersistAt = Date.distantPast
     /// 弹幕上屏的数据（M08h）：计划 + 它用的版面。
     @State var danmakuRender: DanmakuRenderPlan?
@@ -199,6 +204,9 @@ public struct PlaybackView: View {
         self.onPlaybackStats = onPlaybackStats
         self.onStart = onStart
     }
+
+    /// 前后台切换：锁屏的自动解锁要用（见 M03P21）。
+    @Environment(\.scenePhase) private var scenePhase
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -300,6 +308,13 @@ public struct PlaybackView: View {
                 // 与详情页的抽屉同一形态：半屏（iOS 15 回落整页）。
                 .adaptiveHalfSheet()
             }
+        }
+        .onChange(of: scenePhase) { phase in
+            // 退到后台就解锁（M03P21，上游 `onUserLeaveHint` 同款）：回来时别发现画面点不动。
+            guard phase != .active else {
+                return
+            }
+            isLocked = false
         }
         .task {
             // 「开始一次播放」的回传口（M06l）：换集/换台时上层用它把「跳过广告」的累计统计归零。
@@ -407,60 +422,6 @@ public struct PlaybackView: View {
         } else if let ffmpegSurface {
             interactiveLayer(FFmpegVideoView(surface: ffmpegSurface), size: size)
         }
-    }
-
-    /// 自绘内核的最小控制条：播放 / 暂停 + 进度 + 时间。
-    ///
-    /// 为什么必须自绘：系统内核的控件是 `VideoPlayer` 自带的，自绘内核这边只有一层画面层 ——
-    /// 没有这条，用户就只能看，不能停、不能拖。变速不在这里（在信息区的「播放速度」）。
-    private var playerControls: some View {
-        VStack {
-            Spacer()
-            HStack(spacing: 12) {
-                Button {
-                    Task { await togglePlayback() }
-                } label: {
-                    Image(systemName: playerState.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title3)
-                        .foregroundStyle(.white)
-                        .frame(width: 28)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(playerState.isPlaying ? "暂停" : "播放")
-
-                Text(Self.timeText(latestPosition))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.white)
-                Slider(
-                    value: seekBinding,
-                    in: 0 ... max(latestDuration, 1),
-                    onEditingChanged: { editing in
-                        isScrubbing = editing
-                        guard !editing else { return }
-                        // 松手才 seek：一次拖动会产生几十个中间值，逐个 seek 会把内核打爆。
-                        let target = latestPosition
-                        Task { await engine?.seek(to: target) }
-                        // 跟控制条交互过：自动收起的计时从头算（M03P10）。
-                        scheduleControlsAutoHide()
-                    }
-                )
-                .tint(.white)
-                Text(Self.timeText(latestDuration))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.white)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(Color.black.opacity(0.45))
-        }
-    }
-
-    /// 进度条绑定：拖动只改界面上的位置（松手才真 seek，见 ``playerControls`` 的 `onEditingChanged`）。
-    private var seekBinding: Binding<Double> {
-        Binding(
-            get: { latestPosition },
-            set: { newValue in latestPosition = newValue }
-        )
     }
 
     /// 控制条自动收起的等待时长（M03P10）。
@@ -714,6 +675,21 @@ extension PlaybackView {
                 metadata: activeProgressContext.metadata
             )
         )
+    }
+
+    /// 锁上之后还允许哪些手势（**纯函数**，有单测）。
+    enum LockedGesturePolicy: Equatable {
+        /// 没锁：全开。
+        case all
+        /// 锁上：**只留单击**（把控制条叫出来 / 收起来）—— 双击、拖动、长按加速、捏合全停。
+        ///
+        /// 为什么留着单击：锁上时控制条只剩解锁按钮，而它跟别的控制条一样会「播放中自动收起」——
+        /// 单击是把它叫回来的唯一办法（上游也是这么留的：`onSingleTap` 不看 lock）。
+        case singleTapOnly
+    }
+
+    static func lockedGesturePolicy(isLocked: Bool) -> LockedGesturePolicy {
+        isLocked ? .singleTapOnly : .all
     }
 
     /// 一集走到头（或到片尾标记）之后该干什么（**纯函数**，有单测）。
