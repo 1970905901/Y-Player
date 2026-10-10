@@ -178,37 +178,26 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     }
 
     func play() async {
-        lock.lock()
-        playing = true
-        let rate = rate
-        lock.unlock()
+        let rate = enterPlaying()
         videoRenderer.play(rate: rate)
         emit(.state(.playing))
     }
 
     func pause() async {
-        lock.lock()
-        playing = false
-        lock.unlock()
+        leavePlaying()
         videoRenderer.pause()
         emit(.state(.paused))
     }
 
     func seek(to seconds: Double) async {
         let target = max(seconds, 0)
-        lock.lock()
-        pendingSeek = target
-        lock.unlock()
+        requestSeek(to: target)
         // 立刻回执：UI 不等内核往返；真正的跳转由解码线程做（见 `performSeek`）。
         emit(.time(current: target, duration: durationSeconds))
     }
 
     func setRate(_ rate: Float) async {
-        lock.lock()
-        self.rate = rate
-        let playing = playing
-        lock.unlock()
-        if playing {
+        if updateRate(rate) {
             videoRenderer.play(rate: rate)
         }
     }
@@ -219,9 +208,7 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     }
 
     func close() async {
-        lock.lock()
-        running = false
-        lock.unlock()
+        stopRunning()
         // 等解码线程自己退出。没有 interrupt callback 之前**不能**释放
         // 它可能正在读的上下文 —— 本地文件毫秒级退出；网络卡住就让它自己收尾。
         for _ in 0 ..< 20 {
@@ -496,21 +483,9 @@ extension LibavFFmpegSession {
     func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async {
         switch kind {
         case .audio:
-            lock.lock()
-            switch selection {
-            case .auto: pendingAudioTrack = .automatic
-            case let .index(index): pendingAudioTrack = .stream(index)
-            case .disabled: pendingAudioTrack = .disabled
-            }
-            lock.unlock()
+            requestAudioTrack(selection)
         case .subtitle:
-            lock.lock()
-            switch selection {
-            case .auto: pendingSubtitleTrack = .automatic
-            case let .index(index): pendingSubtitleTrack = .stream(index)
-            case .disabled: pendingSubtitleTrack = .disabled
-            }
-            lock.unlock()
+            requestSubtitleTrack(selection)
         case .video:
             return
         }
@@ -831,5 +806,76 @@ extension LibavFFmpegSession {
     private func clearSubtitleCues() {
         subtitleCues.removeAll()
         emit(.subtitleCues([]))
+    }
+}
+
+// MARK: - 同步临界区（M03P11）
+
+/// 控制方法的锁都收在这一组**同步**小方法里。
+///
+/// 为什么：`async` 函数体里直接 `lock()/unlock()` 在 Swift 6 语言模式下是**错误**
+/// （编译器没法证明两行之间没有挂起点，现在只是警告）；收进同步方法后，
+/// 「临界区里没有 `await`」这件事写在结构上，编译器也能一眼看出来 ——
+/// 与既有的 `takePendingAudioTrack()` / `currentAudioIndex()` 同一套做法。
+extension LibavFFmpegSession {
+    /// 设为「在播」，并回传当前倍速（`play()` 要用）。一次进锁拿两样，省一次加锁。
+    private func enterPlaying() -> Float {
+        lock.lock()
+        playing = true
+        let current = rate
+        lock.unlock()
+        return current
+    }
+
+    /// 设为「暂停」。
+    private func leavePlaying() {
+        lock.lock()
+        playing = false
+        lock.unlock()
+    }
+
+    /// 记一个待办跳转（解码线程会取走执行）。
+    private func requestSeek(to target: Double) {
+        lock.lock()
+        pendingSeek = target
+        lock.unlock()
+    }
+
+    /// 改倍速，并回传此刻在不在播（`setRate(_:)` 据此决定要不要立刻让渲染器换速）。
+    private func updateRate(_ newRate: Float) -> Bool {
+        lock.lock()
+        rate = newRate
+        let playing = playing
+        lock.unlock()
+        return playing
+    }
+
+    /// 收尾：解码线程据此退出（`close()` 的第一件事）。
+    private func stopRunning() {
+        lock.lock()
+        running = false
+        lock.unlock()
+    }
+
+    /// 记一个待办换音轨（解码线程会取走执行）。
+    private func requestAudioTrack(_ selection: TrackSelection) {
+        lock.lock()
+        switch selection {
+        case .auto: pendingAudioTrack = .automatic
+        case let .index(index): pendingAudioTrack = .stream(index)
+        case .disabled: pendingAudioTrack = .disabled
+        }
+        lock.unlock()
+    }
+
+    /// 记一个待办换字幕（M04P19 同一套）。
+    private func requestSubtitleTrack(_ selection: TrackSelection) {
+        lock.lock()
+        switch selection {
+        case .auto: pendingSubtitleTrack = .automatic
+        case let .index(index): pendingSubtitleTrack = .stream(index)
+        case .disabled: pendingSubtitleTrack = .disabled
+        }
+        lock.unlock()
     }
 }
