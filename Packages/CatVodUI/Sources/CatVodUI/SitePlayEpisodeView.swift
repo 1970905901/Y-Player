@@ -70,6 +70,11 @@ struct SitePlayEpisodeView: View {
                     progressStore: model.progressStore,
                     danmaku: DanmakuRequest(name: title, episode: episode.displayName),
                     onDanmaku: { request in Task { await model.loadDanmaku(request, embedded: embeddedDanmaku) } },
+                    subtitleDisplay: model.subtitleDisplay,
+                    subtitleCues: model.subtitleCues,
+                    danmakuLines: model.danmakuLines,
+                    danmakuDisplay: model.danmakuDisplay,
+                    onToggleDanmaku: { model.setDanmakuVisible($0) },
                     onEnqueueDownloads: { requests, siteKey, title, headers in
                         await model.enqueueDownloadsAndStart(
                             requests,
@@ -79,11 +84,6 @@ struct SitePlayEpisodeView: View {
                         )
                     },
                     onPlaybackStats: { model.notePlaybackStats($0) },
-                    onToggleDanmaku: { model.setDanmakuVisible($0) },
-                    danmakuLines: model.danmakuLines,
-                    danmakuDisplay: model.danmakuDisplay,
-                    subtitleDisplay: model.subtitleDisplay,
-                    subtitleCues: model.subtitleCues,
                     playlist: playlist,
                     lineSwitcher: lineSwitcher,
                     onStart: {

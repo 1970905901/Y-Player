@@ -420,15 +420,19 @@ public struct VodDetailView: View {
                 settings: model.playbackSettings,
                 progressContext: progressContext(for: episode, at: index),
                 progressStore: model.progressStore,
+                // 直链路径（type 0/1/2 的 CMS 站）以前没有弹幕请求 —— M08c 只接了站点/解析两条路，
+                // 于是这类站点永远搜不到弹幕（M03P18 补上；结果体里没有内嵌弹幕，所以不带 embedded）。
+                danmaku: DanmakuRequest(name: vod?.vodName ?? "", episode: episode.displayName),
+                onDanmaku: { request in Task { await model.loadDanmaku(request) } },
+                subtitleDisplay: model.subtitleDisplay,
+                subtitleCues: model.subtitleCues,
+                danmakuLines: model.danmakuLines,
+                danmakuDisplay: model.danmakuDisplay,
+                onToggleDanmaku: { model.setDanmakuVisible($0) },
                 onEnqueueDownloads: { requests, siteKey, title, headers in
                     await enqueuePlaybackDownload(requests, siteKey: siteKey, title: title, headers: headers)
                 },
                 onPlaybackStats: { model.notePlaybackStats($0) },
-                onToggleDanmaku: { model.setDanmakuVisible($0) },
-                danmakuLines: model.danmakuLines,
-                danmakuDisplay: model.danmakuDisplay,
-                subtitleDisplay: model.subtitleDisplay,
-                subtitleCues: model.subtitleCues,
                 playlist: playlist,
                 lineSwitcher: lineSwitcher(currentIndex: index),
                 onStart: {

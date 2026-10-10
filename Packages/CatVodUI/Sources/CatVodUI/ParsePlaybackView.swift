@@ -52,6 +52,11 @@ struct ParsePlaybackView: View {
                     progressStore: model.progressStore,
                     danmaku: DanmakuRequest(name: vodName, episode: episode.displayName),
                     onDanmaku: { request in Task { await model.loadDanmaku(request, embedded: detail.danmaku) } },
+                    subtitleDisplay: model.subtitleDisplay,
+                    subtitleCues: model.subtitleCues,
+                    danmakuLines: model.danmakuLines,
+                    danmakuDisplay: model.danmakuDisplay,
+                    onToggleDanmaku: { model.setDanmakuVisible($0) },
                     onEnqueueDownloads: { requests, siteKey, title, headers in
                         await model.enqueueDownloadsAndStart(
                             requests,
@@ -61,11 +66,6 @@ struct ParsePlaybackView: View {
                         )
                     },
                     onPlaybackStats: { model.notePlaybackStats($0) },
-                    onToggleDanmaku: { model.setDanmakuVisible($0) },
-                    danmakuLines: model.danmakuLines,
-                    danmakuDisplay: model.danmakuDisplay,
-                    subtitleDisplay: model.subtitleDisplay,
-                    subtitleCues: model.subtitleCues,
                     onStart: {
                         model.resetAdSkip()
                         model.clearDanmaku()
