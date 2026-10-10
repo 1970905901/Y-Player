@@ -27,7 +27,6 @@ public final class AppModel: ObservableObject {
         static let decoderMode = "yplayer.decoderMode"
         static let homeLayout = "yplayer.homeLayout"
         static let localProxyEnabled = "yplayer.localProxyEnabled"
-        static let syncIdentifier = "yplayer.syncIdentifier"
         static let sourceCacheLifetime = "yplayer.sourceCacheLifetime"
         static let homeCacheLifetime = "yplayer.homeCacheLifetime"
         static let playbackPageLayout = "yplayer.playbackPageLayout"
@@ -673,7 +672,6 @@ public final class AppModel: ObservableObject {
         let storedLayout = defaults.string(forKey: StorageKey.homeLayout)
         homeLayout = storedLayout.flatMap(HomeLayout.init(rawValue:)) ?? .vertical
         isLocalProxyEnabled = defaults.object(forKey: StorageKey.localProxyEnabled) as? Bool ?? true
-        localSyncIdentifier = Self.storedSyncIdentifier(defaults: defaults)
         selectedLiveKey = defaults.string(forKey: StorageKey.liveSource) ?? ""
         selectedLiveGroup = defaults.string(forKey: StorageKey.liveGroup) ?? ""
 
@@ -915,12 +913,6 @@ public final class AppModel: ObservableObject {
     /// 存储状态说明（落库路径 / 内存降级原因）。
     @Published public private(set) var storageNotice: String = ""
 
-    /// 本机同步标识（设置 → iCloud 同步 里展示的那一串）。
-    ///
-    /// 只是**本机**的稳定标识：iCloud 同步尚未落地（本地落库已完成，跨设备同步属后续），
-    /// 但先把它生成并固定下来，将来启用同步时不必再换一套身份。
-    public let localSyncIdentifier: String
-
     /// 详情获取（带缓存）。
     ///
     /// 共享同一个 ``DetailCache``：详情页在「列表 → 详情 → 返回 → 再进」之间复用结果；
@@ -938,16 +930,6 @@ public final class AppModel: ObservableObject {
     }
 
     // MARK: - 工具
-
-    /// 本机同步标识：首次启动生成一次（`_` + 32 位十六进制），之后固定不变。
-    private static func storedSyncIdentifier(defaults: UserDefaults) -> String {
-        if let existing = defaults.string(forKey: StorageKey.syncIdentifier), !existing.isEmpty {
-            return existing
-        }
-        let identifier = "_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
-        defaults.set(identifier, forKey: StorageKey.syncIdentifier)
-        return identifier
-    }
 
     private static func defaultCacheDirectory() -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first

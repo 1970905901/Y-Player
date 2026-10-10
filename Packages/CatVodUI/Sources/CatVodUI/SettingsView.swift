@@ -10,8 +10,8 @@ import SwiftUI
 ///
 /// 诚实原则（`docs/UI 规范.md` + `docs/任务记录/M02P11-设置页与追剧页.md`）：
 /// 有真实数据可接的项就接真实数据（源地址、展示方式、内核/解码、解析器清单、缓存、宿主日志）；
-/// 尚未落地的项（iCloud 同步）**保留入口，并在页内写明缺什么**，
-/// 不做「点了没反应」的假开关。
+/// **已决定不做**的项（iCloud 同步，2026-10-10 拍板：没有开发者账号）保留一**节说明**、
+/// 不摆永远灰着的开关，也不摆只为将来同步而生的「本机同步 ID」（已删）。
 @MainActor
 public struct SettingsView: View {
     @ObservedObject private var model: AppModel
@@ -254,22 +254,14 @@ public struct SettingsView: View {
 
     // MARK: - iCloud 同步
 
-    /// iCloud 同步：开关**置灰**并写明原因，同步 ID 是本机真实标识。
+    /// iCloud 同步：**已决定不做**（2026-10-10 用户拍板），只写「为什么没有」。
+    ///
+    /// 为什么还留着这一节：设置页的分区对齐参考图，这一区参考图里就有 —— 但按「不摆一个永远灰着的
+    /// 开关」的规矩，这里只留说明；那个「本机同步 ID」（只为将来的同步而生成）也一并删了。
     private var syncSection: some View {
         Section("iCloud 同步") {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("同步开关")
-                    Text(model.localSyncIdentifier)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Toggle("同步开关", isOn: .constant(false))
-                    .labelsHidden()
-                    .disabled(true)
-            }
-            Text("同步未落地：本地落库（GRDB）已可用，跨设备同步属后续里程碑。开关先置灰，避免出现「已经同步了」的错觉。")
+            Text("不做跨设备同步：它要 iCloud 容器（开发者账号 + entitlements），本项目没有。"
+                + "收藏 / 播放进度 / 下载都只在本机 —— 换设备不会跟着走。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
