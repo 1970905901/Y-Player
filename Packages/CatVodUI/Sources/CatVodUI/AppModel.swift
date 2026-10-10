@@ -548,6 +548,18 @@ public final class AppModel: ObservableObject {
     /// 播放页那一行弹幕状态（`.idle` = 不显示）。
     @Published public internal(set) var danmakuStatus: DanmakuStatus = .idle
 
+    /// 这一集的弹幕**候选**（M03P25）：站点自带的在前、搜索到的在后（按 `id` 去重）。
+    /// 播放页「选择弹幕」面板画的就是它（对齐上游 `PlaySpec.danmakus`）。
+    @Published public internal(set) var danmakuCandidates: [DanmakuSource] = []
+
+    /// 手动选中的那条候选（M03P25）；`nil` = 自动（站点自带 → 搜索到的第一条）。
+    /// 与上游一样**只活在本次播放里**（上游在 `PlaySpec` 上）：不进存档，理由见 `selectDanmaku(_:)`。
+    @Published public internal(set) var danmakuPick: DanmakuSource?
+
+    /// 当前这份弹幕是**哪一集**的（M03P25）：同一集重新载入（换线路）保留手动选择，换集就清掉。
+    /// 不发布 —— 界面用的是候选与选中本身。
+    var danmakuRequest: DanmakuRequest?
+
     // MARK: - 字幕（M09c）
 
     /// 已载入的字幕 cue（上屏见 `SubtitleOverlay`，M09f）。

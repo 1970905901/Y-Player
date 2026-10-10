@@ -41,7 +41,9 @@ public enum DanmakuSourceSelection {
         return nil
     }
 
-    private static func firstUsable(_ sources: [DanmakuSource]) -> DanmakuSource? {
+    /// 候选里第一条能用的（`url` 非空）。``preferred(result:api:)`` 用的就是它；
+    /// M03P25 的「回到自动」也走它 —— 候选已经按「站点自带在前」拼好，直接取第一条即可。
+    public static func firstUsable(_ sources: [DanmakuSource]) -> DanmakuSource? {
         sources.first { !$0.url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 }

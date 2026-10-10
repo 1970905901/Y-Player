@@ -33,6 +33,9 @@ public enum DanmakuStatus: Equatable {
     case loaded(source: String, count: Int)
     /// 接口通了但没有候选 —— 与「加载失败」是两件事。
     case empty
+    /// 选中的那份弹幕**文件里没有行**（M03P25 从 `.empty` 里分出来）：下一步是「换一条」，
+    /// 不是去改弹幕 API 地址 —— 两句提示不能共用。
+    case emptySource(String)
     case failed(String)
 
     /// 播放页那一行的文案；空串 = 不显示这一行。
@@ -47,6 +50,9 @@ public enum DanmakuStatus: Equatable {
             return name.isEmpty ? "弹幕：\(count) 条" : "弹幕：\(name) · \(count) 条"
         case .empty:
             return "弹幕：没搜到（可在设置 → 播放 → 弹幕 API 换个地址）"
+        case let .emptySource(source):
+            let name = source.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty ? "弹幕：这份文件里没有弹幕（换一条试试）" : "弹幕：\(name) 里没有弹幕（换一条试试）"
         case let .failed(reason):
             return "弹幕：加载失败 — \(reason)"
         }

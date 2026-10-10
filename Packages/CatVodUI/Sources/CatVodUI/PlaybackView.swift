@@ -38,8 +38,11 @@ public struct PlaybackView: View {
     @State var currentEpisodeIndex: Int?
     /// 「选集」抽屉是否展开。
     @State private var isEpisodeDrawerPresented = false
-    /// 「弹幕设置」快捷面板是否展开（M03P24）。
-    @State private var isDanmakuSettingsPresented = false
+    /// 「弹幕设置」快捷面板是否展开（M03P24）／「选择弹幕」面板是否展开（M03P25）。
+    /// 去掉 `private`：`PlaybackView+Danmaku.swift` 的入口按钮要用（与手势那一组同一理由）——
+    /// `@State` 只能声明在主声明里，所以这两个留在这儿。
+    @State var isDanmakuSettingsPresented = false
+    @State var isDanmakuPickerPresented = false
     /// 当前线路（M03P17）：起手是详情页选的那条，换线路后就地更新。
     @State var selectedLine = ""
     /// 「开始一次播放」的回传口（M06l）：换集/换台时上层用它把跨集累计的东西归零（当前用于「跳过广告」统计）。
@@ -63,6 +66,9 @@ public struct PlaybackView: View {
     /// 「弹幕设置」快捷面板要改字号 / 透明度 / 速度 / 区域 —— 一份配置一个出口，别开两个。
     /// nil = 上层不给改（那就不摆弹幕那一块）。
     let onDanmakuDisplayChanged: ((DanmakuDisplayConfig) -> Void)?
+    /// 播放页自己的「选弹幕」能力（M03P25）：详情页把「这一集有哪些候选 + 怎么换 / 怎么重搜」包好传进来。
+    /// `nil` = 不摆「选择弹幕…」入口（直播 / 下载播放 / 设置页试播这些入口不传）。
+    let danmakuSwitcher: PlaybackDanmakuSwitcher?
     /// 这次播放的来源行（「解析：xxx」/ 站点给的 desc，M03P22）：空数组 = 不显示。
     /// 由上层从 `AppModel.playbackInfoRows` 传进来（播放页不认识 `AppModel`）。
     let playbackInfoRows: [String]
@@ -191,6 +197,7 @@ public struct PlaybackView: View {
         danmakuLines: [DanmakuLine] = [],
         danmakuDisplay: DanmakuDisplayConfig = DanmakuDisplayConfig(),
         onDanmakuDisplayChanged: ((DanmakuDisplayConfig) -> Void)? = nil,
+        danmakuSwitcher: PlaybackDanmakuSwitcher? = nil,
         onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> DownloadEnqueueOutcome)? = nil,
         onPlaybackStats: ((PlaybackStats) -> Void)? = nil,
         playlist: PlaybackPlaylist? = nil,
@@ -216,6 +223,7 @@ public struct PlaybackView: View {
         self.danmakuLines = danmakuLines
         self.danmakuDisplay = danmakuDisplay
         self.onDanmakuDisplayChanged = onDanmakuDisplayChanged
+        self.danmakuSwitcher = danmakuSwitcher
         self.onEnqueueDownloads = onEnqueueDownloads
         self.onPlaybackStats = onPlaybackStats
         self.onStart = onStart
@@ -334,6 +342,12 @@ public struct PlaybackView: View {
                 // 上游那张面板就是半屏（`DanmakuSettingDialog` 的 `getMaxHeight() = 屏高 / 2`）——
                 // 与选集抽屉同一形态（`.adaptiveHalfSheet()`）。
                 .adaptiveHalfSheet()
+        }
+        .sheet(isPresented: $isDanmakuPickerPresented) {
+            if let danmakuSwitcher {
+                PlaybackDanmakuPicker(switcher: danmakuSwitcher, request: danmaku)
+                    .adaptiveHalfSheet()
+            }
         }
         .sheet(isPresented: $isEpisodeDrawerPresented) {
             if let playlist {
@@ -857,38 +871,6 @@ extension PlaybackView {
         } catch {
             errorText = error.localizedDescription
         }
-    }
-
-    /// 「弹幕」区（M03P18）：就地开关 + 「弹幕设置」快捷面板入口（M03P24）。
-    ///
-    /// 只有**这一集真有弹幕**、且上层给了回写口时才出现 —— 不摆一个「这集本来就没弹幕」的假开关
-    /// （上游那颗弹幕按钮同样只在 `haveDanmaku()` 时才露出来）。
-    @ViewBuilder
-    private var danmakuSection: some View {
-        if let onDanmakuDisplayChanged, !danmakuLines.isEmpty {
-            Section("弹幕") {
-                Toggle("显示弹幕", isOn: Binding(
-                    get: { danmakuDisplay.isVisible },
-                    set: { next in
-                        var copy = danmakuDisplay
-                        copy.isVisible = next
-                        onDanmakuDisplayChanged(copy)
-                    }
-                ))
-                Button("弹幕设置…") {
-                    isDanmakuSettingsPresented = true
-                }
-            }
-        }
-    }
-
-    /// 弹幕配置的绑定：读上层给的这一份、写回上层（播放页不认识 `AppModel`）。
-    /// 快捷面板（``PlaybackDanmakuSettings``）拿它改五项 —— 改一次回写一次，播放中当场生效。
-    var danmakuSettingsBinding: Binding<DanmakuDisplayConfig> {
-        Binding(
-            get: { danmakuDisplay },
-            set: { onDanmakuDisplayChanged?($0) }
-        )
     }
 
     /// 音轨 / 字幕轨选择。

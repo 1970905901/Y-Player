@@ -61,6 +61,7 @@ struct ParsePlaybackView: View {
                     danmakuLines: model.danmakuLines,
                     danmakuDisplay: model.danmakuDisplay,
                     onDanmakuDisplayChanged: { model.setDanmakuDisplay($0) },
+                    danmakuSwitcher: model.playbackDanmakuSwitcher,
                     onEnqueueDownloads: { requests, siteKey, title, headers in
                         await model.enqueueDownloadsAndStart(
                             requests,

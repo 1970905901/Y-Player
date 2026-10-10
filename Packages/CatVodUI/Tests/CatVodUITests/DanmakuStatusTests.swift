@@ -31,4 +31,12 @@ struct DanmakuStatusTests {
         #expect(DanmakuStatus.empty.text.contains("弹幕 API"))
         #expect(DanmakuStatus.empty.isVisible)
     }
+
+    @Test("选中的文件里没有行（M03P25）：下一步是「换一条」，不是去改 API 地址")
+    func emptySourcePointsToAnotherSource() {
+        #expect(DanmakuStatus.emptySource("甲源").text == "弹幕：甲源 里没有弹幕（换一条试试）")
+        #expect(DanmakuStatus.emptySource("   ").text == "弹幕：这份文件里没有弹幕（换一条试试）")
+        #expect(DanmakuStatus.emptySource("甲源").isVisible)
+        #expect(!DanmakuStatus.emptySource("甲源").text.contains("弹幕 API"))
+    }
 }
