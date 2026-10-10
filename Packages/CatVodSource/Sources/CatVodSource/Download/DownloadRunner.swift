@@ -15,7 +15,9 @@ import Foundation
 /// 3. **失败即停**：一片失败就按 ``DownloadQueue`` 的规则回退，**不跳过接着下** ——
 ///    那样会得到一个中间少一段的文件，而且没有任何迹象；
 /// 4. **重试从头下**：续传要对账「已经下到第几片」，而任务里只存了字节数。这一版不假装支持
-///    （失败时把半成品删掉），等真有需求再给任务加 `completedSegments`。
+///    （失败时把半成品删掉），等真有需求再给任务加 `completedSegments`；
+/// 5. **加密片段（AES-128）先解密再写**（M10k）：密钥按 URI 缓存（同一份清单同一把 key 只取一次）、
+///    IV 用解析器兜好的那个；密钥 / IV / 密文任何一步不对就**直接报错**，绝不把密文写进成品。
 ///
 /// 不持有 `FileManager`：`FileManager` 在 Swift 6 下不是 `Sendable`，各方法内部用 `.default`
 /// 反而更省事（与 ``StorageSpace`` 把 fileManager 当参数传是同一个理由）。
@@ -103,7 +105,7 @@ public struct DownloadRunner: Sendable {
 
         let fileURL = try makeFile(for: task, suffix: media.hasInitializationSegment ? "mp4" : "ts")
         do {
-            return try await writeSegments(media.segments, to: fileURL, task: task, onProgress: onProgress)
+            return try await writeSegments(media, to: fileURL, task: task, onProgress: onProgress)
         } catch {
             // 半成品删掉：不然重试会接着往一个「少一段」的文件后面写。
             try? FileManager.default.removeItem(at: fileURL)
@@ -159,24 +161,30 @@ public struct DownloadRunner: Sendable {
         return nil
     }
 
-    /// 逐片下载并追加写。
+    /// 逐片下载并追加写（加密片段先解密再写，M10k）。
     ///
     /// 一次打开文件、追加到底：每片都开关一次文件，在几百片的长剧集上会多出几百次系统调用。
     private func writeSegments(
-        _ segments: [String],
+        _ manifest: HLSManifest,
         to fileURL: URL,
         task: DownloadTask,
         onProgress: (@Sendable (Int64, Int64) -> Void)?
     ) async throws -> FetchDone {
         var received: Int64 = 0
         var expected: Int64 = 0
+        // 同一份清单里同一把 key 只取一次（密钥按 URI 缓存）。
+        var keys: [String: Data] = [:]
         var expectedKnown = true
         let handle = try FileHandle(forWritingTo: fileURL)
         do {
-            for segment in segments {
+            for (index, segment) in manifest.segments.enumerated() {
                 let piece = try await fetch(segment, task: task)
-                try handle.write(contentsOf: piece.body)
-                received += Int64(piece.body.count)
+                var body = piece.body
+                if manifest.segmentKeys.indices.contains(index), let key = manifest.segmentKeys[index] {
+                    body = try await decrypt(body, key: key, task: task, cache: &keys)
+                }
+                try handle.write(contentsOf: body)
+                received += Int64(body.count)
                 if let length = piece.contentLength {
                     expected += length
                 } else {
@@ -190,6 +198,45 @@ public struct DownloadRunner: Sendable {
         }
         try handle.close()
         return FetchDone(received: received, expected: expectedKnown ? expected : 0, fileURL: fileURL)
+    }
+
+    /// 解一段密文（`AES-128`）：密钥按 URI 缓存；任何一步不对都**直接报错**（绝不把密文写进成品）。
+    private func decrypt(
+        _ body: Data,
+        key: HLSManifest.SegmentKey,
+        task: DownloadTask,
+        cache: inout [String: Data]
+    ) async throws -> Data {
+        guard key.method.uppercased() == "AES-128" else {
+            throw CatVodError.unsupported(feature: "离线下载", reason: "暂不支持的加密方式：\(key.method)")
+        }
+        guard !key.uri.isEmpty else {
+            throw CatVodError.parseFailed(flag: task.episode, reason: "清单里的 #EXT-X-KEY 没有密钥地址")
+        }
+        guard let iv = key.ivBytes() else {
+            throw CatVodError.parseFailed(
+                flag: task.episode,
+                reason: "清单里的 IV 不是合法的十六进制：\(key.iv.prefix(40))"
+            )
+        }
+        let secret: Data
+        if let cached = cache[key.uri] {
+            secret = cached
+        } else {
+            let response = try await fetch(key.uri, task: task)
+            guard response.body.count == 16 else {
+                throw CatVodError.parseFailed(
+                    flag: task.episode,
+                    reason: "密钥长度不是 16 字节（\(response.body.count)）：\(key.uri)"
+                )
+            }
+            cache[key.uri] = response.body
+            secret = response.body
+        }
+        guard let plain = AES128CBC.decrypt(body, key: secret, iv: iv) else {
+            throw CatVodError.parseFailed(flag: task.episode, reason: "片段解密失败（密钥或 IV 不对）")
+        }
+        return plain
     }
 
     /// 建一个空文件并返回位置。
@@ -220,12 +267,12 @@ public struct DownloadRunner: Sendable {
         return path.lowercased()
     }
 
-    /// 不支持的两类清单，各自说清为什么（不猜、不静默产出垃圾）。
+    /// 不支持的清单（字节范围 / 非 AES-128 的加密），各自说清为什么（不猜、不静默产出垃圾）。
     static func refusalReason(_ manifest: HLSManifest) -> String {
-        if manifest.isEncrypted {
-            return "这条是加密清单（AES-128），本平台暂不支持下载"
+        if manifest.isRangeBased {
+            return "这条清单按字节范围取片段（#EXT-X-BYTERANGE），本平台暂不支持下载"
         }
-        return "这条清单按字节范围取片段（#EXT-X-BYTERANGE），本平台暂不支持下载"
+        return "这条清单用了 SAMPLE-AES 加密（本平台只支持 AES-128），暂不支持下载"
     }
 
     /// 失败原因：`CatVodError` 自带面向用户的文案（它是 `LocalizedError`），其余用系统描述。

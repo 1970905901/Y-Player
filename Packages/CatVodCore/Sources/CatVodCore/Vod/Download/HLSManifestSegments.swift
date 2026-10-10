@@ -15,14 +15,53 @@ public struct HLSManifest: Sendable, Equatable {
         public var bandwidth: Int
     }
 
+    /// 一段 `#EXT-X-KEY` 的加密信息（作用范围：它之后到下一段 `#EXT-X-KEY` 之前的所有片段；M10k）。
+    public struct SegmentKey: Sendable, Equatable {
+        /// `METHOD`（`AES-128` / `SAMPLE-AES`…；`NONE` 不会出现在这里）。
+        public var method: String
+        /// 密钥地址（已绝对化；可能为空 —— `SAMPLE-AES` 允许没有 URI）。
+        public var uri: String
+        /// 解密的 IV（**十六进制、已兜底**）：显式 `IV` 属性，或缺省时该片段的**媒体序号**（16 字节大端）。
+        public var iv: String
+
+        public init(method: String, uri: String = "", iv: String = "") {
+            self.method = method
+            self.uri = uri
+            self.iv = iv
+        }
+
+        /// `iv`（十六进制，`0x` 前缀可有可无）→ 16 字节；长度 / 字符不对给 nil（宁可解不了明说，也不猜）。
+        public func ivBytes() -> Data? {
+            let text = iv.hasPrefix("0x") || iv.hasPrefix("0X") ? String(iv.dropFirst(2)) : iv
+            guard text.count == 32 else {
+                return nil
+            }
+            var bytes = Data(capacity: 16)
+            var index = text.startIndex
+            while index < text.endIndex {
+                let next = text.index(index, offsetBy: 2)
+                guard let byte = UInt8(text[index ..< next], radix: 16) else {
+                    return nil
+                }
+                bytes.append(byte)
+                index = next
+            }
+            return bytes
+        }
+    }
+
     /// 是不是主清单。
     public var isMaster: Bool
     /// 主清单的变体（按清单里的顺序）。
     public var variants: [Variant]
     /// 媒体清单的片段地址（**绝对地址**，顺序即拼接顺序）。
     public var segments: [String]
-    /// 有没有加密片段（`#EXT-X-KEY` 的 `METHOD` 不是 `NONE`）。
-    public var isEncrypted: Bool
+    /// 与 ``segments`` **一一对应**的加密信息（`nil` = 该片段不加密；M10k）。
+    ///
+    /// 为什么按片段存而不是只留一个「有没有加密」的标记：密钥可以在清单中途轮换
+    /// （`#EXT-X-KEY` 作用到下一段 KEY 之前），而 IV 缺省时要用**该片段自己的媒体序号**推 ——
+    /// 两件事都只有解析时知道，解密方（`DownloadRunner`）不该再猜。
+    public var segmentKeys: [SegmentKey?]
     /// 有片段是按**字节范围**取的（`#EXT-X-BYTERANGE`）。
     ///
     /// 单列一个标记而不是默默忽略：那类清单里多个片段共用**同一个 URI**、靠范围区分，
@@ -41,7 +80,7 @@ public struct HLSManifest: Sendable, Equatable {
         isMaster: Bool = false,
         variants: [Variant] = [],
         segments: [String] = [],
-        isEncrypted: Bool = false,
+        segmentKeys: [SegmentKey?] = [],
         isRangeBased: Bool = false,
         hasInitializationSegment: Bool = false,
         totalDuration: Double = 0
@@ -49,15 +88,30 @@ public struct HLSManifest: Sendable, Equatable {
         self.isMaster = isMaster
         self.variants = variants
         self.segments = segments
-        self.isEncrypted = isEncrypted
+        self.segmentKeys = segmentKeys
         self.isRangeBased = isRangeBased
         self.hasInitializationSegment = hasInitializationSegment
         self.totalDuration = totalDuration
     }
 
-    /// 能不能照着这份清单把内容拼出来（加密与字节范围都不支持，见各自说明）。
+    /// 有没有加密片段（任一 `#EXT-X-KEY` 的 `METHOD` 不是 `NONE`）。
+    public var isEncrypted: Bool {
+        segmentKeys.contains { $0 != nil }
+    }
+
+    /// 有没有**这套下载链路解不了**的加密：只认 `AES-128`（`SAMPLE-AES` 是另一套规范）。
+    public var hasUnsupportedEncryption: Bool {
+        segmentKeys.contains { key in
+            guard let key else {
+                return false
+            }
+            return key.method.uppercased() != "AES-128"
+        }
+    }
+
+    /// 能不能照着这份清单把内容拼出来：字节范围不支持；加密只支持 `AES-128`（见各自说明）。
     public var isDownloadable: Bool {
-        !isEncrypted && !isRangeBased
+        !isRangeBased && !hasUnsupportedEncryption
     }
 
     /// 有没有可下的东西。
@@ -97,6 +151,10 @@ public enum HLSManifestParser {
         var pendingIsStreamInf = false
         var pendingIsSegment = false
         var mapURI = ""
+        // 加密状态（M10k）：`currentKey` 作用到下一段 `#EXT-X-KEY`；序号用来给缺省 IV 兜底。
+        var currentKey: HLSManifest.SegmentKey?
+        var mediaSequence = 0
+        var segmentSequence = 0
 
         for line in lines {
             if line.isEmpty {
@@ -111,9 +169,10 @@ public enum HLSManifestParser {
                     pendingIsSegment = true
                     manifest.totalDuration += duration(in: line)
                 } else if line.hasPrefix("#EXT-X-KEY:") {
-                    if isEncryptingKey(line) {
-                        manifest.isEncrypted = true
-                    }
+                    currentKey = Self.key(from: line, baseURL: baseURL)
+                } else if line.hasPrefix("#EXT-X-MEDIA-SEQUENCE:") {
+                    let payload = line.dropFirst("#EXT-X-MEDIA-SEQUENCE:".count)
+                    mediaSequence = Int(payload.trimmingCharacters(in: .whitespaces)) ?? 0
                 } else if line.hasPrefix("#EXT-X-BYTERANGE:") {
                     manifest.isRangeBased = true
                 } else if line.hasPrefix("#EXT-X-MAP:") {
@@ -133,8 +192,14 @@ public enum HLSManifestParser {
                 if manifest.segments.isEmpty, !mapURI.isEmpty {
                     manifest.hasInitializationSegment = true
                     manifest.segments.append(absolute(mapURI, base: baseURL))
+                    // init 片不吃媒体序号、也不带 KEY（它是开头，不是加密序列的一段）。
+                    manifest.segmentKeys.append(nil)
                 }
                 manifest.segments.append(resolved)
+                manifest.segmentKeys.append(
+                    Self.resolvedKey(currentKey, sequence: mediaSequence + segmentSequence)
+                )
+                segmentSequence += 1
                 pendingIsSegment = false
             }
         }
@@ -175,12 +240,37 @@ public enum HLSManifestParser {
         return Double(seconds.trimmingCharacters(in: .whitespaces)) ?? 0
     }
 
-    /// `#EXT-X-KEY:` 是不是加密（`METHOD=NONE` 表示这段不加密）。
-    static func isEncryptingKey(_ line: String) -> Bool {
-        guard let method = attribute("METHOD", in: line) else {
-            return false
+    /// `#EXT-X-KEY:` → 加密信息；`METHOD=NONE`（或没有 METHOD）给 nil = 从这里起不加密。
+    ///
+    /// IV 的兜底（用片段的媒体序号）不在这里做 —— 那是**片段**的属性，见 ``resolvedKey(_:sequence:)``。
+    static func key(from line: String, baseURL: String) -> HLSManifest.SegmentKey? {
+        guard let method = attribute("METHOD", in: line), method.uppercased() != "NONE" else {
+            return nil
         }
-        return method.uppercased() != "NONE"
+        let rawURI = attribute("URI", in: line) ?? ""
+        return HLSManifest.SegmentKey(
+            method: method.uppercased(),
+            uri: rawURI.isEmpty ? "" : absolute(rawURI, base: baseURL),
+            iv: attribute("IV", in: line) ?? ""
+        )
+    }
+
+    /// 给一段加密信息补上缺省 IV：RFC 8216 规定「没有 `IV` 属性时用该片段的**媒体序号**（16 字节大端）」。
+    static func resolvedKey(_ key: HLSManifest.SegmentKey?, sequence: Int) -> HLSManifest.SegmentKey? {
+        guard var key else {
+            return nil
+        }
+        if key.iv.isEmpty {
+            key.iv = hexIV(sequence: sequence)
+        }
+        return key
+    }
+
+    /// 媒体序号 → `0x…` 的 16 字节大端十六进制。
+    static func hexIV(sequence: Int) -> String {
+        var text = String(UInt64(max(0, sequence)), radix: 16)
+        text = String(repeating: "0", count: max(0, 32 - text.count)) + text
+        return "0x" + text
     }
 
     /// 取 `KEY=VALUE` 形式的值；`VALUE` 可能带引号（`URI="init.mp4"`）。

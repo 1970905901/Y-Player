@@ -1,4 +1,4 @@
-import CatVodCore
+@testable import CatVodCore
 import CatVodNet
 @testable import CatVodSource
 import Foundation
@@ -161,19 +161,54 @@ struct DownloadRunnerTests {
         ])
     }
 
-    @Test("加密清单：如实拒绝（按重试规则先回排队），不留下半成品")
-    func refusesEncrypted() async throws {
+    @Test("AES-128 清单：取 key → 解密 → 拼成明文 .ts，同一把 key 只取一次（M10k）")
+    func decryptsAES128() async throws {
         let directory = try makeDirectory("encrypted")
         let index = "https://cdn.example/v/index.m3u8"
+        let keyURL = "https://cdn.example/v/key.bin"
+        let key = Data((0 ..< 16).map { UInt8($0) })
+        let iv = Data(repeating: 0, count: 16)
+        let plain1 = Data(repeating: 0x41, count: 32)
+        let plain2 = Data(repeating: 0x42, count: 32)
+        let cipher1 = try #require(AES128CBC.encrypt(plain1, key: key, iv: iv))
+        let cipher2 = try #require(AES128CBC.encrypt(plain2, key: key, iv: iv))
         let transport = DownloadStubTransport([
-            index: playlist("#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n#EXTINF:4,\nseg.ts"),
+            index: playlist("""
+            #EXT-X-KEY:METHOD=AES-128,URI="key.bin",IV=0x00000000000000000000000000000000
+            #EXTINF:4,
+            seg-1.ts
+            #EXTINF:4,
+            seg-2.ts
+            """),
+            keyURL: HTTPResponse(status: 200, body: key),
+            "https://cdn.example/v/seg-1.ts": HTTPResponse(status: 200, body: cipher1),
+            "https://cdn.example/v/seg-2.ts": HTTPResponse(status: 200, body: cipher2),
+        ])
+        let runner = DownloadRunner(transport: transport, directory: directory)
+
+        let outcome = await runner.run(makeTask(index))
+        #expect(outcome.task.status == .finished)
+        let fileURL = try #require(outcome.fileURL)
+        #expect(try Data(contentsOf: fileURL) == plain1 + plain2)
+
+        // 密钥按 URI 缓存：两片共用一把 key，key 只请求一次
+        let requested = await transport.requestedURLs()
+        #expect(requested.filter { $0 == keyURL }.count == 1)
+    }
+
+    @Test("SAMPLE-AES：如实拒绝（按重试规则先回排队），不留下半成品")
+    func refusesSampleAES() async throws {
+        let directory = try makeDirectory("sample-aes")
+        let index = "https://cdn.example/v/index.m3u8"
+        let transport = DownloadStubTransport([
+            index: playlist("#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://x\"\n#EXTINF:4,\nseg.ts"),
         ])
         let runner = DownloadRunner(transport: transport, directory: directory)
 
         let outcome = await runner.run(makeTask(index))
         #expect(outcome.fileURL == nil)
         #expect(outcome.task.status == .waiting)
-        #expect(outcome.task.failureReason.contains("加密"))
+        #expect(outcome.task.failureReason.contains("SAMPLE-AES"))
         #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
     }
 

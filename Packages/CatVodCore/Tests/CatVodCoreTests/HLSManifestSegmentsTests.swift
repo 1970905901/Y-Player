@@ -98,14 +98,21 @@ struct HLSManifestSegmentsTests {
         #expect(noBandwidth.bestVariant?.url == "https://cdn.example/v/movie/only.m3u8")
     }
 
-    @Test("加密：`AES-128` 标出来，`METHOD=NONE` 不算加密")
+    @Test("加密：`AES-128` 的 key / IV 按片段存下来，`METHOD=NONE` 之后回到明文（M10k）")
     func detectsEncryption() {
         let encrypted = media("""
-        #EXT-X-KEY:METHOD=AES-128,URI="key.bin"
+        #EXT-X-KEY:METHOD=AES-128,URI="key.bin",IV=0x00112233445566778899aabbccddeeff
         #EXTINF:4,
         seg.ts
         """)
         #expect(encrypted.isEncrypted)
+        // AES-128 是这套链路认的加密，所以仍然可下（SAMPLE-AES 才不可下）
+        #expect(encrypted.isDownloadable)
+        #expect(encrypted.segmentKeys.count == 1)
+        #expect(encrypted.segmentKeys[0]?.method == "AES-128")
+        #expect(encrypted.segmentKeys[0]?.uri == "https://cdn.example/v/movie/key.bin")
+        #expect(encrypted.segmentKeys[0]?.iv == "0x00112233445566778899aabbccddeeff")
+        #expect(encrypted.segmentKeys[0]?.ivBytes()?.count == 16)
 
         let clear = media("""
         #EXT-X-KEY:METHOD=NONE
@@ -113,6 +120,54 @@ struct HLSManifestSegmentsTests {
         seg.ts
         """)
         #expect(!clear.isEncrypted)
+        #expect(clear.segmentKeys == [nil])
+    }
+
+    @Test("缺省 IV = 该片段的媒体序号（16 字节大端）；密钥中途轮换跟着换（M10k）")
+    func derivesIVFromMediaSequence() {
+        let manifest = media("""
+        #EXT-X-MEDIA-SEQUENCE:7
+        #EXT-X-KEY:METHOD=AES-128,URI="a.key"
+        #EXTINF:4,
+        seg-7.ts
+        #EXTINF:4,
+        seg-8.ts
+        #EXT-X-KEY:METHOD=AES-128,URI="b.key"
+        #EXTINF:4,
+        seg-9.ts
+        """)
+        #expect(manifest.segmentKeys.count == 3)
+        // 7 / 8 号片段的缺省 IV 就是各自的媒体序号（大端 16 字节）
+        #expect(manifest.segmentKeys[0]?.iv == "0x00000000000000000000000000000007")
+        #expect(manifest.segmentKeys[1]?.iv == "0x00000000000000000000000000000008")
+        // 换 key 之后 URI 跟着换，IV 继续按序号推
+        #expect(manifest.segmentKeys[2]?.uri == "https://cdn.example/v/movie/b.key")
+        #expect(manifest.segmentKeys[2]?.iv == "0x00000000000000000000000000000009")
+    }
+
+    @Test("init 片不带 KEY、也不吃媒体序号（M10k）")
+    func initSegmentKeepsSequence() {
+        let manifest = media("""
+        #EXT-X-MAP:URI="init.mp4"
+        #EXT-X-KEY:METHOD=AES-128,URI="a.key"
+        #EXTINF:4,
+        seg-0.m4s
+        """)
+        #expect(manifest.segments.count == 2)
+        #expect(manifest.segmentKeys[0] == nil)
+        #expect(manifest.segmentKeys[1]?.iv == "0x" + String(repeating: "0", count: 32))
+    }
+
+    @Test("SAMPLE-AES：标出来且不可下（那是另一套规范），理由交给调用方说（M10k）")
+    func refusesSampleAES() {
+        let manifest = media("""
+        #EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://x"
+        #EXTINF:4,
+        seg.ts
+        """)
+        #expect(manifest.isEncrypted)
+        #expect(manifest.hasUnsupportedEncryption)
+        #expect(!manifest.isDownloadable)
     }
 
     @Test("fMP4 的 init 片排在最前：漏了它整个文件播不了")
