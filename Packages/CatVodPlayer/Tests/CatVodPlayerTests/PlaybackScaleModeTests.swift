@@ -77,6 +77,8 @@ struct PlaybackScaleModeTests {
     func engineWithoutSessionIsSafe() async {
         let engine = MpvEngine(decoderMode: .hardware, makeSession: { nil })
         await engine.setScaleMode(.stretch)
-        #expect(await engine.currentState() == .idle)
+        // Swift Testing 的宏参数里不写 await（本仓库踩过）：先落局部再断言。
+        let state = await engine.currentState()
+        #expect(state == .idle)
     }
 }

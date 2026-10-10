@@ -154,48 +154,6 @@ public actor MpvEngine: PlayerEngine, PlaybackStatsProviding {
 
     // MARK: - 内部
 
-    /// 画面比例落到 mpv 的三条属性（M03P9，纯函数、有单测）：
-    /// - `video-aspect-override`：`no`（按容器）/ `16:9` / `4:3`；
-    /// - `panscan`：`0`（不裁）/ `1.0`（裁剪铺满）；
-    /// - `keepaspect`：`yes`（保比例）/ `no`（拉伸铺满）。
-    ///
-    /// **每次把三条都设一遍**：只设「变的那条」会在切档时留下上一档的残留
-    /// （比如裁剪完切回适应，`panscan` 还停在 1）。
-    var mpvCommands: [[String]] {
-        switch self {
-        case .fit:
-            [
-                ["set", "video-aspect-override", "no"],
-                ["set", "panscan", "0"],
-                ["set", "keepaspect", "yes"],
-            ]
-        case .ratio16x9:
-            [
-                ["set", "video-aspect-override", "16:9"],
-                ["set", "panscan", "0"],
-                ["set", "keepaspect", "yes"],
-            ]
-        case .ratio4x3:
-            [
-                ["set", "video-aspect-override", "4:3"],
-                ["set", "panscan", "0"],
-                ["set", "keepaspect", "yes"],
-            ]
-        case .crop:
-            [
-                ["set", "video-aspect-override", "no"],
-                ["set", "panscan", "1.0"],
-                ["set", "keepaspect", "yes"],
-            ]
-        case .stretch:
-            [
-                ["set", "video-aspect-override", "no"],
-                ["set", "panscan", "0"],
-                ["set", "keepaspect", "no"],
-            ]
-        }
-    }
-
     /// 把 `MediaResource` 翻成 mpv 选项。**注意：一项渲染相关的都没有**（`vo` 等第 3 步定路径后加）。
     ///
     /// 必须 `initialize()` 之前调用：libmpv 的选项在初始化之后再设基本无效。
@@ -357,5 +315,52 @@ public actor MpvEngine: PlayerEngine, PlaybackStatsProviding {
 
     private func emit(_ event: PlayerEvent) {
         continuation?.yield(event)
+    }
+}
+
+/// 画面比例 → mpv 属性的纯映射（M03P9）。
+///
+/// 单独成扩展而不是写进引擎类体：它**不是**引擎的状态/行为，是「档位 → 属性」的映射。
+extension PlaybackScaleMode {
+    /// 画面比例落到 mpv 的三条属性（M03P9，纯函数、有单测）：
+    /// - `video-aspect-override`：`no`（按容器）/ `16:9` / `4:3`；
+    /// - `panscan`：`0`（不裁）/ `1.0`（裁剪铺满）；
+    /// - `keepaspect`：`yes`（保比例）/ `no`（拉伸铺满）。
+    ///
+    /// **每次把三条都设一遍**：只设「变的那条」会在切档时留下上一档的残留
+    /// （比如裁剪完切回适应，`panscan` 还停在 1）。
+    var mpvCommands: [[String]] {
+        switch self {
+        case .fit:
+            [
+                ["set", "video-aspect-override", "no"],
+                ["set", "panscan", "0"],
+                ["set", "keepaspect", "yes"],
+            ]
+        case .ratio16x9:
+            [
+                ["set", "video-aspect-override", "16:9"],
+                ["set", "panscan", "0"],
+                ["set", "keepaspect", "yes"],
+            ]
+        case .ratio4x3:
+            [
+                ["set", "video-aspect-override", "4:3"],
+                ["set", "panscan", "0"],
+                ["set", "keepaspect", "yes"],
+            ]
+        case .crop:
+            [
+                ["set", "video-aspect-override", "no"],
+                ["set", "panscan", "1.0"],
+                ["set", "keepaspect", "yes"],
+            ]
+        case .stretch:
+            [
+                ["set", "video-aspect-override", "no"],
+                ["set", "panscan", "0"],
+                ["set", "keepaspect", "no"],
+            ]
+        }
     }
 }

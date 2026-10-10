@@ -134,7 +134,7 @@ public final class AVPlayerEngine: PlayerEngine {
         _ = mode
     }
 
-    func teardown() async {
+    public func teardown() async {
         monitoringTask?.cancel()
         monitoringTask = nil
         if let timeObserver {
