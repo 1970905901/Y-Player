@@ -30,8 +30,12 @@ enum PlaybackOpeningEndingRules {
     }
 
     /// 当前位置能不能标「片尾」（上游 `PlayerManager.canSetEnding`）。
+    ///
+    /// 比上游多一道 `tail > 0`：0 在我们这里是「没标」—— 在最后那一刻标会写出一个 0，
+    /// 界面上看起来「点了没反应」，不如直接不给标（M03P16 首验把这条钉进单测）。
     static func canSetEnding(position: Double, duration: Double) -> Bool {
-        position > 0 && duration > 0 && duration - position <= limit(duration: duration)
+        let tail = duration - position
+        return position > 0 && duration > 0 && tail > 0 && tail <= limit(duration: duration)
     }
 
     /// 起播位置（上游 `VodHistoryPolicy.startPositionMs`）：片头与上次位置，取靠后的那个。
