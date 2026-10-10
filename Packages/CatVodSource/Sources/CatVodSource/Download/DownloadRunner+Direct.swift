@@ -63,6 +63,9 @@ extension DownloadRunner {
                 while let chunk = try await cursor.next() {
                     text.append(chunk)
                 }
+                // 同上：取消时 `next()` 回 nil、清单只收了一半 —— 不拦的话会被当成
+                // 「说好是清单却没有片段」，把半份清单写成一个假文件（还报成功）。
+                try Task.checkCancellation()
                 let manifest = HLSManifestParser.parse(text: String(decoding: text, as: UTF8.self), baseURL: task.url)
                 if manifest.hasContent {
                     return try await downloadManifest(manifest, task: task, onProgress: onProgress)
@@ -185,6 +188,10 @@ extension DownloadRunner {
                         ))
                     }
                 }
+                // 取消时迭代器会**直接结束流**（`next()` 回 nil，不抛错）—— 循环因此「正常」退出，
+                // 接着走下面的对账就会把「取消」当成「字节数对不上」报出去，账目全丢（M25P2 首验踩过）。
+                // 补这一下：取消就是取消，半途的账目照抛。
+                try Task.checkCancellation()
             } onCancel: {
                 // 暂停：把底层连接关掉（流以错误收尾），已经写下的字节留在文件里。
                 piece.cancel()
