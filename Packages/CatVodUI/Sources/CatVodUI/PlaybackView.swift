@@ -38,6 +38,8 @@ public struct PlaybackView: View {
     @State var currentEpisodeIndex: Int?
     /// 「选集」抽屉是否展开。
     @State private var isEpisodeDrawerPresented = false
+    /// 「弹幕设置」快捷面板是否展开（M03P24）。
+    @State private var isDanmakuSettingsPresented = false
     /// 当前线路（M03P17）：起手是详情页选的那条，换线路后就地更新。
     @State var selectedLine = ""
     /// 「开始一次播放」的回传口（M06l）：换集/换台时上层用它把跨集累计的东西归零（当前用于「跳过广告」统计）。
@@ -57,8 +59,10 @@ public struct PlaybackView: View {
     let danmakuLines: [DanmakuLine]
     /// 弹幕显示设置。
     let danmakuDisplay: DanmakuDisplayConfig
-    /// 弹幕总开关的回写口（M03P18）：nil = 上层不给改（那就不摆这个开关）。
-    let onToggleDanmaku: ((Bool) -> Void)?
+    /// 弹幕显示配置的回写口（M03P18 起；M03P24 从「只管总开关」放宽成整份配置）：
+    /// 「弹幕设置」快捷面板要改字号 / 透明度 / 速度 / 区域 —— 一份配置一个出口，别开两个。
+    /// nil = 上层不给改（那就不摆弹幕那一块）。
+    let onDanmakuDisplayChanged: ((DanmakuDisplayConfig) -> Void)?
     /// 这次播放的来源行（「解析：xxx」/ 站点给的 desc，M03P22）：空数组 = 不显示。
     /// 由上层从 `AppModel.playbackInfoRows` 传进来（播放页不认识 `AppModel`）。
     let playbackInfoRows: [String]
@@ -186,7 +190,7 @@ public struct PlaybackView: View {
         subtitleCues: [SubtitleCue] = [],
         danmakuLines: [DanmakuLine] = [],
         danmakuDisplay: DanmakuDisplayConfig = DanmakuDisplayConfig(),
-        onToggleDanmaku: ((Bool) -> Void)? = nil,
+        onDanmakuDisplayChanged: ((DanmakuDisplayConfig) -> Void)? = nil,
         onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> DownloadEnqueueOutcome)? = nil,
         onPlaybackStats: ((PlaybackStats) -> Void)? = nil,
         playlist: PlaybackPlaylist? = nil,
@@ -211,7 +215,7 @@ public struct PlaybackView: View {
         self.subtitleCues = subtitleCues
         self.danmakuLines = danmakuLines
         self.danmakuDisplay = danmakuDisplay
-        self.onToggleDanmaku = onToggleDanmaku
+        self.onDanmakuDisplayChanged = onDanmakuDisplayChanged
         self.onEnqueueDownloads = onEnqueueDownloads
         self.onPlaybackStats = onPlaybackStats
         self.onStart = onStart
@@ -325,6 +329,12 @@ public struct PlaybackView: View {
         .navigationTitle(activeTitle)
         // 播放页同样登记为沉浸页；详情 → 播放会叠两层，登记簿按计数算（见 Platform/AdaptiveTabBar.swift）。
         .immersiveTabBarPage()
+        .sheet(isPresented: $isDanmakuSettingsPresented) {
+            PlaybackDanmakuSettings(config: danmakuSettingsBinding)
+                // 上游那张面板就是半屏（`DanmakuSettingDialog` 的 `getMaxHeight() = 屏高 / 2`）——
+                // 与选集抽屉同一形态（`.adaptiveHalfSheet()`）。
+                .adaptiveHalfSheet()
+        }
         .sheet(isPresented: $isEpisodeDrawerPresented) {
             if let playlist {
                 EpisodeListDrawer(episodes: playlist.episodes, currentIndex: currentEpisodeIndex) { index in
@@ -849,19 +859,36 @@ extension PlaybackView {
         }
     }
 
-    /// 「弹幕」区（M03P18）：就地开关（写回上层的显示设置）。
+    /// 「弹幕」区（M03P18）：就地开关 + 「弹幕设置」快捷面板入口（M03P24）。
     ///
-    /// 只有**这一集真有弹幕**、且上层给了回写口时才出现 —— 不摆一个「这集本来就没弹幕」的假开关。
+    /// 只有**这一集真有弹幕**、且上层给了回写口时才出现 —— 不摆一个「这集本来就没弹幕」的假开关
+    /// （上游那颗弹幕按钮同样只在 `haveDanmaku()` 时才露出来）。
     @ViewBuilder
     private var danmakuSection: some View {
-        if let onToggleDanmaku, !danmakuLines.isEmpty {
+        if let onDanmakuDisplayChanged, !danmakuLines.isEmpty {
             Section("弹幕") {
                 Toggle("显示弹幕", isOn: Binding(
                     get: { danmakuDisplay.isVisible },
-                    set: { onToggleDanmaku($0) }
+                    set: { next in
+                        var copy = danmakuDisplay
+                        copy.isVisible = next
+                        onDanmakuDisplayChanged(copy)
+                    }
                 ))
+                Button("弹幕设置…") {
+                    isDanmakuSettingsPresented = true
+                }
             }
         }
+    }
+
+    /// 弹幕配置的绑定：读上层给的这一份、写回上层（播放页不认识 `AppModel`）。
+    /// 快捷面板（``PlaybackDanmakuSettings``）拿它改五项 —— 改一次回写一次，播放中当场生效。
+    var danmakuSettingsBinding: Binding<DanmakuDisplayConfig> {
+        Binding(
+            get: { danmakuDisplay },
+            set: { onDanmakuDisplayChanged?($0) }
+        )
     }
 
     /// 音轨 / 字幕轨选择。

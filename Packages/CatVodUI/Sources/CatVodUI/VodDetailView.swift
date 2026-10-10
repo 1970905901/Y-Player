@@ -428,7 +428,7 @@ public struct VodDetailView: View {
                 subtitleCues: model.subtitleCues,
                 danmakuLines: model.danmakuLines,
                 danmakuDisplay: model.danmakuDisplay,
-                onToggleDanmaku: { model.setDanmakuVisible($0) },
+                onDanmakuDisplayChanged: { model.setDanmakuDisplay($0) },
                 onEnqueueDownloads: { requests, siteKey, title, headers in
                     await enqueuePlaybackDownload(requests, siteKey: siteKey, title: title, headers: headers)
                 },

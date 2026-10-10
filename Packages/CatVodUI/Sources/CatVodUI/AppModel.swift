@@ -169,9 +169,13 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    /// 播放页里就地开关弹幕（M03P18）：与设置页改的是同一份配置（`danmakuDisplay` 的 `didSet` 负责落盘）。
-    public func setDanmakuVisible(_ visible: Bool) {
-        danmakuDisplay.isVisible = visible
+    /// 播放页里改弹幕显示配置（M03P18；M03P24 从「只管总开关」放宽成整份配置）。
+    ///
+    /// 与设置页改的是同一份配置（`danmakuDisplay` 的 `didSet` 负责落盘）。
+    /// 为什么收整份而不是一项一个方法：播放页的「弹幕设置」快捷面板要改五项
+    /// （显示 / 字号 / 透明度 / 速度 / 区域），一项一个方法就是五份几乎一样的代码 —— 一份配置一个口。
+    public func setDanmakuDisplay(_ display: DanmakuDisplayConfig) {
+        danmakuDisplay = display
     }
 
     // MARK: - 字幕显示（设置 → 播放 → 字幕显示）
