@@ -157,25 +157,26 @@ public extension AppModel {
                 break
             }
             let running = starting.map { $0.transitioning(to: .running) }
-            // 先落库再开跑：界面立刻显示「下载中」；而且万一这时被杀掉，
-            // 下次恢复时库里存着 `running`，M10b 会把它降级回排队，不会卡住并发位。
-            await downloadStore.save(running)
-            await synchronizeDownloads()
-
             let runner = DownloadRunner(transport: downloadTransport(), directory: downloadDirectory)
             // 一条任务一个句柄（M10m）：暂停 / 删除要能把「正在下的那一条」单独取消，
-            // 而 `TaskGroup` 只能整组取消 —— 所以这里先建句柄，再用组只负责按完成顺序收结果。
+            // 而 `TaskGroup` 只能整组取消 —— 所以先建句柄，再用组只负责按完成顺序收结果。
+            //
+            // ⚠️ 建句柄与登记必须在**这一段没有任何 await**：登记之后再让出主线程，
+            // 「选好任务 → 落库」之间用户按的暂停就一定找得到句柄（找不到 = 暂停成摆设）。
+            // 反过来也**不要**拿 `downloadTasks` 里那条的 status 来判断「它还该不该跑」：
+            // M10b 的恢复策略是 `running` 读出来一律降级成 `waiting`（`recoveredStatus`），
+            // 拿它当开关永远不成立 —— 曾经因此把同一批任务挑了又跳，`while true` 空转烧 CPU。
             var handles: [(id: String, handle: Task<DownloadRunner.Outcome, Never>)] = []
             for task in running {
-                // 落库与开跑之间有等待，用户可能正好在这中间按了暂停 —— 那就别开跑了。
-                guard downloadTasks.first(where: { $0.id == task.id })?.status == .running else {
-                    continue
-                }
                 handles.append((task.id, Task { await runner.run(task) }))
             }
             for (id, handle) in handles {
                 downloadRunTasks[id] = handle
             }
+            // 再落库：万一这之后被杀掉，库里存着 `running`，下次恢复时 M10b 会把它降级回排队，
+            // 不会卡住并发位。
+            await downloadStore.save(running)
+            await synchronizeDownloads()
             await withTaskGroup(of: DownloadRunner.Outcome.self) { group in
                 for (_, handle) in handles {
                     group.addTask {
@@ -208,13 +209,23 @@ public extension AppModel {
             }
             return
         }
-        // 「旧结果不盖新决定」（M10m）：暂停 / 继续是用户当场按的，执行器的结果晚一步回来时
-        // 不能把它们盖回去 —— 典型是「暂停后马上点继续」，晚到的取消结果若把任务按回暂停，
-        // 队列就卡死了（没人再启动它）。例外是「已完成」：文件完整落盘是既成事实，它永远落库。
-        let sameRun = current.status == .running
-            || (current.status == .paused && outcome.task.status == .paused)
-        guard sameRun || outcome.task.status == .finished else {
-            return
+        // 「旧结果不盖新决定」（M10m）：按**结果的状态**分派 —— 不能拿「当前是不是 running」
+        // 当开关（库读回来的 `running` 一律是 `waiting`，见 `recoveredStatus`）。
+        // - 取消结果（`.paused`）只落给仍停着的任务：暂停后马上点继续时，晚到的取消结果
+        //   不能把任务按回暂停，否则队列卡死（没人再启动它）；
+        // - 失败结果不盖暂停：否则会把用户按下的暂停拉回自动重试；
+        // - 「已完成」是文件完整落盘的既成事实，永远落库。
+        switch outcome.task.status {
+        case .paused:
+            guard current.status == .paused else {
+                return
+            }
+        case .waiting, .failed, .running:
+            guard current.status != .paused else {
+                return
+            }
+        case .finished:
+            break
         }
         await downloadStore.save(outcome.task)
         await synchronizeDownloads()

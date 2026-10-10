@@ -163,6 +163,29 @@ struct DownloadWiringTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
     }
 
+    @Test("失败结果照样落库：自动重试用完停在「失败」（别拿镜像里的 running 当开关）")
+    func failureOutcomesStillLand() async throws {
+        let url = "https://cdn.example/missing.mp4"
+        // 空表：什么地址都回 404 —— 首跑加自动重试，一条都成不了。
+        let fixture = try AppModelFixture(downloadTransport: WiringTransport([:]))
+        defer { fixture.tearDown() }
+        await fixture.load()
+
+        await fixture.model.enqueueDownloads(
+            [DownloadRequest(episode: "第 1 集", line: "线路一", url: url)],
+            siteKey: "a",
+            title: "某剧"
+        )
+        // 一轮就会把自动重试额度用光：1 次首跑 + retryLimit 次重试
+        let runs = await fixture.model.runDownloadQueue()
+        #expect(runs == DownloadTask.retryLimit + 1)
+
+        let task = try #require(fixture.model.downloadTasks.first)
+        #expect(task.status == DownloadTask.Status.failed)
+        #expect(task.retryCount == DownloadTask.retryLimit + 1)
+        #expect(!task.failureReason.isEmpty)
+    }
+
     @Test("重开模型：任务还在（库是唯一来源）")
     func survivesReopen() async throws {
         let url = "https://cdn.example/1.mp4"
