@@ -15,6 +15,9 @@
 - line_length（warning 140，忽略含 URL 的行）
 - type_body_length（warning 300 / error 450）与 file_length（warning 500 / error 800）——
   纯行数统计，本机就能算准；CI 曾因 `LibavFFmpegSession` 类型体 501 > 450 红过一次（M04P17）
+- platform_branch：`CatVodUI` 的**业务视图**里不许出现 `#available` / `#if os(...)`
+  （`docs/UI 规范.md` 第二节：版本差异收进 `Sources/CatVodUI/Platform/` 基础件；
+  `#if canImport(...)` 是「可选原生依赖」的能力探测，不算 —— 规范里有例外说明）
 
 覆盖不了（只能靠人或 Mac / CI 上的真 SwiftLint）：modifier_order、closure_spacing、
 untyped_error_in_catch、yoda_condition、optional_enum_case_matching、pattern_matching_keywords 等语义类规则。
@@ -35,6 +38,22 @@ TYPE_BODY_WARNING = 300
 TYPE_BODY_ERROR = 450
 FILE_LENGTH_WARNING = 500
 FILE_LENGTH_ERROR = 800
+
+# 版本分支只许出现在基础件里（`docs/UI 规范.md` 第二节）：业务视图写了就当场拦（M03P15）。
+PLATFORM_BRANCH_PATTERN = re.compile(r"#available\(|#if\s+os\(|#elseif\s+os\(")
+PLATFORM_BRANCH_PREFIX = "Packages/CatVodUI/Sources/CatVodUI/"
+PLATFORM_BRANCH_DIR = "Packages/CatVodUI/Sources/CatVodUI/Platform/"
+
+
+def platform_branch_hit(relative, line):
+    """CatVodUI 业务视图里的版本分支 —— 命中就给一行提示（不在 `Platform/` 里的都不许）。"""
+    normalised = relative.replace(os.sep, "/")
+    if not normalised.startswith(PLATFORM_BRANCH_PREFIX):
+        return False
+    if normalised.startswith(PLATFORM_BRANCH_DIR):
+        return False
+    return bool(PLATFORM_BRANCH_PATTERN.search(line))
+
 
 PATTERNS = [
     # 只留**高置信度**的：能靠单行模式判准的。
@@ -143,6 +162,9 @@ def main() -> int:
                 continue
             if len(line) > LINE_LIMIT and "http" not in line:
                 report.append("%s:%d [line_length %d] %s" % (relative, number, len(line), stripped[:80]))
+            if platform_branch_hit(relative, stripped):
+                report.append("%s:%d [platform_branch] 版本分支要收进 CatVodUI/Platform 基础件：%s"
+                              % (relative, number, stripped[:90]))
             for name, pattern in PATTERNS:
                 if pattern.search(line):
                     report.append("%s:%d [%s] %s" % (relative, number, name, stripped[:110]))

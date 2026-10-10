@@ -85,60 +85,41 @@ extension PlaybackView {
     /// **单击 / 双击的优先级**（M03P10）：`exclusively(before:)` 让双击先决 —— 单击只在
     /// 「没有第二下」之后才触发，所以双击播放时控制条不会先闪一下。
     func interactiveLayer(_ content: some View, size: CGSize) -> some View {
-        zoomable(
-            content
-                // 缩放只作用在画面上（弹幕 / 字幕 / 控制条不跟着放大）：先缩放、再裁切，
-                // 手势挂在**没被缩放的**那一层上 —— 拖动距离仍然按屏幕距离算。
-                .scaleEffect(zoomScale)
-                .clipped()
-                .contentShape(Rectangle())
-                .gesture(
-                    TapGesture(count: 2)
-                        .onEnded { _ in
-                            // 双击 = 播放 / 暂停。
-                            guard !shouldSwallowTap() else {
-                                return
-                            }
-                            Task { await togglePlayback() }
+        content
+            // 缩放只作用在画面上（弹幕 / 字幕 / 控制条不跟着放大）：先缩放、再裁切，
+            // 手势挂在**没被缩放的**那一层上 —— 拖动距离仍然按屏幕距离算。
+            .scaleEffect(zoomScale)
+            .clipped()
+            .contentShape(Rectangle())
+            .gesture(
+                TapGesture(count: 2)
+                    .onEnded { _ in
+                        // 双击 = 播放 / 暂停。
+                        guard !shouldSwallowTap() else {
+                            return
                         }
-                        .exclusively(
-                            before: TapGesture(count: 1)
-                                .onEnded { _ in
-                                    guard !shouldSwallowTap() else {
-                                        return
-                                    }
-                                    toggleControlsVisibility()
+                        Task { await togglePlayback() }
+                    }
+                    .exclusively(
+                        before: TapGesture(count: 1)
+                            .onEnded { _ in
+                                guard !shouldSwallowTap() else {
+                                    return
                                 }
-                        )
-                )
-                // 长按加速与点按**同时**识别：不用 `exclusively`，那会把正常单击也一起赔进去；
-                // 长按松手后补发的那次点按由 `shouldSwallowTap()` 吞掉（见它的说明）。
-                .simultaneousGesture(speedBoostGesture)
-                .gesture(playerGesture(width: size.width))
-        )
-    }
-
-    /// 双指缩放（M03P14）：`MagnifyGesture` 是 iOS 17 / macOS 14 起，老的 `MagnificationGesture`
-    /// 从那时起被弃用 —— 部署目标是 iOS 15 / macOS 13，两条分支都得留（与 `AdaptiveNavigation`
-    /// 里的版本分支同一套做法，这样不多一类「故意的弃用警告」）。
-    ///
-    /// 与上游的差别：拿不到捏合焦点（两个 API 的旧那条只给倍数），所以锚点是**画面中心**；
-    /// 上游用捏合焦点当 pivot。它是一次性的「看细节」放大 —— 改画面比例时归位（上游同）。
-    @ViewBuilder
-    private func zoomable(_ content: some View) -> some View {
-        if #available(iOS 17.0, macOS 14.0, *) {
-            content.simultaneousGesture(
-                MagnifyGesture()
-                    .onChanged { value in applyZoom(magnification: value.magnification) }
-                    .onEnded { _ in finishZoom() }
+                                toggleControlsVisibility()
+                            }
+                    )
             )
-        } else {
-            content.simultaneousGesture(
-                MagnificationGesture()
-                    .onChanged { value in applyZoom(magnification: value) }
-                    .onEnded { _ in finishZoom() }
+            // 长按加速与点按**同时**识别：不用 `exclusively`，那会把正常单击也一起赔进去；
+            // 长按松手后补发的那次点按由 `shouldSwallowTap()` 吞掉（见它的说明）。
+            .simultaneousGesture(speedBoostGesture)
+            .gesture(playerGesture(width: size.width))
+            // 双指缩放（M03P14）：版本分支在基础件里（`Platform/AdaptiveZoom.swift`）——
+            // 业务视图不写 `#available`（`docs/UI 规范.md` 第二节）。
+            .adaptiveMagnificationGesture(
+                onChanged: { magnification in applyZoom(magnification: magnification) },
+                onEnded: { finishZoom() }
             )
-        }
     }
 
     /// 长按临时加速（M03P12）：按住画面 → 换成长按倍速；松手 → 回到用户那份倍速。
