@@ -254,7 +254,7 @@ struct LibavFFmpegSessionTests {
         let failure = await session.open(MediaResource(url: url.path), decoderMode: .software)
         #expect(failure == nil)
 
-        // 1) 打开就报轨道清单：两条音频、没有字幕（我们还没有字幕轨）
+        // 1) 打开就报轨道清单：两条音频、没有字幕（夹具没造字幕轨）
         let listed = await waitUntil { listedAudioTracks().count == 2 }
         #expect(listed)
         let tracks = listedAudioTracks()

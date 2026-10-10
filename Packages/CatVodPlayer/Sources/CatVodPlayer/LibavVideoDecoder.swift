@@ -22,23 +22,23 @@ import Libswscale
 ///
 /// - `.hardware`：VT 直出 `CVPixelBuffer`（`AVFrame.data[3]`）。本机（或这个编码）硬解不可用时
 ///   **明确报错**，让用户去改设置；libav 中途掉回软解也**不算数**（记旗标，由会话停下并提示）；
-/// - `.software`：帧经 libswscale 转成 **420v（NV12）**。
+/// - `.software`：帧经 libswscale 转成显示层吃的格式（8bit → 420v、10bit → x420；M04P18 / M04P21）。
 ///
 /// 硬解那条：
 /// - M4 的口径是「HDR 与流畅度」，硬解是这两件事的地基；
-/// - VT 解出来的帧**本身就是 `CVPixelBuffer`**（在 `AVFrame.data[3]` 里），不需要 sws 转换，
-///   也不会把 10bit / HDR 压成 8bit（软解 → 420v 那条路会丢）。
-///   软解回退是后话（等「软解」这个设置项真的有引擎去消费时再说）。
+/// - VT 解出来的帧**本身就是 `CVPixelBuffer`**（在 `AVFrame.data[3]` 里），不需要 sws 转换。
+///
+/// 两条路的位深都不丢：硬解直出源帧；软解 10bit 也走 10bit 的 `x420`（M04P21）。
 ///
 /// 并发：`@unchecked Sendable` —— 句柄由持有者串行使用（将来是会话的解码线程）。
 final class LibavVideoDecoder: @unchecked Sendable {
     /// 一帧解码结果。
     struct Frame {
-        /// 画面（位深随片源：硬解时 HDR 的 10bit 也照样在这个 buffer 里）。
+        /// 画面（位深随片源：10bit 片源两条路都是 10bit 的 buffer —— 硬解直出、软解转 x420）。
         var pixelBuffer: CVPixelBuffer
         /// 显示时间（秒，按流时基换算）。
         var seconds: Double
-        /// 这一帧走的是哪条路：true = VT 硬解直出；false = 软解 + sws 转 420v。
+        /// 这一帧走的是哪条路：true = VT 硬解直出；false = 软解 + sws 转显示层格式（420v / x420）。
         ///
         /// 为什么要带上它：libav 会在硬解不可用时**自己掉回软解**，只有帧自己知道实情 ——
         /// 播放信息那行「解码」就靠它说实话。
