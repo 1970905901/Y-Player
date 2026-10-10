@@ -265,6 +265,17 @@ struct SettingsDanmakuDisplayView: View {
             }
 
             Section {
+                Toggle("显示弹幕", isOn: Binding(
+                    get: { model.danmakuDisplay.isVisible },
+                    set: { model.danmakuDisplay.isVisible = $0 }
+                ))
+            } header: {
+                Text("显示")
+            } footer: {
+                Text("关掉之后整层不画。播放页里也能就地开关（同一份配置）。")
+            }
+
+            Section {
                 Text("这是一条弹幕预览")
                     .font(.system(size: previewFontSize))
                     .opacity(model.danmakuDisplay.opacity)

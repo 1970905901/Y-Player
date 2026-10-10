@@ -61,7 +61,16 @@ struct ParsePlaybackView: View {
                         )
                     },
                     onPlaybackStats: { model.notePlaybackStats($0) },
-                    onStart: { model.resetAdSkip() }
+                    onToggleDanmaku: { model.setDanmakuVisible($0) },
+                    danmakuLines: model.danmakuLines,
+                    danmakuDisplay: model.danmakuDisplay,
+                    subtitleDisplay: model.subtitleDisplay,
+                    subtitleCues: model.subtitleCues,
+                    onStart: {
+                        model.resetAdSkip()
+                        model.clearDanmaku()
+                        model.clearSubtitles()
+                    }
                 )
             } else if errorText.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {

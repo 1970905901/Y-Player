@@ -2,7 +2,9 @@ import Foundation
 
 /// 弹幕显示设置（设置 → 播放 → 弹幕显示）。
 ///
-/// 四项对应上游那套弹幕设置里最常见的四个旋钮：字号 / 透明度 / 速度 / 显示区域。
+/// 五项对应上游那套弹幕设置里最常见的几个旋钮：**总开关** / 字号 / 透明度 / 速度 / 显示区域。
+/// 总开关对齐上游 `DanmakuSetting.isShow()`（键 `danmaku_show`，默认开）—— M03P18 补上；
+/// 上游播放页的弹幕按钮改了它，我们改成「播放页 + 设置页都能改，同一份配置」。
 /// 每个档位都取**可解释**的值（速度给的是「划过整屏的秒数」、区域给的是屏幕高度的比例），
 /// 所以界面上不用写死数字，要调也只改这一处。
 ///
@@ -11,6 +13,8 @@ import Foundation
 ///   而 `DanmakuDisplayStyle` 是渲染参数；
 /// - 两者的**默认值有意一致**：不碰设置就等于 M08h 的行为。默认值不是随手定的，是回归基线，有单测钉住。
 public struct DanmakuDisplayConfig: Sendable, Equatable, Hashable {
+    /// 总开关（M03P18）：关掉就整层不画。默认开 —— 不碰设置就等于 M08h 的行为。
+    public var isVisible: Bool
     /// 字号倍率：乘在弹幕自带的 `size`（常见 25）上。
     public var fontScale: Double
     /// 整层不透明度。
@@ -27,8 +31,10 @@ public struct DanmakuDisplayConfig: Sendable, Equatable, Hashable {
         fontScale: Double = 0.8,
         opacity: Double = 1,
         speed: DanmakuSpeed = .normal,
-        area: DanmakuArea = .full
+        area: DanmakuArea = .full,
+        isVisible: Bool = true
     ) {
+        self.isVisible = isVisible
         self.fontScale = Self.clamp(fontScale, to: Self.fontScaleRange)
         self.opacity = Self.clamp(opacity, to: Self.opacityRange)
         self.speed = speed
@@ -108,7 +114,7 @@ public enum DanmakuArea: Int, Sendable, CaseIterable, Hashable {
 // MARK: - 持久化与上屏桥
 
 public extension DanmakuDisplayConfig {
-    /// 落 `UserDefaults` 的形态：`字号|透明度|速度|区域`。
+    /// 落 `UserDefaults` 的形态：`字号|透明度|速度|区域|显示`。
     ///
     /// 与 ``DanmakuAPIConfig`` 同一套「竖线拼接」：值里不会出现竖线，读的时候不必处理
     /// 「解码失败」分支 —— 字段数不对就整体回落默认。
@@ -116,7 +122,7 @@ public extension DanmakuDisplayConfig {
     /// 数值直接用 `String(Double)`（不走 `String(format:)`）：它 locale 无关，
     /// 也不会像格式化那样截掉精度，往返能精确相等。
     var persistenceValue: String {
-        [String(fontScale), String(opacity), String(speed.rawValue), String(area.rawValue)]
+        [String(fontScale), String(opacity), String(speed.rawValue), String(area.rawValue), isVisible ? "1" : "0"]
             .joined(separator: "|")
     }
 
@@ -128,7 +134,9 @@ public extension DanmakuDisplayConfig {
             return DanmakuDisplayConfig()
         }
         let fields = raw.components(separatedBy: "|")
-        guard fields.count == 4,
+        // 4 段 = M08i 那版的旧值（那时还没有总开关）：按「显示」读回来，别把老用户的弹幕吞掉（M03P18）；
+        // 5 段 = 现在这版（最后一段是总开关）。别的段数、或任一段读不出来 → 整体回落默认。
+        guard fields.count == 4 || fields.count == 5,
               let fontScale = Double(fields[0]),
               let opacity = Double(fields[1]),
               let speedRaw = Int(fields[2]),
@@ -138,7 +146,16 @@ public extension DanmakuDisplayConfig {
         else {
             return DanmakuDisplayConfig()
         }
-        return DanmakuDisplayConfig(fontScale: fontScale, opacity: opacity, speed: speed, area: area)
+        let isVisible: Bool
+        if fields.count == 5 {
+            guard fields[4] == "0" || fields[4] == "1" else {
+                return DanmakuDisplayConfig()
+            }
+            isVisible = fields[4] == "1"
+        } else {
+            isVisible = true
+        }
+        return DanmakuDisplayConfig(fontScale: fontScale, opacity: opacity, speed: speed, area: area, isVisible: isVisible)
     }
 
     /// 转成上屏参数 —— 设置与渲染之间**唯一**的桥。

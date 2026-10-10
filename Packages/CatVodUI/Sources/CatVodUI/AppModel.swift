@@ -169,6 +169,11 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    /// 播放页里就地开关弹幕（M03P18）：与设置页改的是同一份配置（`danmakuDisplay` 的 `didSet` 负责落盘）。
+    public func setDanmakuVisible(_ visible: Bool) {
+        danmakuDisplay.isVisible = visible
+    }
+
     // MARK: - 字幕显示（设置 → 播放 → 字幕显示）
 
     /// 字幕显示设置：显示开关 / 字号 / 位置 / 背景（M09g）。

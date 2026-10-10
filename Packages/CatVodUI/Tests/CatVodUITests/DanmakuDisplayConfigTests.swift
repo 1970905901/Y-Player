@@ -6,6 +6,7 @@ struct DanmakuDisplayConfigTests {
     @Test("默认值就是 M08h 的行为：不碰设置 = 什么都不变")
     func defaultsMatchBaseline() {
         let config = DanmakuDisplayConfig()
+        #expect(config.isVisible)
         #expect(config.fontScale == 0.8)
         #expect(config.opacity == 1)
         #expect(config.speed == .normal)
@@ -20,10 +21,28 @@ struct DanmakuDisplayConfigTests {
         #expect(config.style.areaFraction == style.areaFraction)
     }
 
-    @Test("持久化往返：写出去再读回来完全相同")
+    @Test("持久化往返：写出去再读回来完全相同（含总开关）")
     func persistenceRoundTrip() {
         let config = DanmakuDisplayConfig(fontScale: 1.3, opacity: 0.55, speed: .fast, area: .half)
         #expect(DanmakuDisplayConfig.decode(config.persistenceValue) == config)
+
+        let hidden = DanmakuDisplayConfig(isVisible: false)
+        #expect(DanmakuDisplayConfig.decode(hidden.persistenceValue) == hidden)
+        #expect(DanmakuDisplayConfig.decode(hidden.persistenceValue).isVisible == false)
+    }
+
+    @Test("旧值兼容：M08i 那版的 4 段值没有总开关，读回来按「显示」算（M03P18）")
+    func decodeAcceptsLegacyValue() {
+        let legacy = DanmakuDisplayConfig.decode("1.3|0.55|3|2")
+        #expect(legacy.fontScale == 1.3)
+        #expect(legacy.opacity == 0.55)
+        #expect(legacy.speed == .fast)
+        #expect(legacy.area == .half)
+        #expect(legacy.isVisible)
+
+        // 第 5 段脏了也整体回落默认（与别的字段同一个口径）
+        #expect(DanmakuDisplayConfig.decode("1.0|1.0|2|4|x") == DanmakuDisplayConfig())
+        #expect(DanmakuDisplayConfig.decode("1.0|1.0|2|4|") == DanmakuDisplayConfig())
     }
 
     @Test("空值 / 字段不足 / 不是数字 / 档位越界：整体回落默认")

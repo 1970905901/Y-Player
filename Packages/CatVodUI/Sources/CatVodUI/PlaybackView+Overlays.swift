@@ -96,7 +96,8 @@ extension PlaybackView {
     /// 量宽度与排轨道必须对得上。
     func makeDanmakuRender(size: CGSize) -> DanmakuRenderPlan? {
         let lines = danmakuLines
-        guard !lines.isEmpty, size.width > 1, size.height > 1 else {
+        // 总开关关掉就整层不画（M03P18）：连计划都不排 —— 与字幕那层的 `subtitleDisplay.isVisible` 同一口径。
+        guard danmakuDisplay.isVisible, !lines.isEmpty, size.width > 1, size.height > 1 else {
             return nil
         }
         let style = danmakuDisplay.style.resolved(

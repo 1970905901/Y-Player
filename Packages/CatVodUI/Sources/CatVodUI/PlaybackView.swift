@@ -57,6 +57,8 @@ public struct PlaybackView: View {
     let danmakuLines: [DanmakuLine]
     /// 弹幕显示设置。
     let danmakuDisplay: DanmakuDisplayConfig
+    /// 弹幕总开关的回写口（M03P18）：nil = 上层不给改（那就不摆这个开关）。
+    let onToggleDanmaku: ((Bool) -> Void)?
     /// 批量下载：把要下载的集交回上层（只有上层知道站点与 `AppModel`）。
     let onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> DownloadEnqueueOutcome)?
     /// 播放信息回传口（M17P2）：读到一次**非空**的播放信息就回传一次。
@@ -167,6 +169,7 @@ public struct PlaybackView: View {
         subtitleCues: [SubtitleCue] = [],
         danmakuLines: [DanmakuLine] = [],
         danmakuDisplay: DanmakuDisplayConfig = DanmakuDisplayConfig(),
+        onToggleDanmaku: ((Bool) -> Void)? = nil,
         onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> DownloadEnqueueOutcome)? = nil,
         onPlaybackStats: ((PlaybackStats) -> Void)? = nil,
         playlist: PlaybackPlaylist? = nil,
@@ -188,6 +191,7 @@ public struct PlaybackView: View {
         self.subtitleCues = subtitleCues
         self.danmakuLines = danmakuLines
         self.danmakuDisplay = danmakuDisplay
+        self.onToggleDanmaku = onToggleDanmaku
         self.onEnqueueDownloads = onEnqueueDownloads
         self.onPlaybackStats = onPlaybackStats
         self.onStart = onStart
@@ -219,6 +223,7 @@ public struct PlaybackView: View {
                 if !audioTracks.isEmpty || !subtitleTracks.isEmpty {
                     tracksSection
                 }
+                danmakuSection
                 scaleSection
                 if let playlist {
                     Section("选集") {
@@ -752,6 +757,10 @@ extension PlaybackView {
         audioSelection = .auto
         subtitleSelection = .auto
         isScrubbing = false
+        // 字幕跟着换：内嵌的那份由新会话重新报，外挂那份要上层重新取 —— 先把旧时间轴清掉，
+        // 宁可不显示，也别把上一集 / 上一条线路的字幕留在画面上（M03P18）。
+        subtitleTimeline = nil
+        engineSubtitleCues = []
         if let danmaku {
             onDanmaku?(DanmakuRequest(name: danmaku.name, episode: episodeName))
         }
@@ -781,6 +790,21 @@ extension PlaybackView {
             errorText = error.message
         } catch {
             errorText = error.localizedDescription
+        }
+    }
+
+    /// 「弹幕」区（M03P18）：就地开关（写回上层的显示设置）。
+    ///
+    /// 只有**这一集真有弹幕**、且上层给了回写口时才出现 —— 不摆一个「这集本来就没弹幕」的假开关。
+    @ViewBuilder
+    private var danmakuSection: some View {
+        if let onToggleDanmaku, !danmakuLines.isEmpty {
+            Section("弹幕") {
+                Toggle("显示弹幕", isOn: Binding(
+                    get: { danmakuDisplay.isVisible },
+                    set: { onToggleDanmaku($0) }
+                ))
+            }
         }
     }
 

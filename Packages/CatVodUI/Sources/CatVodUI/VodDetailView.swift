@@ -424,8 +424,19 @@ public struct VodDetailView: View {
                     await enqueuePlaybackDownload(requests, siteKey: siteKey, title: title, headers: headers)
                 },
                 onPlaybackStats: { model.notePlaybackStats($0) },
+                onToggleDanmaku: { model.setDanmakuVisible($0) },
+                danmakuLines: model.danmakuLines,
+                danmakuDisplay: model.danmakuDisplay,
+                subtitleDisplay: model.subtitleDisplay,
+                subtitleCues: model.subtitleCues,
                 playlist: playlist,
-                lineSwitcher: lineSwitcher(currentIndex: index)
+                lineSwitcher: lineSwitcher(currentIndex: index),
+                onStart: {
+                    // 开播先把上一次的残留清掉（M03P18：这两个数组是全局的，不清会串到下一部片）
+                    model.resetAdSkip()
+                    model.clearDanmaku()
+                    model.clearSubtitles()
+                }
             )
         } else if let site, isSpiderPlayable(site) {
             // js2p / CatSpider 站点：播放地址要用 `POST /play` 换，因此走异步入口。

@@ -79,9 +79,18 @@ struct SitePlayEpisodeView: View {
                         )
                     },
                     onPlaybackStats: { model.notePlaybackStats($0) },
+                    onToggleDanmaku: { model.setDanmakuVisible($0) },
+                    danmakuLines: model.danmakuLines,
+                    danmakuDisplay: model.danmakuDisplay,
+                    subtitleDisplay: model.subtitleDisplay,
+                    subtitleCues: model.subtitleCues,
                     playlist: playlist,
                     lineSwitcher: lineSwitcher,
-                    onStart: { model.resetAdSkip() }
+                    onStart: {
+                        model.resetAdSkip()
+                        model.clearDanmaku()
+                        model.clearSubtitles()
+                    }
                 )
             } else if let parseFallback {
                 // 站点说要再解析一次：把 play 的结果原样交给解析链 ——
