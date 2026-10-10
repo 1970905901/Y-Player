@@ -18,11 +18,13 @@ struct LibavVideoDecoderTests {
     @Test("时间戳换算：pts × 时基；无效 pts 给 0")
     func timestampMath() {
         // 1/15360 时基（mp4 常见）、30fps：每帧 512 → 第 2 帧 = 1024/15360 = 1/15 秒
-        let timeBase = AVRational(num: 1, den: 15360)
-        #expect(LibavVideoDecoder.seconds(pts: 0, timeBase: timeBase) == 0)
-        #expect(abs(LibavVideoDecoder.seconds(pts: 1024, timeBase: timeBase) - 1.0 / 15.0) < 0.0001)
-        #expect(LibavVideoDecoder.seconds(pts: Int64.min, timeBase: timeBase) == 0)
-        #expect(LibavVideoDecoder.seconds(pts: 100, timeBase: AVRational(num: 1, den: 0)) == 0)
+        #expect(LibavVideoDecoder.seconds(pts: 0, timeBaseNumerator: 1, timeBaseDenominator: 15360) == 0)
+        #expect(
+            abs(LibavVideoDecoder.seconds(pts: 1024, timeBaseNumerator: 1, timeBaseDenominator: 15360) - 1.0 / 15.0)
+                < 0.0001
+        )
+        #expect(LibavVideoDecoder.seconds(pts: Int64.min, timeBaseNumerator: 1, timeBaseDenominator: 15360) == 0)
+        #expect(LibavVideoDecoder.seconds(pts: 100, timeBaseNumerator: 1, timeBaseDenominator: 0) == 0)
     }
 
     @Test("VideoToolbox 硬解：前 5 帧 CVPixelBuffer，尺寸与时间戳对得上")

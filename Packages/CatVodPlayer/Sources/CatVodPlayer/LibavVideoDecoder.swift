@@ -156,9 +156,11 @@ final class LibavVideoDecoder: @unchecked Sendable {
     /// pts（流时基）→ 秒；无效 pts（`AV_NOPTS_VALUE` = Int64 最小值）给 0。
     ///
     /// 自己算而不引 `av_q2d`：一个除法的事，少一个宏/内联函数的互操作面。
-    static func seconds(pts: Int64, timeBase: AVRational) -> Double {
-        guard pts != Int64.min, timeBase.den != 0 else { return 0 }
-        return Double(pts) * Double(timeBase.num) / Double(timeBase.den)
+    /// 签名也**不摆 `AVRational`**：纯算术的测试不该被迫 `import Libavutil`
+    /// （测试目标不继承包的 import —— M04P7 第一版就是这么红的）。
+    static func seconds(pts: Int64, timeBaseNumerator: Int32, timeBaseDenominator: Int32) -> Double {
+        guard pts != Int64.min, timeBaseDenominator != 0 else { return 0 }
+        return Double(pts) * Double(timeBaseNumerator) / Double(timeBaseDenominator)
     }
 
     // MARK: - 内部
@@ -200,7 +202,11 @@ final class LibavVideoDecoder: @unchecked Sendable {
             .takeRetainedValue()
         frames.append(Frame(
             pixelBuffer: pixelBuffer,
-            seconds: Self.seconds(pts: frame.pointee.pts, timeBase: timeBase)
+            seconds: Self.seconds(
+                pts: frame.pointee.pts,
+                timeBaseNumerator: timeBase.num,
+                timeBaseDenominator: timeBase.den
+            )
         ))
         return true
     }
