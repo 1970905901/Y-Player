@@ -22,6 +22,11 @@ public struct LiveRepository: Sendable {
     ///
     /// `groups` 非空时直接返回 —— 与上游 `LiveParser.start` 的短路一致（已经解析过就不重复拉取）。
     public func load(_ source: LiveSource) async throws -> LiveSource {
+        // 内核注入源（`core`，如 tvbus）：本平台没有对应引擎，明确拒绝并说清，
+        // 不去按普通清单拉一次再抛一个看不懂的错（M20P1）。
+        if source.requiresCoreEngine {
+            throw CatVodError.unsupported(feature: "直播源「\(source.name)」", reason: source.coreUnsupportedReason)
+        }
         guard source.groups.isEmpty else {
             return source
         }

@@ -48,6 +48,11 @@ public struct LiveSource: Codable, Sendable, Hashable, Identifiable {
     public var groups: [LiveGroup]
     /// 分组名拆分开关（上游字段名就是 `pass`）：true 表示组名里的 `_` 不当密码。
     public var pass: Bool
+    /// **`core` 引擎注入**（tvbus 等）。本平台没有对应内核（见 `docs/协议兼容矩阵.md`）。
+    ///
+    /// 解出来只为**把「为什么这个源用不了」说清**（M20P1）—— 不参与任何播放，
+    /// 也不假装支持：以前这个字段被静默丢掉，用户看到的是「取清单失败」这种无头绪的错。
+    public var core: AnyJSONValue
     /// 开机自动播放该直播源（上游 `Live.boot`）。
     ///
     /// 上游在「开机自启」里读它；本项目还没有开机自启入口，字段先按上游补齐（M07c 复核字段表时补）。
@@ -81,6 +86,7 @@ public struct LiveSource: Codable, Sendable, Hashable, Identifiable {
         referer = container.lenientString(.referer)
         timeZone = container.lenientString(.timeZone)
         keep = container.lenientString(.keep)
+        core = container.lenientJSON(.core) ?? .null
         catchup = container.lenientValue(.catchup)
         groups = container.lenientArray(.groups)
         pass = container.lenientBool(.pass)
@@ -109,6 +115,7 @@ public struct LiveSource: Codable, Sendable, Hashable, Identifiable {
         case groups
         case pass
         case boot
+        case core
     }
 
     // MARK: - 取值语义（对齐上游 Live）
@@ -142,6 +149,24 @@ public struct LiveSource: Codable, Sendable, Hashable, Identifiable {
     /// 上游 `getEpgXml()`：含 `xml` 或 `gz` 的项（XML/GZ 节目单文件）。
     public var epgXML: [String] {
         epgItems.filter { !$0.contains("{") && ($0.contains("xml") || $0.contains("gz")) }
+    }
+
+    /// `core` 里的引擎名（`core.type`，如 `tvbus`）；没有 / 认不出就是空串。
+    public var coreEngine: String {
+        guard case let .object(fields) = core else {
+            return ""
+        }
+        return (fields["type"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 这个源是不是靠 `core`（内核注入）跑的 —— 是的话本平台做不了。
+    public var requiresCoreEngine: Bool {
+        !coreEngine.isEmpty
+    }
+
+    /// 不支持的原因（界面与错误文案**共用这一份**，别两处各写一句）。
+    public var coreUnsupportedReason: String {
+        "该直播源用 `core` 内核（\(coreEngine)），本平台没有对应引擎，取不到清单"
     }
 
     /// 频道总数（界面摘要用）。

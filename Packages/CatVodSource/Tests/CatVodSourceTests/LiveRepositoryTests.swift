@@ -64,6 +64,43 @@ struct LiveRepositoryTests {
         #expect(count == 0)
     }
 
+    @Test("core 源（tvbus）：明确报错、说清原因，且一次请求都不发（M20P1）")
+    func coreEngineUnsupported() async throws {
+        let recorder = ParseRequestRecorder(response: HTTPResponse(status: 200, body: Data(playlist.utf8)))
+        let source = try makeSource(
+            #"{"name":"TVBus源","url":"https://live.example.com/x","core":{"type":"tvbus","auth":"secret"}}"#
+        )
+        #expect(source.coreEngine == "tvbus")
+        #expect(source.requiresCoreEngine)
+
+        do {
+            _ = try await LiveRepository(transport: recorder).load(source)
+            Issue.record("core 源应当明确拒绝")
+        } catch let error as CatVodError {
+            let text = error.errorDescription ?? ""
+            #expect(text.contains("core"))
+            #expect(text.contains("tvbus"))
+        }
+        let count = await recorder.requests.count
+        #expect(count == 0)
+    }
+
+    @Test("没有 core / core 不是对象：不误报（照常按普通清单加载）")
+    func coreAbsentIsNormal() async throws {
+        let recorder = ParseRequestRecorder(response: HTTPResponse(status: 200, body: Data(playlist.utf8)))
+        let plain = try makeSource(#"{"name":"普通源","url":"https://live.example.com/list.m3u8"}"#)
+        #expect(plain.coreEngine.isEmpty)
+        #expect(!plain.requiresCoreEngine)
+
+        let stringCore = try makeSource(#"{"name":"怪源","url":"https://live.example.com/list.m3u8","core":"tvbus"}"#)
+        #expect(stringCore.coreEngine.isEmpty)
+        #expect(!stringCore.requiresCoreEngine)
+
+        _ = try await LiveRepository(transport: recorder).load(plain)
+        let count = await recorder.requests.count
+        #expect(count == 1)
+    }
+
     @Test("非 2xx → network；地址非法 → parseFailed")
     func failures() async throws {
         let failing = ParseRequestRecorder(response: HTTPResponse(status: 404, body: Data("<html>404</html>".utf8)))

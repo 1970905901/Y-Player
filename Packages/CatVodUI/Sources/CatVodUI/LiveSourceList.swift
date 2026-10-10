@@ -34,6 +34,15 @@ enum LiveSourceList {
     /// 不能取 `source`（踩过：写成了 `source.channelCount`，界面上永远看不到频道数，单测抓住了）。
     static func row(_ source: LiveSource, selected: String, loaded: LiveSource?) -> LiveSourceRow {
         let type = typeName(source.type)
+        // 内核注入源（`core`，如 tvbus）：本平台没有对应引擎 —— 直接写在那一行上，
+        // 别让用户点进去才发现（M20P1）。
+        if source.requiresCoreEngine {
+            return LiveSourceRow(
+                name: source.name,
+                detail: "\(type) · 不支持 core 内核（\(source.coreEngine)）",
+                isSelected: source.name == selected
+            )
+        }
         let detail: String
         if let loaded, loaded.name == source.name, loaded.channelCount > 0 {
             detail = "\(type) · \(loaded.channelCount) 个频道"

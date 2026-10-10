@@ -50,6 +50,14 @@ struct LiveSourceListTests {
         #expect(LiveSourceList.row(source, selected: "主源", loaded: loaded).detail == "清单（TXT / M3U / JSON）")
     }
 
+    @Test("core 源（tvbus）：那一行直接写「不支持 core 内核」（M20P1）")
+    func coreSourceRowSaysUnsupported() throws {
+        let source = try makeSource(#"{"name":"TVBus源","type":0,"url":"https://x","core":{"type":"tvbus"}}"#)
+        let row = LiveSourceList.row(source, selected: "TVBus源", loaded: nil)
+        #expect(row.detail == "清单（TXT / M3U / JSON） · 不支持 core 内核（tvbus）")
+        #expect(row.isSelected)
+    }
+
     @Test("空配置：没有源就没有行（界面据此不显示这一组）")
     func emptySources() {
         #expect(LiveSourceList.rows([], selected: "", loaded: nil).isEmpty)
