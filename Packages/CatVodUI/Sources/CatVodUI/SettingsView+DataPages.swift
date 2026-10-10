@@ -85,8 +85,9 @@ struct SettingsDownloadView: View {
             if task.status == .running {
                 runningProgress(task)
             } else if task.status == .paused, task.receivedBytes > 0 {
-                // 暂停了也把「下了多少」说清楚：账目在暂停时并进了任务里（M25）。
-                Text("已下 \(StorageSpace.format(task.receivedBytes))")
+                // 暂停了也把「下了多少」说清楚：账目在暂停时并进了任务里（M25）；
+                // 直链还知道总量（M25P2），连「一共多大」一起写 —— 继续时只补剩下的。
+                Text(DownloadProgressText.paused(received: task.receivedBytes, expected: task.expectedBytes))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -138,9 +139,12 @@ struct SettingsDownloadView: View {
     private func runningProgress(_ task: DownloadTask) -> some View {
         let total = model.downloadRunSegmentTotals[task.id] ?? 0
         let done = total > 0 ? min(task.completedSegments, total) : 0
-        let caption = total > 0
-            ? "已下 \(StorageSpace.format(task.receivedBytes)) · \(done)/\(total) 片"
-            : "已下 \(StorageSpace.format(task.receivedBytes))"
+        let caption = DownloadProgressText.running(
+            received: task.receivedBytes,
+            expected: task.expectedBytes,
+            completedSegments: done,
+            totalSegments: total
+        )
         VStack(alignment: .leading, spacing: 4) {
             if total > 0 {
                 ProgressView(value: Double(done), total: Double(total))
