@@ -1,6 +1,7 @@
 import CatVodCore
 import CatVodNet
 @testable import CatVodUI
+import Foundation
 import Testing
 
 /// 假传输：搜索接口（POST）依次回候选列表，弹幕文件（GET）按地址回内容；不在表里的地址回 404。
