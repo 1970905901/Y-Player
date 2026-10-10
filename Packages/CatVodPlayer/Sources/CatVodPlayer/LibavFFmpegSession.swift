@@ -743,7 +743,7 @@ extension LibavFFmpegSession {
 /// 为什么拆成扩展：类型体行数会把 CI 的 lint 顶红（同 M04P16 / M04P17 那两组的理由）。
 extension LibavFFmpegSession {
     /// 默认字幕轨：带 default 标记的第一条能出字的轨，没有就第一条能出字的；都没有给 nil。
-    func defaultSubtitleStreamIndex() -> Int? {
+    private func defaultSubtitleStreamIndex() -> Int? {
         let textTracks = (info?.streams ?? []).filter {
             $0.kind == .subtitle && LibavSubtitleDecoder.isTextCodec($0.codecName)
         }
@@ -755,7 +755,9 @@ extension LibavFFmpegSession {
     }
 
     /// 取走待办换字幕（解码线程消费；控制线程只放不快取）。
-    func takePendingSubtitleTrack() -> PendingSubtitleTrack? {
+    ///
+    /// `private` 是必须的：签名里用了 private 的 `PendingSubtitleTrack`（同文件的扩展里照样可见）。
+    private func takePendingSubtitleTrack() -> PendingSubtitleTrack? {
         lock.lock()
         defer { lock.unlock() }
         let request = pendingSubtitleTrack
@@ -764,7 +766,7 @@ extension LibavFFmpegSession {
     }
 
     /// 换字幕轨（**只在解码线程里跑**）：新解码器先建好，成了才换；换完清掉旧 cue 再发全量。
-    func performSubtitleSwitch(to request: PendingSubtitleTrack) {
+    private func performSubtitleSwitch(to request: PendingSubtitleTrack) {
         let target: Int?
         switch request {
         case .automatic:
@@ -795,13 +797,13 @@ extension LibavFFmpegSession {
     }
 
     /// 收一条 cue：进全量列表并发出去（整份发，数组 CoW 很便宜）。
-    func appendSubtitleCue(_ cue: SubtitleCue) {
+    private func appendSubtitleCue(_ cue: SubtitleCue) {
         subtitleCues.append(cue)
         emit(.subtitleCues(subtitleCues))
     }
 
     /// 清空内嵌字幕（关掉 / 换轨时）：列表清掉，把「空」也发出去 —— 界面整份替换，这就等于关掉了。
-    func clearSubtitleCues() {
+    private func clearSubtitleCues() {
         subtitleCues.removeAll()
         emit(.subtitleCues([]))
     }
