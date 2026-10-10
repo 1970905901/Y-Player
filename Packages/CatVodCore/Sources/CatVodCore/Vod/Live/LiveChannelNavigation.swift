@@ -25,6 +25,16 @@ import Foundation
 /// - **环形**：到最后一条再按「下一台」回到第一条（换台是循环的，不该在边界上失效）；
 /// - **跳过没有地址的频道**（切过去也播不了，等于把用户卡住）。
 public enum LiveChannelNavigation {
+    /// 一甩换台要往哪边走（**纯逻辑**，有单测）：上游 `LiveActivity.onFlingUp` / `onFlingDown` ——
+    /// **默认上滑 = 上一台、下滑 = 下一台**（与点播页的「上滑 = 下一集」相反，这不是笔误）；
+    /// `invert`（上游 `LiveSetting.isInvert()`）把两件事对调。
+    ///
+    /// - Returns: ``neighbor(of:step:in:)`` 要的 `step`（默认上滑 -1 / 下滑 +1；invert 时相反）。
+    public static func zapStep(swipeUp: Bool, invert: Bool) -> Int {
+        let step = swipeUp ? -1 : 1
+        return invert ? -step : step
+    }
+
     /// 相对当前位置偏移 `step` 的频道（正数往后、负数往前）。
     ///
     /// - 当前频道**不在** `channels` 里（清单换过、名字对不上）：返回第一个可播的 —— 比什么都不做有用；

@@ -44,6 +44,7 @@ public final class AppModel: ObservableObject {
         static let liveEPGSetting = "yplayer.liveEPGSetting"
         static let livePassOverrides = "yplayer.livePassOverrides"
         static let liveBootOverrides = "yplayer.liveBootOverrides"
+        static let liveSwipeInvert = "yplayer.liveSwipeInvert"
         static let siteGroupOrder = "yplayer.siteGroupOrder"
         static let siteNames = "yplayer.siteNames"
         static let siteGroupRules = "yplayer.siteGroupRules"
@@ -326,6 +327,16 @@ public final class AppModel: ObservableObject {
     @Published public var selectedLiveKey: String {
         didSet {
             defaults.set(selectedLiveKey, forKey: StorageKey.liveSource)
+        }
+    }
+
+    /// 「上 / 下滑换台」的方向反转（M07d10，对齐上游 `LiveSetting.isInvert()`）。
+    ///
+    /// 上游那颗按钮只做这一件事：把「上滑 = 上一台」翻成「上滑 = 下一台」——
+    /// 没有它，习惯另一种方向的人每次换台都要多滑一下（还会滑错）。默认关 = 上游默认方向。
+    @Published public var liveSwipeInvert: Bool {
+        didSet {
+            defaults.set(liveSwipeInvert, forKey: StorageKey.liveSwipeInvert)
         }
     }
 
@@ -701,6 +712,9 @@ public final class AppModel: ObservableObject {
 
         // 「开机自启」的本地覆盖：默认空（跟每个直播源自己的 `boot` 字段）。
         liveBootOverrides = LiveSourceFlagBook.decode(defaults.string(forKey: StorageKey.liveBootOverrides))
+
+        // 「上 / 下滑换台」的方向反转（M07d10）：默认关（= 上游默认方向）。
+        liveSwipeInvert = defaults.bool(forKey: StorageKey.liveSwipeInvert)
 
         // 站点面板分组条的顺序：默认空（= 每个接口都用「按站点顺序首次出现」的默认顺序）。
         siteGroupOrders = SiteGroupOrderBook.decode(defaults.string(forKey: StorageKey.siteGroupOrder))

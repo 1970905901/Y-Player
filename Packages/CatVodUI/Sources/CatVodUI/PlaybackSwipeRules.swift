@@ -7,10 +7,10 @@ import Foundation
 /// 已经被音量 / 亮度占着 —— 「是不是一甩」得自己采样算出来，也就必须能单独测出来。
 /// 采样（``PlaybackSwipeTracker``）与判定（``PlaybackSwipeRules``）都在这儿，视图只管按结果做事。
 enum PlaybackSwipeAction: Equatable {
-    /// 上滑：下一集（上游 `onFlingUp` → `nextEpisode`）。
-    case next
-    /// 下滑：上一集（上游 `onFlingDown` → `prevEpisode`）。
-    case previous
+    /// 上滑（点播页 = 下一集；直播页 = 上一台 —— 两个页面方向相反，所以这里只报「上 / 下」，含义由页面定）。
+    case up
+    /// 下滑（点播页 = 上一集；直播页 = 下一台）。
+    case down
 }
 
 /// 拖动过程中的采样器：只留最近 ``PlaybackSwipeTracker/window`` 秒的 `(时刻, 纵向位移)`。
@@ -92,6 +92,6 @@ enum PlaybackSwipeRules {
         guard speed >= minimumSpeed else {
             return nil
         }
-        return translation.height < 0 ? .next : .previous
+        return translation.height < 0 ? .up : .down
     }
 }

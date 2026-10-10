@@ -46,23 +46,23 @@ struct PlaybackSwipeRulesTests {
         let center: CGFloat = 195
         let fast = 2000.0
 
-        // 正常一甩：中间起手、向上 120pt —— 下一集。
+        // 正常一甩：中间起手、向上 120pt —— `.up`（点播页含义 = 下一集，直播页 = 上一台）。
         let up = PlaybackSwipeRules.action(
             translation: CGSize(width: 10, height: -120),
             speed: fast,
             startX: center,
             width: width
         )
-        #expect(up == .next)
+        #expect(up == .up)
 
-        // 下滑：上一集。
+        // 下滑：`.down`（点播页含义 = 上一集，直播页 = 下一台）。
         let down = PlaybackSwipeRules.action(
             translation: CGSize(width: -10, height: 120),
             speed: fast,
             startX: center,
             width: width
         )
-        #expect(down == .previous)
+        #expect(down == .down)
 
         // 位移不够（比一甩的下限还短）。
         let short = PlaybackSwipeRules.action(

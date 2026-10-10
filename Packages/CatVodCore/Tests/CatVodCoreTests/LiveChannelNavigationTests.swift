@@ -42,6 +42,23 @@ struct LiveChannelNavigationTests {
         #expect(LiveChannelNavigation.neighbor(of: a, step: -4, in: channels)?.name == "D")
     }
 
+    @Test("纵甩换台的方向（M07d10）：默认上滑 = 上一台、下滑 = 下一台；invert 对调")
+    func zapStepDirections() {
+        // 上游 `LiveActivity.onFlingUp/Down` 的默认映射（与点播页的「上滑 = 下一集」相反）。
+        #expect(LiveChannelNavigation.zapStep(swipeUp: true, invert: false) == -1)
+        #expect(LiveChannelNavigation.zapStep(swipeUp: false, invert: false) == 1)
+        // `LiveSetting.isInvert()` 打开：两件事对调。
+        #expect(LiveChannelNavigation.zapStep(swipeUp: true, invert: true) == 1)
+        #expect(LiveChannelNavigation.zapStep(swipeUp: false, invert: true) == -1)
+        // 与 `neighbor` 接起来是「上滑往前、下滑往后」（默认）—— 方向不能反着进 `step`。
+        let channels = makeChannels()
+        let a = channels[0]
+        let up = LiveChannelNavigation.zapStep(swipeUp: true, invert: false)
+        let down = LiveChannelNavigation.zapStep(swipeUp: false, invert: false)
+        #expect(LiveChannelNavigation.neighbor(of: a, step: up, in: channels)?.name == "D")
+        #expect(LiveChannelNavigation.neighbor(of: a, step: down, in: channels)?.name == "C")
+    }
+
     @Test("当前频道不在清单里（清单换过）：给第一个可播的")
     func unknownChannelFallsBackToFirstPlayable() {
         let channels = makeChannels()

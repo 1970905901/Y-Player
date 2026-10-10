@@ -196,15 +196,16 @@ extension PlaybackView {
                 guard !isSpeedBoostHolding, !isZooming, !isLocked else {
                     return
                 }
-                // 一甩切集（M03P23）：先判甩 —— 甩了就撤掉这次顺手做的音量 / 亮度调整，
-                // seek / 下发音量那两条路都不走。
-                // **有播放列表才判**：直播 / 下载播放 / 设置页试播没有「集」这回事，
-                // 那些页面上纵甩还是音量 / 亮度（不然甩一下会白撤一次调整）。
+                // 纵甩（M03P23 起；M07d10 起直播页也吃它）：先判甩 —— 甩了就撤掉这次顺手做的
+                // 音量 / 亮度调整，seek / 下发音量那两条路都不走。
+                // **有得可换才判**：点播页要 `playlist`（换集），直播页要 `onVerticalSwipe`（换台）；
+                // 两样都没有的页面（下载播放 / 设置页试播）纵甩还是音量 / 亮度（不然甩一下会白撤一次调整）。
+                let canVerticalSwipe = playlist != nil || onVerticalSwipe != nil
                 let speed = gestureSwipe.speed(at: Date().timeIntervalSinceReferenceDate)
                 gestureSwipe.reset()
-                let swipe: PlaybackSwipeAction? = playlist == nil
-                    ? nil
-                    : Self.swipeAction(value: value, speed: speed, width: width)
+                let swipe: PlaybackSwipeAction? = canVerticalSwipe
+                    ? Self.swipeAction(value: value, speed: speed, width: width)
+                    : nil
                 if let swipe {
                     revertGestureAdjustment()
                     settleGesture()
@@ -256,20 +257,24 @@ extension PlaybackView {
         gestureHint = ""
     }
 
-    /// 一甩切集：上滑下一集、下滑上一集（上游 `onFlingUp` / `onFlingDown`）。
+    /// 一甩要干的事：点播页换集（上游 `onFlingUp` / `onFlingDown`）、直播页换台（M07d10）。
     ///
-    /// - 没有播放列表的入口（直播 / 下载播放 / 设置页试播）整个不做 —— 那种页面没有「集」这回事；
-    /// - 到头了直说一句（上游是回头重刷一遍；我们这儿说不出那还能干嘛，不如直说），提示过一会儿自己收；
-    /// - 换集期间提示留在屏上（找地址 / 起播要一会儿），换完（或失败）再清 —— 新画面 / 错误行就是反馈。
+    /// - 点播（有 `playlist`）：上滑下一集、下滑上一集；到头了直说一句（上游是回头重刷一遍，
+    ///   我们这儿说不出那还能干嘛，不如直说），提示过一会儿自己收；换集期间提示留在屏上
+    ///   （找地址 / 起播要一会儿），换完（或失败）再清 —— 新画面 / 错误行就是反馈；
+    /// - 直播（有 `onVerticalSwipe`）：**方向的含义由宿主决定**（上游 `LiveActivity` 默认
+    ///   上滑 = 上一台，`LiveSetting.isInvert()` 在那一层翻），这里只把「上 / 下」报上去；
+    /// - 两样都没有的入口不会走到这儿（判定那一步就把甩挡掉了）。
     func performSwipe(_ swipe: PlaybackSwipeAction) async {
         guard let playlist, let current = currentEpisodeIndex else {
+            onVerticalSwipe?(swipe)
             return
         }
-        let target = swipe == .next
+        let target = swipe == .up
             ? playlist.nextIndex(after: current)
             : playlist.previousIndex(before: current)
         guard let target else {
-            let text = swipe == .next ? "已经是最后一集" : "已经是第一集"
+            let text = swipe == .up ? "已经是最后一集" : "已经是第一集"
             gestureHint = text
             try? await Task.sleep(nanoseconds: 1_200_000_000)
             if gestureHint == text {
@@ -277,7 +282,7 @@ extension PlaybackView {
             }
             return
         }
-        gestureHint = "\(swipe == .next ? "下一集" : "上一集")：\(playlist.episodeName(at: target))"
+        gestureHint = "\(swipe == .up ? "下一集" : "上一集")：\(playlist.episodeName(at: target))"
         await switchEpisode(to: target)
         gestureHint = ""
     }

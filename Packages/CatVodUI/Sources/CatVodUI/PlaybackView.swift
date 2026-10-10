@@ -69,6 +69,10 @@ public struct PlaybackView: View {
     /// 播放页自己的「选弹幕」能力（M03P25）：详情页把「这一集有哪些候选 + 怎么换 / 怎么重搜」包好传进来。
     /// `nil` = 不摆「选择弹幕…」入口（直播 / 下载播放 / 设置页试播这些入口不传）。
     let danmakuSwitcher: PlaybackDanmakuSwitcher?
+    /// 纵甩的回传口（M07d10）：**直播页**换台用 —— 上滑 / 下滑要换到哪一台由宿主决定
+    /// （上游 `LiveActivity` 默认上滑 = 上一台，`LiveSetting.isInvert()` 也在那一层翻方向）。
+    /// 点播页不传它（换集走 `playlist`）；`nil` 且没有 `playlist` 的页面纵甩仍是音量 / 亮度。
+    let onVerticalSwipe: ((PlaybackSwipeAction) -> Void)?
     /// 这次播放的来源行（「解析：xxx」/ 站点给的 desc，M03P22）：空数组 = 不显示。
     /// 由上层从 `AppModel.playbackInfoRows` 传进来（播放页不认识 `AppModel`）。
     let playbackInfoRows: [String]
@@ -198,6 +202,7 @@ public struct PlaybackView: View {
         danmakuDisplay: DanmakuDisplayConfig = DanmakuDisplayConfig(),
         onDanmakuDisplayChanged: ((DanmakuDisplayConfig) -> Void)? = nil,
         danmakuSwitcher: PlaybackDanmakuSwitcher? = nil,
+        onVerticalSwipe: ((PlaybackSwipeAction) -> Void)? = nil,
         onEnqueueDownloads: (([DownloadRequest], String, String, [String: String]) async -> DownloadEnqueueOutcome)? = nil,
         onPlaybackStats: ((PlaybackStats) -> Void)? = nil,
         playlist: PlaybackPlaylist? = nil,
@@ -224,6 +229,7 @@ public struct PlaybackView: View {
         self.danmakuDisplay = danmakuDisplay
         self.onDanmakuDisplayChanged = onDanmakuDisplayChanged
         self.danmakuSwitcher = danmakuSwitcher
+        self.onVerticalSwipe = onVerticalSwipe
         self.onEnqueueDownloads = onEnqueueDownloads
         self.onPlaybackStats = onPlaybackStats
         self.onStart = onStart

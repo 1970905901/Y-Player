@@ -395,7 +395,12 @@ private struct LiveChannelPlaybackView: View {
             title: title,
             settings: model.playbackSettings,
             onPlaybackStats: { model.notePlaybackStats($0) },
-            onStart: { model.resetAdSkip() }
+            onStart: { model.resetAdSkip() },
+            onVerticalSwipe: { swipe in
+                // 直播页的纵甩换台（M07d10）：方向由 `LiveSetting.isInvert()` 那套决定 ——
+                // 默认上滑 = 上一台（上游 `LiveActivity.onFlingUp/Down`，与点播页相反）。
+                zap(LiveChannelNavigation.zapStep(swipeUp: swipe == .up, invert: model.liveSwipeInvert))
+            }
         )
         // 换频道 / 换线路 = 换资源：`PlaybackView` 自己的 `.task` 只在视图出现时跑一次，
         // 所以用 `id` 让播放页重建（不重建就会继续播旧地址）。
@@ -404,6 +409,7 @@ private struct LiveChannelPlaybackView: View {
             HStack(spacing: 16) {
                 zapButton(step: -1, icon: "chevron.up", label: "上一台")
                 zapButton(step: 1, icon: "chevron.down", label: "下一台")
+                invertSwipeButton
             }
         } trailing: {
             HStack(spacing: 16) {
@@ -435,6 +441,20 @@ private struct LiveChannelPlaybackView: View {
         }
         .disabled(neighbor(step: step) == nil)
         .accessibilityLabel(label)
+    }
+
+    /// 反转「上 / 下滑换台」的方向（M07d10，对齐上游 `control.action.invert` 那颗按钮）。
+    ///
+    /// 上游那颗是**常驻的开关按钮**（选中态高亮），我们也放工具栏、也高亮 —— 但只反转滑动方向，
+    /// 不动工具栏那两颗「上一台 / 下一台」（上游同：那两颗不受 invert 影响）。
+    private var invertSwipeButton: some View {
+        Button {
+            model.liveSwipeInvert.toggle()
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+                .foregroundStyle(model.liveSwipeInvert ? PlatformShims.accent : Color.primary)
+        }
+        .accessibilityLabel(model.liveSwipeInvert ? "上下滑动换台：已反转（上滑下一台）" : "上下滑动换台：默认（上滑上一台）")
     }
 
     /// 上一个 / 下一个分组（上游 `across`）+ 按号码跳台（上游 `findByChannelNumber`）。
