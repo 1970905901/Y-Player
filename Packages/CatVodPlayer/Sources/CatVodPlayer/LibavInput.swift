@@ -135,6 +135,13 @@ final class LibavInput: @unchecked Sendable {
         #endif
     }
 
+    /// 底层格式上下文的**借用口**（只给同模块的解码层：`LibavVideoDecoder.open(input:)`）。
+    ///
+    /// 句柄仍归本类所有（open / close 管生命周期）—— 借的人**不许**自己关它。
+    var rawFormatContext: UnsafeMutablePointer<AVFormatContext>? {
+        context
+    }
+
     /// 关闭。**幂等**：没打开 / 关两次都安全。
     func close() {
         #if canImport(Libavformat)
@@ -177,7 +184,9 @@ final class LibavInput: @unchecked Sendable {
 
     #if canImport(Libavformat) && canImport(Libavutil)
     /// `av_strerror` 的人话版（FFmpeg 惯例缓冲区 256 字节）。
-    private static func errorText(_ code: Int32) -> String {
+    ///
+    /// 同模块的解码层也用（`LibavInput.errorText(...)`）—— 错误文案只有这一处权威。
+    static func errorText(_ code: Int32) -> String {
         var buffer = [CChar](repeating: 0, count: 256)
         if av_strerror(code, &buffer, buffer.count) == 0 {
             return String(cString: buffer)
