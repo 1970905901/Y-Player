@@ -4,7 +4,7 @@ import SwiftUI
 // 播放信息那一块：「播放信息」Section + 刷新 + 「引擎认不认这个协议」。
 //
 // 为什么放扩展文件：PlaybackView.swift 的文件长度（`file_length`）离 CI 的 error 线（800）只剩几十行；
-// 这一块只读 `engine` / `playbackStats` 两个 @State，搬出来零成本（同 M11 拆 Emby、M23 拆下载那两次）。
+// 这一块只读 `engine` / `playbackStats` 两个 @State，搬出来零成本（同 M11 拆 TMDB 视图、M23 拆下载那两次）。
 // 代价：`engine` / `playbackStats` 从 `private` 放开到模块内 —— 跨文件扩展看不见 private（M04P19 踩过）。
 
 extension PlaybackView {

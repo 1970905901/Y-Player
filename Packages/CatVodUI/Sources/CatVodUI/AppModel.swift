@@ -121,7 +121,7 @@ public final class AppModel: ObservableObject {
 
     // MARK: - 播放页与播放器（设置 → 播放）
 
-    /// 播放页显示视图（精简视图 / Emby 视图）：详情页换排布，数据与交互都不变。
+    /// 播放页显示视图（精简视图 / TMDB 视图）：详情页换排布，数据与交互都不变。
     @Published public var playbackPageLayout: PlaybackPageLayout {
         didSet {
             defaults.set(playbackPageLayout.rawValue, forKey: StorageKey.playbackPageLayout)
@@ -607,8 +607,8 @@ public final class AppModel: ObservableObject {
         homeCacheLifetime = storedHomeLifetime.flatMap(CacheLifetime.init(rawValue:)) ?? .days7
 
         // 播放页与播放器：默认精简视图、不自动播放（与参考图的初始状态一致）。
-        let storedPlaybackLayout = defaults.string(forKey: StorageKey.playbackPageLayout)
-        playbackPageLayout = storedPlaybackLayout.flatMap(PlaybackPageLayout.init(rawValue:)) ?? .compact
+        // 老值 `emby`（视图改名前）在 `PlaybackPageLayout.decode(_:)` 里迁到 `tmdb`，不让设置凭空丢。
+        playbackPageLayout = PlaybackPageLayout.decode(defaults.string(forKey: StorageKey.playbackPageLayout))
         autoPlayFirstEpisode = defaults.object(forKey: StorageKey.autoPlayFirstEpisode) as? Bool ?? false
 
         // 弹幕 API：默认未启用、四个槽位为空。

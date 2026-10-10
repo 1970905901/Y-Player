@@ -8,7 +8,7 @@ import SwiftUI
 /// 播放页不认识 `AppModel`：队列只有上层知道，这里只负责把「这一集是谁」拼清楚再交上去。
 ///
 /// 为什么拆出去：`PlaybackView.swift` 的行数顶到了 SwiftLint 的 `file_length` error（800）——
-/// 拆文件不如拆职责：主文件留播放本体，这块独立成文件（与 `VodDetailView+Emby` 同一套做法）。
+/// 拆文件不如拆职责：主文件留播放本体，这块独立成文件（与 `VodDetailView+TMDB` 同一套做法）。
 /// 跨文件的成员不能带 `private`：主文件里被这里用到的 `@State` 因此改成了默认（internal）。
 extension PlaybackView {
     // MARK: - 离线下载（M10f）

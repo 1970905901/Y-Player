@@ -2,7 +2,7 @@ import CatVodSource
 import Foundation
 import SwiftUI
 
-/// Emby 视图顶部的**全幅头部**（M11 第一片 + 全幅改造）：背景图铺满顶部、渐变压暗，
+/// TMDB 视图顶部的**全幅头部**（M11 第一片 + 全幅改造）：背景图铺满顶部、渐变压暗，
 /// 标题与当前线路名叠在图上（参考图的样子）。简介与提示在页面正文里，不在这层。
 ///
 /// 数据经 `AppModel.tmdbBundle(for:mode:)`（会话缓存 + 并发合流，与选集卡片**共用同一次刮削**），

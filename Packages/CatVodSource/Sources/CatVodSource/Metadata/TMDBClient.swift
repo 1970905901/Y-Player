@@ -62,7 +62,7 @@ public struct TMDBClient: Sendable {
 
     private func get(path: String, query: [URLQueryItem]) async throws -> Data {
         guard config.isConfigured else {
-            // 没配 key 就不发请求 —— 「切到 Emby 才要求填」，别在后台打无效请求。
+            // 没配 key 就不发请求 —— 「切到 TMDB 视图才要求填」，别在后台打无效请求。
             throw TMDBError.notConfigured
         }
         let full = [URLQueryItem(name: "language", value: language)] + query
@@ -195,7 +195,7 @@ private struct DetailDTO: Decodable {
 
 /// TMDB 那一层会出的错（与站点错误分开，界面能分开说）。
 public enum TMDBError: Error, Equatable {
-    /// 没填 api key —— 「切到 Emby 才要求填」，这时整层不工作。
+    /// 没填 api key —— 「切到 TMDB 视图才要求填」，这时整层不工作。
     case notConfigured
     case badURL
     case badStatus(Int)
@@ -217,7 +217,7 @@ public enum TMDBError: Error, Equatable {
     }
 }
 
-/// 收好的 TMDB 元信息 —— Emby 视图详情页要的就是这几样（标题 / 简介 / 海报 / 背景 / 类型）。
+/// 收好的 TMDB 元信息 —— TMDB 视图详情页要的就是这几样（标题 / 简介 / 海报 / 背景 / 类型）。
 public struct TMDBMetadata: Sendable, Hashable {
     public var id: Int
     public var kind: TMDBClient.Kind

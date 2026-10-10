@@ -1,6 +1,6 @@
 import Foundation
 
-/// TMDB 元信息层（Emby 视图）的配置：**只在切到 Emby 视图时才需要填**。
+/// TMDB 元信息层（TMDB 视图）的配置：**只在切到 TMDB 视图时才需要填**。
 ///
 /// 三项都有明确读者：`apiKey` / `apiProxy` 给 ``apiURL(path:query:)`` 拼接口地址，
 /// `imageProxy` 给 ``imageURL(_:)`` 改写图片地址 —— 不是「先存着备用」的字段。
@@ -19,7 +19,7 @@ public struct TMDBConfig: Sendable, Hashable {
     }
 
     /// 配齐没有：**只有 api key 是必需的**，代理都空着也能用（直连）。
-    /// 没配时这一层整体不工作、界面显示占位，但不弹错 —— 这就是「切到 Emby 才要求填」的判定。
+    /// 没配时这一层整体不工作、界面显示占位，但不弹错 —— 这就是「切到 TMDB 视图才要求填」的判定。
     public var isConfigured: Bool { !apiKey.isEmpty }
 
     /// TMDB 接口地址：直连 `https://api.themoviedb.org/3/...`，设了代理就交出去。

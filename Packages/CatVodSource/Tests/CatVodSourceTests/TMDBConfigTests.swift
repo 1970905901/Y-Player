@@ -4,7 +4,7 @@ import Testing
 
 /// TMDB 配置（M11）：接口地址、图片地址、代理的两种写法。
 struct TMDBConfigTests {
-    @Test("没配 api key 时这一层不算配好（切到 Emby 才要求填）")
+    @Test("没配 api key 时这一层不算配好（切到 TMDB 视图才要求填）")
     func configuredNeedsAPIKey() {
         #expect(!TMDBConfig().isConfigured)
         #expect(!TMDBConfig(apiProxy: "https://p.example").isConfigured)

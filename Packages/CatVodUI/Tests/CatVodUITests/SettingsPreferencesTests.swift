@@ -67,9 +67,19 @@ struct SettingsPreferencesTests {
     @Test("播放页两种视图都有展示名与说明")
     func playbackPageLayouts() {
         #expect(PlaybackPageLayout.compact.displayName == "精简视图")
-        #expect(PlaybackPageLayout.emby.displayName == "Emby 视图")
+        #expect(PlaybackPageLayout.tmdb.displayName == "TMDB 视图")
         #expect(PlaybackPageLayout.allCases.count == 2)
-        #expect(!PlaybackPageLayout.emby.summary.isEmpty)
+        #expect(!PlaybackPageLayout.tmdb.summary.isEmpty)
+    }
+
+    @Test("显示视图的存储值：老值 `emby` 迁到 `tmdb`，认不出来的回落精简")
+    func playbackPageLayoutDecode() {
+        #expect(PlaybackPageLayout.decode("tmdb") == .tmdb)
+        #expect(PlaybackPageLayout.decode("emby") == .tmdb)
+        #expect(PlaybackPageLayout.decode("compact") == .compact)
+        #expect(PlaybackPageLayout.decode("未来才有的值") == .compact)
+        #expect(PlaybackPageLayout.decode(nil) == .compact)
+        #expect(PlaybackPageLayout.decode("") == .compact)
     }
 }
 

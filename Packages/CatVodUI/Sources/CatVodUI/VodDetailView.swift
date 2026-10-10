@@ -83,7 +83,7 @@ public struct VodDetailView: View {
     // 下载入口那一簇（`directDownloadEpisodes` / `siteDownloadEpisodes` / `wholeLineDownloadsRow`）
     // 已拆到 `VodDetailView+Downloads.swift`（类型体余量，见该文件说明）。
 
-    // Emby 视图的成员已拆到 VodDetailView+Emby.swift（类型体超过 SwiftLint 上限，见该文件说明）。
+    // TMDB 视图的成员已拆到 VodDetailView+TMDB.swift（类型体超过 SwiftLint 上限，见该文件说明）。
 
     public var body: some View {
         content
@@ -145,8 +145,8 @@ public struct VodDetailView: View {
         switch model.playbackPageLayout {
         case .compact:
             compactLayout
-        case .emby:
-            embyLayout
+        case .tmdb:
+            tmdbLayout
         }
     }
 
@@ -176,7 +176,7 @@ public struct VodDetailView: View {
     /// 而本项目下限是 iOS 15（`docs/UI 规范.md`：不为统一观感抬高下限）。
     /// 挂在 `background` 上而不是当作列表行：列表行会占掉一行高度，留一片空白。
     @ViewBuilder
-    // （internal：拆分出的 `VodDetailView+Emby.swift` 也要用，不能是 private。）
+    // （internal：拆分出的 `VodDetailView+TMDB.swift` 也要用，不能是 private。）
     var autoPlayLink: some View {
         if let index = autoPlayEpisodeIndex, episodes.indices.contains(index) {
             NavigationLink(isActive: $isAutoPlaying) {
@@ -291,7 +291,7 @@ public struct VodDetailView: View {
     }
 
     /// 「上次看到 · 第 N 集 · 12:34」；没有进度时为 nil。
-    // （internal：拆分出的 `VodDetailView+Emby.swift` 也要用，不能是 private。）
+    // （internal：拆分出的 `VodDetailView+TMDB.swift` 也要用，不能是 private。）
     var progressSummary: String? {
         guard let progress, !progress.isFinished, progress.position > 0 else {
             return nil
@@ -305,7 +305,7 @@ public struct VodDetailView: View {
     }
 
     /// 是否为「上次看到」的那一集（**当前线路内**下标；跨线路/跨站对齐留 M8）。
-    // （internal：拆分出的 `VodDetailView+Emby.swift` 也要用，不能是 private。）
+    // （internal：拆分出的 `VodDetailView+TMDB.swift` 也要用，不能是 private。）
     func isLastWatched(_ index: Int) -> Bool {
         guard let progress, !progress.isFinished else {
             return false
@@ -369,7 +369,7 @@ public struct VodDetailView: View {
     }
 
     @ViewBuilder
-    // （internal：拆分出的 `VodDetailView+Emby.swift` 也要用，不能是 private。）
+    // （internal：拆分出的 `VodDetailView+TMDB.swift` 也要用，不能是 private。）
     func destination(for episode: PlaylistParser.Episode, at index: Int) -> some View {
         // 播放页自己的换集能力（M12P1）：详情页知道「集列表 + 线路 + 站点」，包成闭包交给它。
         let playlist = episodePlaylist(currentIndex: index)

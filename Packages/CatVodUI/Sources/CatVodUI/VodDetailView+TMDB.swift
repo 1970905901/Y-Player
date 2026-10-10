@@ -3,7 +3,10 @@ import CatVodSource
 import CatVodStore
 import SwiftUI
 
-/// Emby 视图（M11）的成员：加载骨架、大播放按钮、图标行、Emby 版式、选集横滑与剧集列表抽屉的入口。
+/// TMDB 视图（M11）的成员：加载骨架、大播放按钮、图标行、版式、选集横滑与剧集列表抽屉的入口。
+///
+/// （视图当时按参考的 Emby 客户端排布起名叫「Emby 视图」，后来改名 TMDB 视图 —— 名字变了，
+/// 排布没变。）
 ///
 /// 拆出来的原因很实在：`VodDetailView` 的**类型体**超过 SwiftLint `type_body_length`
 /// 的 error 线（450 行）。扩展不计入类型体 —— 与仓库既有的 `VodDetailView+Data.swift`
@@ -19,7 +22,7 @@ extension VodDetailView {
     ///
     /// 参考视频里加载中就是这个形状，不是一个居中转圈。所以第一次进页面时，
     /// 屏幕上先出现「就是这里将来会有东西」的灰块，内容回来时原地换成真东西、不跳版。
-    var embySkeleton: some View {
+    var tmdbSkeleton: some View {
         VStack(alignment: .leading, spacing: 12) {
             skeletonBlock(width: nil, height: 320)
             skeletonBlock(width: 140, height: 18)
@@ -154,19 +157,19 @@ extension VodDetailView {
             : "\(pad(minute)):\(pad(second))"
     }
 
-    // MARK: - Emby 视图
+    // MARK: - TMDB 视图
 
-    /// Emby 视图（设置 → 播放 → 播放页 → 显示视图）：**全幅沉浸版** ——
+    /// TMDB 视图（设置 → 播放 → 播放页 → 显示视图）：**全幅沉浸版** ——
     /// 海报铺满顶部、渐变压暗，标题与线路名叠在图上；下面依次是播放按钮、图标行、简介与选集。
     ///
     /// 数据与精简视图完全相同（`detail` / `lines` / `episodes` / `progress`），
     /// 只是排布不同 —— 收藏、换源、续播的行为一致。
-    var embyLayout: some View {
+    var tmdbLayout: some View {
         ScrollView {
             VStack(spacing: 0) {
                 if isLoading, detail.list.isEmpty {
                     // 第一次进页面才给骨架；内容回来后原地换掉。
-                    embySkeleton
+                    tmdbSkeleton
                         .padding(16)
                 } else {
                     TMDBDetailHeader(
@@ -179,9 +182,9 @@ extension VodDetailView {
                     VStack(spacing: 16) {
                         playButtonRow
                         iconRow
-                        embyOverview
-                        embyEpisodeHeader
-                        embyEpisodeStrip
+                        tmdbOverview
+                        tmdbEpisodeHeader
+                        tmdbEpisodeStrip
                         wholeLineDownloadsRow
                         if !errorText.isEmpty {
                             Text(errorText)
@@ -226,7 +229,7 @@ extension VodDetailView {
     /// 原先「影片」分区里那些说明字段（备注 / 类型 / 年份 / 进度文案）不再单列 ——
     /// 标题、线路名、简介已各就各位；进度在播放按钮下面那行里。
     @ViewBuilder
-    var embyOverview: some View {
+    var tmdbOverview: some View {
         let overview = episodeMetadata?.overview ?? ""
         let text = overview.isEmpty ? (vod?.vodContent ?? "") : overview
         if !text.isEmpty {
@@ -241,7 +244,7 @@ extension VodDetailView {
     /// 选集区头（参考图）：「线路名 ▾」（点开切线路）+ 上一集 / 下一集 + 更多（剧集列表抽屉）。
     ///
     /// 原先单独一个「线路」胶囊区，按参考图收进这里 —— 一屏只留一处线路入口。
-    var embyEpisodeHeader: some View {
+    var tmdbEpisodeHeader: some View {
         HStack(spacing: 18) {
             Menu {
                 ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
@@ -302,7 +305,7 @@ extension VodDetailView {
 
     /// 选集横滑（参考图下半）：卡片一屏约两张，当前集滚到正中。
     @ViewBuilder
-    var embyEpisodeStrip: some View {
+    var tmdbEpisodeStrip: some View {
         if episodes.isEmpty {
             if isLoading {
                 HStack(spacing: 10) {
@@ -323,7 +326,7 @@ extension VodDetailView {
                             NavigationLink {
                                 destination(for: episode, at: index)
                             } label: {
-                                embyEpisodeCard(episode, at: index)
+                                tmdbEpisodeCard(episode, at: index)
                             }
                             .buttonStyle(.borderless)
                             .id(index)
@@ -344,7 +347,7 @@ extension VodDetailView {
     /// 单张选集卡片（参考图：竖幅图 + 文件名两行，图下面不要卡片底）。
     ///
     /// 没有取图集时（未配 key / 没搜到 / 刮削关）退化成纯文字卡 —— 不给「永远灰着」的图块。
-    func embyEpisodeCard(_ episode: PlaylistParser.Episode, at index: Int) -> some View {
+    func tmdbEpisodeCard(_ episode: PlaylistParser.Episode, at index: Int) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             if let imageURL = episodePosterURL(at: index) {
                 AsyncImage(url: imageURL) { image in
@@ -415,7 +418,7 @@ extension VodDetailView {
     }
 
     /// 拉页面要用的取图集 + 元信息：与顶部走同一份（同键并发会合流，不会各拉一次）。
-    /// 简介那一行（``embyOverview``）用的就是这里的 metadata。
+    /// 简介那一行（``tmdbOverview``）用的就是这里的 metadata。
     func loadEpisodePosterSet() async {
         let title = vod?.vodName ?? ""
         guard !title.isEmpty else {

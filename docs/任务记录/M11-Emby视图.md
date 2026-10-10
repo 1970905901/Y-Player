@@ -1,9 +1,14 @@
-# M11 Emby 视图（TMDB 那种形态）
+# M11 Emby 视图 → TMDB 视图（TMDB 那种形态）
 
 - 状态：**规格已定，开工中** —— `PosterPicker`（取图策略）已落地并有测试；其余待做
 - 时间：2026-10-09
 - 依据：`桌面/photo_2026-10-09_13-15-27.jpg` + 参考视频 `IMG_7344.MP4`（59.87s，按 1/5s 抽 12 帧通看）
 - 依赖：M10i（下载入口在这套形态里也要有）
+
+> **改名（2026-10-10）**：这个视图现在叫「**TMDB 视图**」—— 设置菜单、代码（`.emby` → `.tmdb`、
+> `emby*` → `tmdb*`）、文件名（`VodDetailView+Emby.swift` → `VodDetailView+TMDB.swift`）都改了；
+> 老设置值 `emby` 在 `PlaybackPageLayout.decode(_:)` 里迁到 `tmdb`，不让设置凭空丢。
+> 本文写于 M11 落地时，正文里的「Emby 视图」= 今天的「TMDB 视图」。
 
 ## 一、这是什么（先把话说清）
 

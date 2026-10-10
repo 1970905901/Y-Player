@@ -163,7 +163,7 @@ struct SettingsPlayerControlView: View {
 
 /// 播放页：显示视图 + 自动播放。
 ///
-/// 结构对齐参考图的两行：`显示视图`（点开是「精简视图 / Emby 视图」菜单）与
+/// 结构对齐参考图的两行：`显示视图`（点开是「精简视图 / TMDB 视图」菜单）与
 /// `自动播放`（副标题「首次进入是否自动选中第一集开始播放」）。
 ///
 /// 两项都是**真实生效**的偏好：显示视图决定详情页的排布，
@@ -216,9 +216,9 @@ struct PlaybackPageSettingsSection: View {
                 }
             }
 
-            // 切到 Emby 视图才要求填（M11）：元信息那一层的三个入口。
+            // 切到 TMDB 视图才要求填（M11）：元信息那一层的三个入口。
             // 不填也能用 —— 只是那一层不工作、详情页显示占位，不弹错。
-            if model.playbackPageLayout == .emby {
+            if model.playbackPageLayout == .tmdb {
                 TextField("TMDB api key", text: $model.tmdbConfig.apiKey)
                 TextField("api 代理地址（可空）", text: $model.tmdbConfig.apiProxy)
                 TextField("图片代理地址（可空）", text: $model.tmdbConfig.imageProxy)

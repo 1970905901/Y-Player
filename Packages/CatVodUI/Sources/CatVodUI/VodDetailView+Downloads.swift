@@ -7,7 +7,7 @@ import SwiftUI
 ///
 /// 拆出来的原因很实在：`VodDetailView` 的**类型体**逼近 SwiftLint `type_body_length`
 /// 的 error 线（450 行；CI 的 lint 是阻断项），扩展不计入类型体 —— 与 `VodDetailView+Data.swift`
-/// / `VodDetailView+Emby.swift` 是同一个做法。
+/// / `VodDetailView+TMDB.swift` 是同一个做法。
 ///
 /// 这些成员因此**不能写 `private`**（private 是文件级，跨文件就看不见了）。
 extension VodDetailView {
@@ -37,7 +37,7 @@ extension VodDetailView {
         }
     }
 
-    /// 「整部下载」入口（M10i；逐集换地址那一半是 M10i 下半场）。两种视图形态（精简 / Emby）
+    /// 「整部下载」入口（M10i；逐集换地址那一半是 M10i 下半场）。两种视图形态（精简 / TMDB）
     /// 共用这一行，免得只有一种形态有入口。
     ///
     /// 分两批，**各自说清自己那一批有多少集**：
@@ -46,7 +46,7 @@ extension VodDetailView {
     ///   进度与最终结果都写在下面（见 ``SiteDownloadSummary``）；
     /// - 剩下那些（要走解析链 / 没有地址）**不排**，也如实写出条数 —— 不假装整部都排上了。
     @ViewBuilder
-    // （internal：拆分出的 `VodDetailView+Emby.swift` 也要用，不能是 private。）
+    // （internal：拆分出的 `VodDetailView+TMDB.swift` 也要用，不能是 private。）
     var wholeLineDownloadsRow: some View {
         if let site {
             if !directDownloadEpisodes.isEmpty {
