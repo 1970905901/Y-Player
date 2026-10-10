@@ -111,7 +111,7 @@ struct MpvEventMappingTests {
         #expect(MpvPropertyValue.none.boolValue == nil)
     }
 
-    @Test("track-list：按类型分三组，封面图轨道不算画面轨")
+    @Test("track-list：按类型分三组（带展示名），封面图轨道不算画面轨（M03P8）")
     func trackListParsing() throws {
         let json = """
         [
@@ -120,22 +120,24 @@ struct MpvEventMappingTests {
             {"id": 3, "type": "audio", "lang": "zh"},
             {"id": 4, "type": "audio", "lang": "en"},
             {"id": 5, "type": "sub", "title": "简体"},
+            {"id": 7, "type": "sub", "title": "简体中文", "lang": "zh"},
             {"id": 6, "type": "unknown"}
         ]
         """
-        let tracks = try #require(MpvEventMapping.trackIDs(fromTrackListJSON: json))
-        #expect(tracks.video == [1])
-        #expect(tracks.audio == [3, 4])
-        #expect(tracks.subtitle == [5])
+        let tracks = try #require(MpvEventMapping.tracks(fromTrackListJSON: json))
+        #expect(tracks.video == [PlayerTrack(id: 1)])
+        #expect(tracks.audio == [PlayerTrack(id: 3, label: "zh"), PlayerTrack(id: 4, label: "en")])
+        // `title` 优先于 `lang`（7 号两边都有，取 title）。
+        #expect(tracks.subtitle == [PlayerTrack(id: 5, label: "简体"), PlayerTrack(id: 7, label: "简体中文")])
     }
 
     @Test("track-list：解析不了返回 nil（别发空列表把界面上的选择清空）")
     func trackListParseFailure() {
-        #expect(MpvEventMapping.trackIDs(fromTrackListJSON: "") == nil)
-        #expect(MpvEventMapping.trackIDs(fromTrackListJSON: "不是 JSON") == nil)
-        #expect(MpvEventMapping.trackIDs(fromTrackListJSON: #"{"a":1}"#) == nil)
+        #expect(MpvEventMapping.tracks(fromTrackListJSON: "") == nil)
+        #expect(MpvEventMapping.tracks(fromTrackListJSON: "不是 JSON") == nil)
+        #expect(MpvEventMapping.tracks(fromTrackListJSON: #"{"a":1}"#) == nil)
         // 空数组是合法输入：就是「没有轨道」。
-        #expect(MpvEventMapping.trackIDs(fromTrackListJSON: "[]")?.video == [])
+        #expect(MpvEventMapping.tracks(fromTrackListJSON: "[]")?.video == [])
     }
 
     @Test("事件等待超时：小到不卡命令，大到不空转")

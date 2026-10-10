@@ -42,44 +42,61 @@ public enum MpvEventMapping {
         reason == "error"
     }
 
-    /// 从 `track-list` 的 JSON 里挑出三类轨道的 id。
+    /// 从 `track-list` 的 JSON 里挑出三类轨道（id + 展示名，M03P8）。
     ///
     /// mpv 的 `track-list` 读成字符串就是 JSON：
     /// `[{"id":1,"type":"video",…},{"id":2,"type":"audio","default":true,…},{"id":3,"type":"sub",…}]`。
     /// 只认 `video` / `audio` / `sub`；**封面图轨道**（`albumart == true` 的 video）要排除 ——
     /// 它会让用户在「音轨」里看见一条没有声音的假轨道。
     ///
+    /// 展示名优先 `title`（片源里的轨名），没有退 `lang`（如 `zh`）；都没有给 nil ——
+    /// 界面按「音轨 <id>」兜底，不编假名字。
+    ///
     /// 解析不了（不是数组 / 没有 id 与 type）返回 nil：调用方据此**什么都不发**，别发一个空列表
     /// 把界面上的选择清空。
-    public static func trackIDs(fromTrackListJSON json: String) -> (video: [Int], audio: [Int], subtitle: [Int])? {
+    public static func tracks(
+        fromTrackListJSON json: String
+    ) -> (video: [PlayerTrack], audio: [PlayerTrack], subtitle: [PlayerTrack])? {
         guard let data = json.data(using: .utf8),
               let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         else {
             return nil
         }
-        var video: [Int] = []
-        var audio: [Int] = []
-        var subtitle: [Int] = []
+        var video: [PlayerTrack] = []
+        var audio: [PlayerTrack] = []
+        var subtitle: [PlayerTrack] = []
         for entry in list {
             guard let id = entry["id"] as? Int, let type = entry["type"] as? String else {
                 continue
             }
+            let track = PlayerTrack(id: id, label: trackLabel(from: entry))
             switch type {
             case "video":
                 // 封面图不是画面轨道（mpv 会把它当 video 轨道报出来）。
                 if entry["albumart"] as? Bool == true {
                     continue
                 }
-                video.append(id)
+                video.append(track)
             case "audio":
-                audio.append(id)
+                audio.append(track)
             case "sub":
-                subtitle.append(id)
+                subtitle.append(track)
             default:
                 continue
             }
         }
         return (video, audio, subtitle)
+    }
+
+    /// `track-list` 一项的展示名：`title` 优先、`lang` 兜底；都没有 / 都是空白给 nil。
+    private static func trackLabel(from entry: [String: Any]) -> String? {
+        for key in ["title", "lang"] {
+            let value = (entry[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let value, !value.isEmpty {
+                return value
+            }
+        }
+        return nil
     }
 
     /// 等待事件时每轮最多阻塞多久（秒）。

@@ -372,7 +372,7 @@ struct MpvEngineTests {
     @Test("file-loaded 后上报轨道列表（音轨 / 字幕轨的下拉框靠它）")
     func trackListReportedAfterLoad() async throws {
         let (engine, _) = makeEngine(propertyStrings: [
-            "track-list": #"[{"id":1,"type":"video"},{"id":2,"type":"audio"},{"id":3,"type":"sub"}]"#,
+            "track-list": #"[{"id":1,"type":"video"},{"id":2,"type":"audio","lang":"zh"},{"id":3,"type":"sub","title":"简体"}]"#,
         ])
         var iterator = engine.events.makeAsyncIterator()
         try await engine.load(MediaResource(url: "https://cdn.example.com/a.mp4"))
@@ -383,7 +383,11 @@ struct MpvEngineTests {
         let playing = await iterator.next()
         #expect(playing == .stateChanged(.playing))
         let tracks = await iterator.next()
-        #expect(tracks == .tracksChanged(video: [1], audio: [2], subtitle: [3]))
+        #expect(tracks == .tracksChanged(
+            video: [PlayerTrack(id: 1)],
+            audio: [PlayerTrack(id: 2, label: "zh")],
+            subtitle: [PlayerTrack(id: 3, label: "简体")]
+        ))
     }
 
     @Test("track-list 读不到：什么都不发（别把界面上的选择清空）")

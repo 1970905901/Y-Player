@@ -70,8 +70,8 @@ public struct PlaybackView: View {
     /// 最近一次读到的播放信息：只有报得出来的内核（MPV 与自研 FFmpeg 都认这个协议）才有这一块。
     @State var playbackStats: PlaybackStats?
     /// 内核上报的轨道（系统内核现在不上报，只有 MPV 会报，见 M03P3/M03P5）。
-    @State private var audioTracks: [Int] = []
-    @State private var subtitleTracks: [Int] = []
+    @State private var audioTracks: [PlayerTrack] = []
+    @State private var subtitleTracks: [PlayerTrack] = []
     /// 当前选中的轨道（界面态；换片时回到「自动」）。
     @State private var audioSelection: TrackSelection = .auto
     @State var subtitleSelection: TrackSelection = .auto
@@ -717,15 +717,16 @@ extension PlaybackView {
 
     /// 音轨 / 字幕轨选择。
     ///
-    /// **只有内核报了轨道才出现**：系统内核（`AVPlayerEngine`）现在不上报轨迹，
-    /// 所以那边不显示这一块 —— 不做「点不动的假菜单」。
+    /// **只有内核报了轨道才出现**：三个内核都会报（系统内核 M03P7、MPV M03P5、自研 FFmpeg M04P16）——
+    /// 报不出来就不显示这一块，不做「点不动的假菜单」。
+    /// 轨名优先用内核报的 `label`（语言 / 标题，M03P8），读不到退「音轨 <id>」。
     private var tracksSection: some View {
         Section("轨道") {
             if !audioTracks.isEmpty {
                 Picker("音轨", selection: audioSelectionBinding) {
                     Text("自动").tag(TrackSelection.auto)
-                    ForEach(audioTracks, id: \.self) { id in
-                        Text("音轨 \(id)").tag(TrackSelection.index(id))
+                    ForEach(audioTracks) { track in
+                        Text(track.label ?? "音轨 \(track.id)").tag(TrackSelection.index(track.id))
                     }
                 }
             }
@@ -733,8 +734,8 @@ extension PlaybackView {
                 Picker("字幕", selection: subtitleSelectionBinding) {
                     Text("自动").tag(TrackSelection.auto)
                     Text("关闭").tag(TrackSelection.disabled)
-                    ForEach(subtitleTracks, id: \.self) { id in
-                        Text("字幕 \(id)").tag(TrackSelection.index(id))
+                    ForEach(subtitleTracks) { track in
+                        Text(track.label ?? "字幕 \(track.id)").tag(TrackSelection.index(track.id))
                     }
                 }
             }

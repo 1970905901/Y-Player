@@ -8,25 +8,26 @@ import Foundation
 // 与 `+Monitoring`（就绪 / 时间 / 结束）互不相干。
 
 extension AVPlayerEngine {
-    /// 上报可选的音轨 / 字幕轨（`PlayerEvent.tracksChanged`）。
+    /// 上报可选的音轨 / 字幕轨（`PlayerEvent.tracksChanged`，带展示名 —— M03P8）。
     ///
     /// 时机：`readyToPlay` 之后（这时 `mediaSelectionGroup` 才拿得到），见 `handleReady()`。
     /// 画面轨恒为空数组：系统内核下没有「切画面轨」的需求，报了只会多出一排没人用的下拉框
     /// （MPV 那边同理只给音轨与字幕，见 M03P5）。
     func reportTracks() {
-        let indices = trackIndices()
-        emit(.tracksChanged(video: indices.video, audio: indices.audio, subtitle: indices.subtitle))
+        let tracks = trackList()
+        emit(.tracksChanged(video: tracks.video, audio: tracks.audio, subtitle: tracks.subtitle))
     }
 
     /// 当前可选项（内部可见：单测在没有媒体时断言为空；真机上由 ``reportTracks()`` 上报）。
     ///
-    /// 下标就是 `group.options` 的下标 —— 界面拿到的数字原样送回来能选中同一轨
-    /// （MPV 那边送的是轨道 id，两边各自自洽）。
-    func trackIndices() -> (video: [Int], audio: [Int], subtitle: [Int]) {
+    /// `id` 就是 `group.options` 的下标 —— 界面拿到的数字原样送回来能选中同一轨
+    /// （MPV 那边送的是轨道 id，两边各自自洽）；展示名取 `AVMediaSelectionOption.displayName`
+    /// （系统按当前语言给出，如「英语」），拿不到给 nil。
+    func trackList() -> (video: [PlayerTrack], audio: [PlayerTrack], subtitle: [PlayerTrack]) {
         (
-            video: optionIndices(for: .visual),
-            audio: optionIndices(for: .audible),
-            subtitle: optionIndices(for: .legible)
+            video: optionTracks(for: .visual),
+            audio: optionTracks(for: .audible),
+            subtitle: optionTracks(for: .legible)
         )
     }
 
@@ -62,11 +63,14 @@ extension AVPlayerEngine {
         return player.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: characteristic)
     }
 
-    /// 某个特征下的可选轨下标。
-    func optionIndices(for characteristic: AVMediaCharacteristic) -> [Int] {
+    /// 某个特征下的可选轨（下标 + 展示名）。
+    func optionTracks(for characteristic: AVMediaCharacteristic) -> [PlayerTrack] {
         guard let group = player.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: characteristic) else {
             return []
         }
-        return Array(group.options.indices)
+        return group.options.indices.map { index in
+            let name = group.options[index].displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return PlayerTrack(id: index, label: name.isEmpty ? nil : name)
+        }
     }
 }

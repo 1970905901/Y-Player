@@ -194,7 +194,7 @@ public actor MpvEngine: PlayerEngine, PlaybackStatsProviding {
     private func emitTrackList() {
         guard let session,
               let json = session.propertyString("track-list"),
-              let tracks = MpvEventMapping.trackIDs(fromTrackListJSON: json)
+              let tracks = MpvEventMapping.tracks(fromTrackListJSON: json)
         else {
             return
         }

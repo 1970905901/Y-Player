@@ -239,7 +239,7 @@ struct LibavFFmpegSessionTests {
         } }
         defer { consumer.cancel() }
 
-        func listedAudioTracks() -> [Int] {
+        func listedAudioTracks() -> [PlayerTrack] {
             for event in box.all {
                 if case let .tracks(_, audio, _) = event {
                     return audio
@@ -260,7 +260,7 @@ struct LibavFFmpegSessionTests {
         let tracks = listedAudioTracks()
         let second = try #require(tracks.last)
         // 夹具没有字幕轨：清单里字幕是空数组（只报文本轨，M04P19）
-        let subtitleLists = box.all.compactMap { event -> [Int]? in
+        let subtitleLists = box.all.compactMap { event -> [PlayerTrack]? in
             if case let .tracks(_, _, subtitle) = event {
                 return subtitle
             }
@@ -269,7 +269,7 @@ struct LibavFFmpegSessionTests {
         #expect(subtitleLists.first?.isEmpty == true)
 
         // 2) 切到第二条，等解码线程把请求取走（它卡在背压里也会先处理待办）
-        await session.selectTrack(.index(second), for: .audio)
+        await session.selectTrack(.index(second.id), for: .audio)
         try? await Task.sleep(nanoseconds: 200_000_000)
 
         // 3) 放行：喂来的样本应该是 48k（第二条轨道的采样率）—— 这就是「真的换了」的证据

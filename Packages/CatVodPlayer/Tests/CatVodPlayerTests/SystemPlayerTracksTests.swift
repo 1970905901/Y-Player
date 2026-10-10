@@ -11,12 +11,12 @@ import Testing
 @Suite("系统内核：轨道（无媒体时的边界）")
 struct SystemPlayerTracksTests {
     @Test("没有条目时：三个类别都没有可选项")
-    func trackIndicesEmptyWithoutItem() {
+    func trackListEmptyWithoutItem() {
         let engine = AVPlayerEngine(decoderMode: .hardware)
-        let indices = engine.trackIndices()
-        #expect(indices.video.isEmpty)
-        #expect(indices.audio.isEmpty)
-        #expect(indices.subtitle.isEmpty)
+        let tracks = engine.trackList()
+        #expect(tracks.video.isEmpty)
+        #expect(tracks.audio.isEmpty)
+        #expect(tracks.subtitle.isEmpty)
         #expect(engine.selectionGroup(for: .audio) == nil)
     }
 

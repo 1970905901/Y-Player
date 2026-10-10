@@ -54,6 +54,10 @@ final class LibavInput: @unchecked Sendable {
         var primaries: String
         /// 源的传输特性（`pq` / `hlg` 是 HDR）；读不到给空串。
         var gamma: String
+        /// 流元数据里的语言（`language`，如 `chi` / `eng`）；没有给空串（M03P8）。
+        var language: String
+        /// 流元数据里的标题（`title`）；没有给空串（M03P8）。
+        var title: String
     }
 
     /// 一只**借来的**包（见 ``nextPacket()`` 的生命周期约定）。
@@ -149,7 +153,9 @@ final class LibavInput: @unchecked Sendable {
                     height: Int(parameters.pointee.height),
                     fps: Self.fps(numerator: frameRate.num, denominator: frameRate.den),
                     primaries: Self.colorPrimariesName(Int32(parameters.pointee.color_primaries.rawValue)),
-                    gamma: Self.colorTransferName(Int32(parameters.pointee.color_trc.rawValue))
+                    gamma: Self.colorTransferName(Int32(parameters.pointee.color_trc.rawValue)),
+                    language: Self.metadataValue(stream, key: "language"),
+                    title: Self.metadataValue(stream, key: "title")
                 ))
             }
         }
@@ -162,6 +168,24 @@ final class LibavInput: @unchecked Sendable {
         )
         #else
         return nil
+        #endif
+    }
+
+    /// 流元数据里的一个字符串字段（`language` / `title`）；没有给空串。
+    ///
+    /// `av_dict_get` 的默认 flag 是**大小写不敏感**：不同封装写 `language` / `LANGUAGE` 的都有。
+    private static func metadataValue(_ stream: UnsafeMutablePointer<AVStream>, key: String) -> String {
+        #if canImport(Libavformat) && canImport(Libavutil)
+        guard let entry = av_dict_get(stream.pointee.metadata, key, nil, 0),
+              let value = entry.pointee.value
+        else {
+            return ""
+        }
+        return String(cString: value)
+        #else
+        _ = stream
+        _ = key
+        return ""
         #endif
     }
 

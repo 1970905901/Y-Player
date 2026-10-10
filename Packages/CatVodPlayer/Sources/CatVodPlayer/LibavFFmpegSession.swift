@@ -105,6 +105,14 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         continuation = captured
     }
 
+    /// 轨道清单的一项（M03P8）：`id` 用流下标（选轨道时原样送回），展示名优先 `title`、退而 `language`。
+    private static func playerTrack(_ stream: LibavInput.StreamInfo) -> PlayerTrack {
+        let label = [stream.title, stream.language]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+        return PlayerTrack(id: stream.index, label: label)
+    }
+
     // MARK: - FFmpegSession
 
     func open(_ resource: MediaResource, decoderMode: DecoderMode) async -> String? {
@@ -131,11 +139,11 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
         durationSeconds = info?.durationSeconds ?? 0
         // 轨道清单：**开片报一次**（换轨不重报 —— 重报会让界面把用户刚选的那条复位成「自动」）。
         // 字幕只报**文本轨**（位图轨出不了字，不摆死选项，M04P19）。
-        let videoTracks = info?.streams.filter { $0.kind == .video }.map(\.index) ?? []
-        let audioTracks = info?.streams.filter { $0.kind == .audio }.map(\.index) ?? []
+        let videoTracks = (info?.streams ?? []).filter { $0.kind == .video }.map(Self.playerTrack)
+        let audioTracks = (info?.streams ?? []).filter { $0.kind == .audio }.map(Self.playerTrack)
         let subtitleTracks = (info?.streams ?? [])
             .filter { $0.kind == .subtitle && LibavSubtitleDecoder.isTextCodec($0.codecName) }
-            .map(\.index)
+            .map(Self.playerTrack)
         emit(.tracks(video: videoTracks, audio: audioTracks, subtitle: subtitleTracks))
         // 字幕默认跟 MPV 的 `sid=auto` 一个口径：优先容器标了 default 的那条，没有就第一条能出字的。
         // 开不了**不拦路**：字幕是锦上添花，没它也能播。

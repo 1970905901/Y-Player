@@ -47,8 +47,8 @@ public enum FFmpegSessionEvent: Sendable, Equatable {
     case time(current: Double, duration: Double)
     /// 已缓冲秒数（缓冲条 / 卡顿判定用）。
     case buffered(seconds: Double)
-    /// 轨道列表（demux 认全后报一次；换片 / 换轨再报）。
-    case tracks(video: [Int], audio: [Int], subtitle: [Int])
+    /// 轨道列表（demux 认全后报一次；换片 / 换轨再报）—— 带展示名（M03P8）。
+    case tracks(video: [PlayerTrack], audio: [PlayerTrack], subtitle: [PlayerTrack])
     /// 内嵌字幕（M04P19）：**全量** cue 列表（空数组 = 清空 / 关掉字幕）—— 界面按整份替换用。
     case subtitleCues([SubtitleCue])
 }

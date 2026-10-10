@@ -226,7 +226,11 @@ struct FFmpegEngineTests {
         await engine.handle(.state(.playing))
         await engine.handle(.time(current: 7.5, duration: 120))
         await engine.handle(.buffered(seconds: 30))
-        await engine.handle(.tracks(video: [1], audio: [2], subtitle: [3]))
+        await engine.handle(.tracks(
+            video: [PlayerTrack(id: 1)],
+            audio: [PlayerTrack(id: 2, label: "eng")],
+            subtitle: [PlayerTrack(id: 3)]
+        ))
 
         let loading = await iterator.next()
         #expect(loading == .stateChanged(.loading))
@@ -237,7 +241,11 @@ struct FFmpegEngineTests {
         let buffered = await iterator.next()
         #expect(buffered == .bufferedChanged(seconds: 30))
         let tracks = await iterator.next()
-        #expect(tracks == .tracksChanged(video: [1], audio: [2], subtitle: [3]))
+        #expect(tracks == .tracksChanged(
+            video: [PlayerTrack(id: 1)],
+            audio: [PlayerTrack(id: 2, label: "eng")],
+            subtitle: [PlayerTrack(id: 3)]
+        ))
         let state = await engine.currentState()
         #expect(state == .playing)
     }

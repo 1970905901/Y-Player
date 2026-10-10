@@ -68,11 +68,26 @@ public enum PlayerEvent: Sendable, Equatable {
     case stateChanged(PlayerState)
     case timeChanged(current: Double, duration: Double)
     case bufferedChanged(seconds: Double)
-    case tracksChanged(video: [Int], audio: [Int], subtitle: [Int])
+    case tracksChanged(video: [PlayerTrack], audio: [PlayerTrack], subtitle: [PlayerTrack])
     /// 内嵌字幕（M04P19）：**全量** cue 列表（空数组 = 清空 / 关掉字幕）。
     case subtitleCues([SubtitleCue])
     case speedChanged(Float)
     case error(String)
+}
+
+/// 一条可选轨：`id` 是内核给的稳定标识（选轨道时原样送回），`label` 是给人看的名字（M03P8）。
+///
+/// `label` 读不到就是 nil —— 界面按「音轨 <id>」兜底，不编假名字（与播放信息同一套口径）。
+/// 三种内核各自能给什么：mpv 的 `title` / `lang`、系统内核的 `AVMediaSelectionOption.displayName`、
+/// 自研 FFmpeg 的流元数据 `title` / `language`。
+public struct PlayerTrack: Sendable, Equatable, Identifiable {
+    public var id: Int
+    public var label: String?
+
+    public init(id: Int, label: String? = nil) {
+        self.id = id
+        self.label = label
+    }
 }
 
 /// 轨道选择。
