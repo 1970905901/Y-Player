@@ -94,7 +94,8 @@ public struct RootView: View {
             }
             // 本机代理服务（M6）：启动时就起来，播放时才有端口可用
             // （`playbackResource(_:)` 是同步判定，不能在那里 await）。
-            await model.ensureLocalServer()
+            // 走「开关 ↔ 服务」的对账入口：开关关着就不会白起服务（M06o）。
+            await model.syncLocalServerWithSwitch()
             // 上次没下完的（被挂起 / 杀掉时留下的 `running` 在这里降级成 `waiting`，M10b/M25）：
             // 启动就接着跑，不必先进「下载管理」页（M10h）。
             await model.restoreDownloads()
@@ -108,6 +109,9 @@ public struct RootView: View {
                 // 回前台同样走恢复：挂起期间没跑完的 `running` 降级回排队，再由驱动接手。
                 await model.restoreDownloads()
                 model.startDownloadDriverIfNeeded()
+                // 挂起期间监听 socket 可能已被系统断开（`ensureLocalServer` 的注释）：回前台按开关
+                // 再对一次账 —— 该在的幂等 start，关着的不会被顺手起起来（M06o）。
+                await model.syncLocalServerWithSwitch()
             }
         }
     }

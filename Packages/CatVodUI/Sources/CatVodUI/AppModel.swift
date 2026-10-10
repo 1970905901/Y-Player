@@ -234,10 +234,17 @@ public final class AppModel: ObservableObject {
     ///
     /// 默认为开：多数源要求 HLS 的子清单/分片/密钥也带 `Referer` 等 header，
     /// 而系统播放器只能给主请求设 header（细节见 `docs/任务记录/M06a-本地HTTP服务与本地代理.md`）。
+    ///
+    /// 它还是本机服务的**总闸**（M06o）：关掉就该把监听停掉，不是只在播放时绕开。
     @Published public var isLocalProxyEnabled: Bool {
         didSet {
             defaults.set(isLocalProxyEnabled, forKey: StorageKey.localProxyEnabled)
             refreshPlaybackNotice()
+            // 开关要真的支配服务（M06o）：关 → 停、开 → 起。起停都是异步的（`LocalHTTPServer`
+            // 的 `start()` / `stop()` 是 actor 方法），`didSet` 里丢一个 Task 去对账 ——
+            // 与 `applyLogPreferenceToHost()` 同一套做法；排队与「执行时才读开关」见
+            // `AppModel+LocalProxy.swift` 的 `syncLocalServerWithSwitch()`。
+            applyProxySwitchToServer()
         }
     }
 
@@ -265,6 +272,12 @@ public final class AppModel: ObservableObject {
 
     /// 本地代理服务实例；由 ``ensureLocalServer()`` 创建并启动（见 `AppModel+LocalProxy.swift`）。
     var localServer: LocalHTTPServer?
+
+    /// 「开关 ↔ 本机服务」的串行队列（M06o）：起停都是异步的，两路并发会在 ``LocalHTTPServer``
+    /// 的 `await` 重入点各绑一次端口。排队逻辑在 `AppModel+LocalProxy.swift` 的
+    /// `syncLocalServerWithSwitch()` 里；存储属性只能待在类体，所以放这儿。
+    var localProxyLifecycle: Task<Void, Never>?
+
     /// 广告清理规则（M06d）：接口配置里的 `hlsRules` 编译后放这里，
     /// 本机服务的 `/m3u8` 每个请求读一次（见 `AppModel+LocalProxy.swift`）。
     let adRuleStore = HLSAdRuleStore()

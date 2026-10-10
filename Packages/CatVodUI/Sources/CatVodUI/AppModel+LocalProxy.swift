@@ -35,14 +35,50 @@ public extension AppModel {
         }
     }
 
-    /// 停掉本机服务并复位说明。
+    /// 停掉本机服务并复位说明（幂等）。
+    ///
+    /// 没有服务在跑时**也**要把说明复位：关掉开关后，设置页那行不该还留着上一次的失败文案 ——
+    /// 那一行是对用户的承诺（M06o）。
     func stopLocalServer() async {
-        guard let server = localServer else {
-            return
+        if let server = localServer {
+            await server.stop()
         }
-        await server.stop()
         localProxyPort = nil
         localProxyNotice = "本机服务已停止（需要 header 的 HLS 源可能播不了）。"
+    }
+
+    /// 开关（以及冷启动 / 回前台）触发的一次对账：**以开关当前值为准** —— 开 → 起、关 → 停。
+    ///
+    /// 为什么要排队：起停都是异步的，而 ``LocalHTTPServer`` 这个 actor 在 `await` 处会重入 ——
+    /// 两路并发（连点开关、或回前台撞上点开关）会各绑一次端口，先绑的那个就此成了没人管的监听。
+    /// 这里让后一次等前一次跑完，并且**每次执行时才读开关**，所以不管排队里积了几次，
+    /// 最终态都跟开关一致。
+    ///
+    /// 调用方：`AppModel.isLocalProxyEnabled` 的 `didSet`（经 ``applyProxySwitchToServer()``）、
+    /// `RootView` 的冷启动与回前台。
+    internal func syncLocalServerWithSwitch() async {
+        let previous = localProxyLifecycle
+        let task = Task { [weak self] in
+            _ = await previous?.value
+            await self?.reconcileLocalServer()
+        }
+        localProxyLifecycle = task
+        await task.value
+    }
+
+    /// `didSet` 用的同步壳子（属性观察器不能是 async）：丢一个 Task 去做对账，理由见上。
+    /// 与 ``applyLogPreferenceToHost()`` 同一套做法。
+    internal func applyProxySwitchToServer() {
+        Task { await syncLocalServerWithSwitch() }
+    }
+
+    /// 按开关当前的值起 / 停（两个原语就是上面那对，这里只做「选哪个」）；从队列里跑。
+    private func reconcileLocalServer() async {
+        if isLocalProxyEnabled {
+            await ensureLocalServer()
+        } else {
+            await stopLocalServer()
+        }
     }
 
     /// 播放资源的总入口：**已下载就播本地文件**（M10g），否则按需改走 `/proxy`。
