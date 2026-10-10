@@ -590,27 +590,21 @@ extension LibavFFmpegSession {
         // - 「输出」：真正交给显示层的像素格式（硬解是 VT 的 buffer、软解是我们转的 420v）
         //   与色彩标签（M04P20：从那张 buffer 上读回，HDR 有没有送出去看它）；
         // - 「丢帧」：解码侧丢了多少（转换不出来的帧）—— 显示侧我们没有读法，不替它写 0。
-        lock.lock()
-        let isHardware = actualDecodeIsHardware
-        let outputPixelFormat = actualOutputPixelFormat
-        let outputPrimaries = actualOutputPrimaries
-        let outputGamma = actualOutputGamma
-        let decoderDropped = decoderDroppedSnapshot
-        lock.unlock()
-        if let isHardware {
+        let snapshot = decodePathSnapshot()
+        if let isHardware = snapshot.isHardware {
             raw["hwdec-current"] = isHardware ? "videotoolbox" : "no"
         }
-        if let outputPixelFormat {
+        if let outputPixelFormat = snapshot.pixelFormat {
             raw["video-out-params/pixelformat"] = outputPixelFormat
         }
-        if let outputPrimaries {
+        if let outputPrimaries = snapshot.primaries {
             raw["video-out-params/primaries"] = outputPrimaries
         }
-        if let outputGamma {
+        if let outputGamma = snapshot.gamma {
             raw["video-out-params/gamma"] = outputGamma
         }
-        if decoderDropped > 0 {
-            raw["decoder-frame-drop-count"] = String(decoderDropped)
+        if snapshot.decoderDropped > 0 {
+            raw["decoder-frame-drop-count"] = String(snapshot.decoderDropped)
         }
         return PlaybackStats(rawValues: raw)
     }
@@ -877,5 +871,27 @@ extension LibavFFmpegSession {
         case .disabled: pendingSubtitleTrack = .disabled
         }
         lock.unlock()
+    }
+
+    /// 「第一帧实测」那组快照（`stats()` 要用）：一次进锁全带走。
+    ///
+    /// `stats()` 也是 `async`，不能在它体内直接加锁 —— 与 M03P11 六个控制方法同一理由。
+    /// 五个字段打包成一个快照回来，调用方拿到的还是「同一瞬间」的那组值（不逐字段加锁）。
+    private func decodePathSnapshot() -> (
+        isHardware: Bool?,
+        pixelFormat: String?,
+        primaries: String?,
+        gamma: String?,
+        decoderDropped: Int
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (
+            actualDecodeIsHardware,
+            actualOutputPixelFormat,
+            actualOutputPrimaries,
+            actualOutputGamma,
+            decoderDroppedSnapshot
+        )
     }
 }
