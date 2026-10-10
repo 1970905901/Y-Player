@@ -22,7 +22,7 @@ public actor FFmpegEngine: PlayerEngine, PlaybackStatsProviding {
     /// 用户选的解码方式（透传给会话：硬解走 VideoToolbox，软解走 libav）。
     nonisolated let decoderMode: DecoderMode
 
-    /// 会话工厂（单测注假的；生产走 ``FFmpegSessionFactory`` —— 现在给 nil）。
+    /// 会话工厂（单测注假的；生产走 ``FFmpegSessionFactory`` —— 需要画面层）。
     private let makeSession: @Sendable () -> (any FFmpegSession)?
     private var session: (any FFmpegSession)?
     private var eventLoop: Task<Void, Never>?
@@ -30,8 +30,8 @@ public actor FFmpegEngine: PlayerEngine, PlaybackStatsProviding {
     private var state: PlayerState = .idle
     private var duration: Double = 0
 
-    public init(decoderMode: DecoderMode = .hardware) {
-        self.init(decoderMode: decoderMode, makeSession: { FFmpegSessionFactory.make() })
+    public init(decoderMode: DecoderMode = .hardware, videoSurface: FFmpegVideoSurface? = nil) {
+        self.init(decoderMode: decoderMode, makeSession: { FFmpegSessionFactory.make(surface: videoSurface) })
     }
 
     /// 单测入口：注入会话工厂，不碰真管线。

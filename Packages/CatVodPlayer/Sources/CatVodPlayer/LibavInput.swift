@@ -54,6 +54,8 @@ final class LibavInput: @unchecked Sendable {
     struct MediaInfo: Equatable, Sendable {
         /// 容器报的时长（秒）；读不到为 0。
         var durationSeconds: Double
+        /// 容器名（`mov,mp4,m4a,3gp,3g2,mj2` 这类，FFmpeg 的说法）；读不到给空串。
+        var containerName: String
         var streams: [StreamInfo]
     }
 
@@ -126,8 +128,10 @@ final class LibavInput: @unchecked Sendable {
             }
         }
         let rawDuration = context.pointee.duration
+        let containerName = context.pointee.iformat.map { String(cString: $0.pointee.name) } ?? ""
         return MediaInfo(
             durationSeconds: rawDuration > 0 ? Double(rawDuration) / Self.avTimeBase : 0,
+            containerName: containerName,
             streams: streams
         )
         #else

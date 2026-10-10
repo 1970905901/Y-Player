@@ -50,12 +50,14 @@ public enum FFmpegSessionEvent: Sendable, Equatable {
     case tracks(video: [Int], audio: [Int], subtitle: [Int])
 }
 
-/// 会话工厂：真会话（M04P6 起）落成后从这里建。
-///
-/// 现在返回 nil —— 引擎会如实走「内核不可用」的路径，而不是假装能播。
+/// 会话工厂：真会话（`LibavFFmpegSession`）从这里建。
 public enum FFmpegSessionFactory {
-    public static func make() -> (any FFmpegSession)? {
-        // M04P6：`LibavFFmpegSession`（全工程唯一的 libav 调用点）落成后，这里换成真构造。
-        return nil
+    /// 建真会话。
+    ///
+    /// - Parameter surface: 画面层。**没给画面层就返回 nil** ——
+    ///   宁可说「不可用」，也不给一个没有画面的播放器（同 MPV 的纪律）。
+    public static func make(surface: FFmpegVideoSurface?) -> (any FFmpegSession)? {
+        guard let surface else { return nil }
+        return LibavFFmpegSession(surface: surface)
     }
 }

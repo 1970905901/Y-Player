@@ -3,6 +3,21 @@ import CoreMedia
 import CoreVideo
 import Foundation
 
+/// 会话对渲染器的要求（seam）：真实现是 ``LibavVideoRenderer``；单测用假实现验喂帧语义。
+protocol FFmpegVideoRendering: AnyObject, Sendable {
+    /// 显示层还能不能吃得下（背压信号）。
+    var isReadyForMoreMediaData: Bool { get }
+    /// 时间轴当前秒数。
+    var currentSeconds: Double { get }
+    /// 送一帧；返回 false = 转换失败，这一帧被跳过。
+    @discardableResult
+    func enqueue(pixelBuffer: CVPixelBuffer, presentationSeconds: Double, durationSeconds: Double) -> Bool
+    func play(rate: Float)
+    func pause()
+    /// 清掉已排队未显示的帧。
+    func flush()
+}
+
 /// 自研内核的**显示渲染器**（M04P8）：把解码帧送进 ``FFmpegVideoSurface`` 的显示层，
 /// 时间轴（播放 / 暂停 / 倍速 / 当前时间）由 `AVSampleBufferRenderSynchronizer` 管。
 ///
@@ -13,7 +28,7 @@ import Foundation
 ///
 /// 并发：`@unchecked Sendable` —— `AVSampleBufferDisplayLayer` 允许后台 enqueue / flush；
 /// synchronizer 的读写由调用方串行（将来是会话的控制路径）。
-final class LibavVideoRenderer: @unchecked Sendable {
+final class LibavVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
     private let layer: AVSampleBufferDisplayLayer
     private let synchronizer: AVSampleBufferRenderSynchronizer
 

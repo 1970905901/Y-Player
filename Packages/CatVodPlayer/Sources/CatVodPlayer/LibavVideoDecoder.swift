@@ -35,6 +35,8 @@ final class LibavVideoDecoder: @unchecked Sendable {
     private var formatContext: UnsafeMutablePointer<AVFormatContext>?
     private var streamIndex = -1
     private var timeBase = AVRational(num: 0, den: 1)
+    /// 上一次 `decodeFrames` 是否撞到了文件尾（EOF）。会话据此收尾：drain + 报结束。
+    private(set) var reachedEnd = false
 
     deinit {
         close()
@@ -114,6 +116,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
         guard let formatContext, codecContext != nil, streamIndex >= 0, count > 0 else {
             return []
         }
+        reachedEnd = false
         var frames: [Frame] = []
         guard let packet = av_packet_alloc(), let frame = av_frame_alloc() else {
             return []
@@ -127,7 +130,10 @@ final class LibavVideoDecoder: @unchecked Sendable {
 
         while frames.count < count {
             let readCode = av_read_frame(formatContext, packet)
-            guard readCode >= 0 else { break }
+            guard readCode >= 0 else {
+                reachedEnd = readCode == Self.eofCode
+                break
+            }
             if packet.pointee.stream_index == Int32(streamIndex) {
                 feed(packet, frame: frame, into: &frames, limit: count)
             }
@@ -139,6 +145,29 @@ final class LibavVideoDecoder: @unchecked Sendable {
         return []
         #endif
     }
+
+    /// 收尾：把解码器里还缓着的帧全收出来（EOF 之后调一次）。
+    ///
+    /// 硬解与 B 帧都会在解码器里留几帧，不冲一下就少画面。
+    func drain() -> [Frame] {
+        #if canImport(Libavcodec) && canImport(Libavformat) && canImport(Libavutil)
+        guard let codecContext else { return [] }
+        var frames: [Frame] = []
+        guard let frame = av_frame_alloc() else { return [] }
+        defer {
+            var framePointer: UnsafeMutablePointer<AVFrame>? = frame
+            av_frame_free(&framePointer)
+        }
+        _ = avcodec_send_packet(codecContext, nil) // NULL 包 = 冲解码器
+        while receive(into: &frames, frame: frame, limit: Int.max) { }
+        return frames
+        #else
+        return []
+        #endif
+    }
+
+    /// `AVERROR_EOF`（宏导不进来，值写死）：`FFERRTAG('E','O','F',' ')`。
+    private static let eofCode: Int32 = -541_478_725
 
     /// 关闭（**幂等**）。不碰借来的 `formatContext`。
     func close() {
