@@ -41,7 +41,10 @@ final class LibavFFmpegSession: FFmpegSession, @unchecked Sendable {
     private var finishedEof = false
 
     /// 生产入口：给画面层。
-    init(surface: FFmpegVideoSurface) {
+    ///
+    /// `convenience`：类的 designated init **不能** `self.init` 委派（actor 那套写法不能照搬，
+    /// M04P9 首轮编译就是红在这）。
+    convenience init(surface: FFmpegVideoSurface) {
         self.init(renderer: LibavVideoRenderer(surface: surface))
     }
 
