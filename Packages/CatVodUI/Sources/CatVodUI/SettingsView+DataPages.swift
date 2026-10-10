@@ -276,16 +276,18 @@ struct StorageBar: View {
 /// 这里把「清空」做成需要二次确认的破坏性操作。
 @MainActor
 struct SettingsCacheView: View {
-    /// 三个「清空」共用一次二次确认：点哪一行就把待确认目标换成哪一行。
+    /// 四个「清空」共用一次二次确认：点哪一行就把待确认目标换成哪一行。
     private enum ClearTarget {
         case source
         case home
+        case epg
         case all
 
         var confirmTitle: String {
             switch self {
             case .source: "确定清空源缓存？"
             case .home: "确定清空首页缓存？"
+            case .epg: "确定清空直播节目单缓存？"
             case .all: "确定清空全部缓存？"
             }
         }
@@ -296,8 +298,10 @@ struct SettingsCacheView: View {
                 "下次加载接口要重新下载配置（JS 源约 6 MB）。站点清单与播放设置不受影响。"
             case .home:
                 "首页与分类列表要重新请求一次。收藏、播放进度与站点配置都不受影响。"
+            case .epg:
+                "下次进直播页要重新下节目单（文件形态的源可能要下几 MB）。追剧与播放进度不受影响。"
             case .all:
-                "接口配置与首页数据都要重新拉取一次。收藏、播放进度与站点配置不受影响。"
+                "接口配置、首页数据与直播节目单都要重新拉取一次。收藏、播放进度与站点配置不受影响。"
             }
         }
     }
@@ -401,6 +405,9 @@ struct SettingsCacheView: View {
 
             clearRow(title: "首页缓存数据", target: .home, isEnabled: model.homeCacheByteCount > 0)
 
+            // 直播节目单（文件形态，M07d7）：清掉只是下次进直播页重下 —— 与上面两行同一套「看得见、清得掉」。
+            clearRow(title: "直播节目单缓存", target: .epg, isEnabled: model.liveEPGCacheByteCount > 0)
+
             clearRow(
                 title: "全部缓存 (\(model.formattedTotalCacheSize))",
                 target: .all,
@@ -439,6 +446,8 @@ struct SettingsCacheView: View {
             actionMessage = "已清理源缓存 \(model.clearSourceCache()) 个文件"
         case .home:
             actionMessage = "已清理首页缓存 \(model.clearHomeCache()) 个文件"
+        case .epg:
+            actionMessage = "已清理直播节目单缓存 \(model.clearLiveEPGCache()) 个文件"
         case .all:
             actionMessage = "已清理全部缓存 \(model.clearAllCaches()) 个条目"
         }

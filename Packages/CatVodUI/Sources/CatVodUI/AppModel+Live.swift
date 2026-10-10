@@ -335,8 +335,9 @@ public extension AppModel {
     /// 拉**源级文件**节目单（`epg` 里的 `.xml` / `.gz`，上游 `LiveApi.parseXml`）：一份覆盖多频道。
     ///
     /// 时机对齐上游 `LiveActivity.onLiveParsed(live)` → `mViewModel.parseXml(live)`：清单到手就拉一次。
-    /// 上游按「不是今天 / 超过 6 小时」判要不要重下（`EpgParser.refreshReason`），本项目不落盘，
-    /// 只用「缺今天」那一半（``EPGGuide/coversToday(now:)``）—— 进程重启内存缓存就没了，6 小时那半不需要。
+    /// 刷新判定在 ``EPGFileCachePolicy``（M07d7 起节目单**落盘**）：上游 `EpgParser.refreshReason`
+    /// 那三条（缺文件 / 不是今天 / 超 6 小时）既管磁盘那份、也管内存这份（``liveFileGuideFreshness``）——
+    /// 缓存新鲜的冷启动**不发请求**，直接上屏。
     ///
     /// 没配文件形态（源自己的 `epgXML` 为空、本地覆盖也不是整源 XML）时**直接返回**：
     /// 那是接口形态的活，由 ``requestLiveGuide(for:)`` 按可见频道逐频道拉。
@@ -350,13 +351,30 @@ public extension AppModel {
         guard !entries.isEmpty else {
             return
         }
-        if !force, let guide = liveFileGuide, guide.coversToday() {
+        let now = Date()
+        if !force, let guide = liveFileGuide, guide.coversToday(),
+           EPGFileCachePolicy.refreshReason(exists: true, modifiedAt: liveFileGuideFreshness, now: now) == nil
+        {
             return
         }
         do {
             let repository = LiveEPGRepository(transport: transportForConfiguration())
-            liveFileGuide = try await repository.load(source, fileURLs: entries)
-            liveEPGNotice = ""
+            let result = try await repository.load(
+                source,
+                fileURLs: entries,
+                cache: liveEPGCache,
+                force: force,
+                now: now
+            )
+            liveFileGuide = result.guide
+            liveFileGuideFreshness = result.freshness
+            if let failure = result.refreshFailure {
+                // 刷新失败、旧缓存兜住了：如实说「正在用缓存」，别让人以为这是刚拉的。
+                // 失败后每次进页面会再试一次（就一次请求）—— 比拿一份说不清新的东西强。
+                liveEPGNotice = "节目单刷新失败，正在用缓存：\(Self.liveMessage(failure))"
+            } else {
+                liveEPGNotice = ""
+            }
         } catch {
             // 一次进入只发这一次请求，所以这里不「静默」：拿不到就在列表上方说清楚原因。
             liveEPGNotice = Self.liveMessage(error)

@@ -32,6 +32,43 @@ public struct LiveEPGRepository: Sendable {
     /// 为什么要单独给一份：覆盖地址可能不带 `xml` / `gz` 字样（例如 `…/epg.php`），
     /// 过不了 ``LiveSource/epgXML`` 的过滤，得由 ``LiveEPGOverride/fileURLs(for:)`` 算出来。
     public func load(_ source: LiveSource, fileURLs: [String]) async throws -> EPGGuide {
+        try await load(source, fileURLs: fileURLs, cache: nil).guide
+    }
+
+    /// 一次带**落盘缓存**的「文件形态」加载结果（M07d7）。
+    public struct FileLoad: Sendable {
+        /// 合并后的节目单（缓存 + 网络）。
+        public var guide: EPGGuide
+        /// 这份结果的**数据时刻**：网络刚拿的算 `now`，用缓存兜底的取那份的落盘时间。
+        /// 界面据它判「内存里这份够不够新」——用的就是同一套 ``EPGFileCachePolicy`` 规则。
+        public var freshness: Date
+        /// 有地址刷新失败、由旧缓存兜住了：界面要**如实说**「正在用缓存」，
+        /// 别让人以为看到的是刚拉的。
+        public var refreshFailure: CatVodError?
+
+        public init(guide: EPGGuide, freshness: Date, refreshFailure: CatVodError? = nil) {
+            self.guide = guide
+            self.freshness = freshness
+            self.refreshFailure = refreshFailure
+        }
+    }
+
+    /// 带缓存地拉取并解析整源节目单（M07d7）；`cache: nil` 时就等于原来的「全走网络」。
+    ///
+    /// 判定在 ``EPGFileCachePolicy``（上游 `EpgParser.refreshReason` 三条：缺文件 / 不是今天 / 超 6 小时）。
+    /// 四个刻意的做法：
+    /// - **缓存里存原样字节**（gz 就存 gz）—— 解压后再存，一份全国性 XMLTV 就是几十 MB；
+    /// - **缓存坏了当没有**：解压 / 解析不成，照常联网，绝不拿半份节目单充数；
+    /// - **刷新失败不丢旧的**：有缓存就用缓存，原因放进 ``FileLoad/refreshFailure``
+    ///   （「正在用缓存」比「暂无节目」诚实，也比假装成功好）；
+    /// - **写缓存失败不影响这次结果**：缓存是加速器，不是正确性。
+    public func load(
+        _ source: LiveSource,
+        fileURLs: [String],
+        cache: LiveEPGFileCache?,
+        force: Bool = false,
+        now: Date = Date()
+    ) async throws -> FileLoad {
         let entries = fileURLs
         guard !entries.isEmpty else {
             throw CatVodError.unsupported(
@@ -44,36 +81,38 @@ public struct LiveEPGRepository: Sendable {
         let timeZone = EPGTimeParser.timeZone(named: source.timeZone)
         var guide = EPGGuide(timeZone: timeZone)
         var firstError: CatVodError?
+        var refreshFailure: CatVodError?
+        var freshness = now
         for entry in entries {
-            do {
-                let data = try await fetchData(entry, source: source)
-                guard let parsed = EPGXMLTVParser.parse(data: data, timeZone: timeZone) else {
-                    throw CatVodError.parseFailed(
-                        flag: source.name,
-                        reason: "节目单不是 XMLTV：\(String(entry.prefix(120)))"
-                    )
-                }
+            let result = await loadEntry(
+                entry,
+                source: source,
+                timeZone: timeZone,
+                cache: cache,
+                force: force,
+                now: now
+            )
+            if let parsed = result.guide {
                 guide = guide.merging(parsed)
-            } catch let error as CatVodError {
-                // 记下第一个错误：地址可能配了多个，全都拿不到才把错误抛给界面。
-                if firstError == nil {
-                    firstError = error
+                if let stamp = result.freshness {
+                    freshness = min(freshness, stamp)
                 }
-            } catch {
-                // 传输层已把底层错误统一包成 `CatVodError`（M6 请求管线），这里兜住漏网的实现：
-                // 格式上必须是裸 `catch`（SwiftFormat `redundantLetError`；与 `URLSessionTransport` 同一写法）。
-                if firstError == nil {
-                    firstError = CatVodError.parseFailed(
-                        flag: source.name,
-                        reason: "节目单拉取失败：\(String(entry.prefix(120))) — \(error)"
-                    )
-                }
+            }
+            guard let error = result.error else {
+                continue
+            }
+            if result.guide == nil {
+                // 这条真没拿到节目单：记下第一个错误，全都拿不到才抛给界面。
+                firstError = firstError ?? error
+            } else {
+                // 有旧缓存顶上：这不是「失败」，是「刷新失败」—— 分开记，界面的话不一样。
+                refreshFailure = refreshFailure ?? error
             }
         }
         guard !guide.isEmpty else {
             throw firstError ?? CatVodError.parseFailed(flag: source.name, reason: "节目单没有可用内容")
         }
-        return guide
+        return FileLoad(guide: guide, freshness: freshness, refreshFailure: refreshFailure)
     }
 
     /// 拉取一个频道的节目单（**x-tvg 接口**形态：逐频道 × 昨天/今天/明天）。
@@ -168,8 +207,88 @@ public struct LiveEPGRepository: Sendable {
         return url.addingPercentEncoding(withAllowedCharacters: allowed) ?? url
     }
 
-    /// 取一个节目单地址的**原始字节**（`.gz` 在这里解开）；便于单测与诊断。
-    public func fetchData(_ entry: String, source: LiveSource) async throws -> Data {
+    /// 一个地址这一次的结果（私有）。
+    private struct EntryLoad {
+        /// 解析出来的节目单（缓存新鲜、网络成功、或旧缓存兜底；都没有则 nil）。
+        var guide: EPGGuide?
+        /// 用缓存时那份的**落盘时间**（网络刚拿的为 nil）。
+        var freshness: Date?
+        /// 这次没拿到**新数据**的原因（拿到新数据时为 nil）。
+        var error: CatVodError?
+    }
+
+    /// 一个地址：新鲜缓存直接用；否则联网（拿到就写盘）；联网失败时旧缓存兜底。
+    private func loadEntry(
+        _ entry: String,
+        source: LiveSource,
+        timeZone: TimeZone,
+        cache: LiveEPGFileCache?,
+        force: Bool,
+        now: Date
+    ) async -> EntryLoad {
+        let key: String
+        do {
+            key = try resolve(entry, source: source).absoluteString
+        } catch let error as CatVodError {
+            return EntryLoad(error: error)
+        } catch {
+            // `resolve` 只抛 `CatVodError`；这里兜住未来的改动（格式上与上面那条一致：裸 `catch`）。
+            return EntryLoad(error: CatVodError.parseFailed(
+                flag: source.name,
+                reason: "节目单地址无法构造 URL：\(String(entry.prefix(120)))"
+            ))
+        }
+        let cached = cache?.read(key)
+        if !force, let cached,
+           EPGFileCachePolicy.refreshReason(exists: true, modifiedAt: cached.modifiedAt, now: now) == nil,
+           let parsed = guide(fromStored: cached.data, entry: entry, timeZone: timeZone, source: source) {
+            return EntryLoad(guide: parsed, freshness: cached.modifiedAt)
+        }
+        do {
+            let raw = try await fetchRawData(entry, source: source)
+            cache?.store(raw, for: key)
+            return EntryLoad(guide: try guide(fromFetched: raw, entry: entry, timeZone: timeZone, source: source))
+        } catch let error as CatVodError {
+            return EntryLoad(
+                guide: cached.flatMap { guide(fromStored: $0.data, entry: entry, timeZone: timeZone, source: source) },
+                freshness: cached?.modifiedAt,
+                error: error
+            )
+        } catch {
+            // 传输层已把底层错误统一包成 `CatVodError`（M6 请求管线），这里兜住漏网的实现：
+            // 格式上必须是裸 `catch`（SwiftFormat `redundantLetError`；与 `URLSessionTransport` 同一写法）。
+            return EntryLoad(
+                guide: cached.flatMap { guide(fromStored: $0.data, entry: entry, timeZone: timeZone, source: source) },
+                freshness: cached?.modifiedAt,
+                error: CatVodError.parseFailed(
+                    flag: source.name,
+                    reason: "节目单拉取失败：\(String(entry.prefix(120))) — \(error)"
+                )
+            )
+        }
+    }
+
+    /// 缓存里的原始字节（可能是 gz）→ 节目单；解压 / 解析任何一步不成给 nil
+    /// （调用方决定是「当没缓存、去联网」还是「报错」）。
+    private func guide(fromStored raw: Data, entry: String, timeZone: TimeZone, source: LiveSource) -> EPGGuide? {
+        guard let plain = try? Self.decompressed(raw, entry: entry, source: source) else {
+            return nil
+        }
+        return EPGXMLTVParser.parse(data: plain, timeZone: timeZone)
+    }
+
+    /// 联网刚拿到的原始字节 → 节目单；不成**抛错**（文案要说清是解压还是格式）。
+    private func guide(fromFetched raw: Data, entry: String, timeZone: TimeZone, source: LiveSource) throws -> EPGGuide {
+        let plain = try Self.decompressed(raw, entry: entry, source: source)
+        guard let parsed = EPGXMLTVParser.parse(data: plain, timeZone: timeZone) else {
+            throw CatVodError.parseFailed(flag: source.name, reason: "节目单不是 XMLTV：\(String(entry.prefix(120)))")
+        }
+        return parsed
+    }
+
+    /// 取一个节目单地址的**原样字节**（不解 gz）—— 落盘缓存存的就是它：
+    /// 解压后再存，一份全国性 XMLTV 几十 MB，而 gz 只有几 MB。
+    private func fetchRawData(_ entry: String, source: LiveSource) async throws -> Data {
         let url = try resolve(entry, source: source)
         let request = HTTPRequest(
             url: url,
@@ -185,10 +304,15 @@ public struct LiveEPGRepository: Sendable {
                 reason: "节目单「\(String(entry.prefix(120)))」返回非 2xx"
             )
         }
-        guard GZipDecoder.looksLikeGzip(response.body) else {
-            return response.body
+        return response.body
+    }
+
+    /// gz 按魔数解（不是 gz 原样返回）；解不开**抛** —— 与「不是 XMLTV」分开说，日志与用户提示才分得清是哪一步。
+    private static func decompressed(_ raw: Data, entry: String, source: LiveSource) throws -> Data {
+        guard GZipDecoder.looksLikeGzip(raw) else {
+            return raw
         }
-        guard let decoded = GZipDecoder.decode(response.body) else {
+        guard let decoded = GZipDecoder.decode(raw) else {
             throw CatVodError.parseFailed(
                 flag: source.name,
                 reason: "节目单 gzip 解压失败：\(String(entry.prefix(120)))"

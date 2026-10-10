@@ -49,10 +49,31 @@ public extension AppModel {
         sourceCacheSummary()?.totalByteCount ?? 0
     }
 
-    /// 两处缓存的合计 —— 参考图里「全部缓存 (42.34MB)」的口径就是它们之和
+    /// 直播节目单缓存目录（`YPlayer/Sources/LiveEPG`，与接口 / 首页缓存同根，便于一起统计「全部缓存」）。
+    var liveEPGCacheDirectory: URL {
+        cacheDirectory.appendingPathComponent("LiveEPG", isDirectory: true)
+    }
+
+    /// 文件形态直播节目单的落盘缓存（M07d7）：新鲜的缓存让冷启动不进网络。
+    var liveEPGCache: LiveEPGFileCache {
+        LiveEPGFileCache(directory: liveEPGCacheDirectory)
+    }
+
+    /// 节目单缓存占用（字节）。
+    var liveEPGCacheByteCount: Int64 {
+        liveEPGCache.summary().byteCount
+    }
+
+    /// 清空节目单缓存，返回删除的文件数。
+    @discardableResult
+    func clearLiveEPGCache() -> Int {
+        liveEPGCache.clear()
+    }
+
+    /// 三处缓存的合计 —— 参考图里「全部缓存 (42.34MB)」的口径就是它们之和
     /// （下载占用属于下载管理，本地库属于存储，都不算在缓存里）。
     var totalCacheByteCount: Int64 {
-        sourceCacheByteCount + homeCacheByteCount
+        sourceCacheByteCount + homeCacheByteCount + liveEPGCacheByteCount
     }
 
     /// 「全部缓存」的展示文本。
@@ -60,10 +81,10 @@ public extension AppModel {
         SourceCacheStore.Summary.format(byteCount: totalCacheByteCount)
     }
 
-    /// 清空全部缓存（接口 + 首页），返回删除的条目数。
+    /// 清空全部缓存（接口 + 首页 + 节目单），返回删除的条目数。
     @discardableResult
     func clearAllCaches() -> Int {
-        clearSourceCache() + clearHomeCache()
+        clearSourceCache() + clearHomeCache() + clearLiveEPGCache()
     }
 
     // MARK: - 接口（源配置）缓存

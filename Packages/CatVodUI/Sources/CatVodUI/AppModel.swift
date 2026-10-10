@@ -318,6 +318,11 @@ public final class AppModel: ObservableObject {
     /// 与 ``liveGuides`` 的分工：接口形态（x-tvg）按频道存，文件形态按整份存。
     @Published public internal(set) var liveFileGuide: EPGGuide?
 
+    /// 文件形态节目单的**数据时刻**（M07d7）：内存里这份够不够新由它判 ——
+    /// 与磁盘缓存同一套 ``EPGFileCachePolicy`` 规则（今天下的、不满 6 小时）。不 `@Published`：
+    /// 界面不直接读它（列表读的是 ``liveFileGuide`` 与 ``liveEPGNotice``）。
+    var liveFileGuideFreshness: Date = .distantPast
+
     /// 直播页「可见即预取」（x-tvg 接口形态）的运行时状态。界面不直接读它，读的是
     /// ``liveGuides`` 与 ``liveEPGNotice``；因此这几个都不 `@Published`。
     ///
