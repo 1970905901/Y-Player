@@ -74,7 +74,7 @@ public struct PlaybackView: View {
     @State private var subtitleTracks: [Int] = []
     /// 当前选中的轨道（界面态；换片时回到「自动」）。
     @State private var audioSelection: TrackSelection = .auto
-    @State private var subtitleSelection: TrackSelection = .auto
+    @State var subtitleSelection: TrackSelection = .auto
     /// MPV 手势：拖动开始时的基准值（手势给的是相对量）。
     @State private var gestureBasePosition: Double?
     @State private var gestureBaseVolume: Double?
