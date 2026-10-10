@@ -15,7 +15,7 @@ import FoundationNetworking
 /// 这两项会在「接口管理 → 告警」里如实报给用户（见 `ConfigCoverage`），
 /// 而不是静默忽略。真正要支持，得自建连接层（`Network.framework` + 按主机名校验证书），
 /// 方案与代价见 `docs/任务记录/M06m-DNS方案与决策.md`。
-public actor URLSessionTransport: HTTPDownloadingTransport {
+public actor URLSessionTransport: HTTPDownloadingTransport, HTTPStreamingTransport {
     /// 传输层配置。
     public struct Configuration: Sendable {
         /// 未显式指定超时时的默认值（秒）。
@@ -155,6 +155,30 @@ public actor URLSessionTransport: HTTPDownloadingTransport {
         }
     }
 
+    /// 流式取回（M25P2）：`URLSession.bytes(for:)` 逐字节读、攒够 64KB 交一块。
+    ///
+    /// 为什么自己攒块而不是直接吐 `AsyncBytes`：直链下载要的是「块」（每块写一次盘、
+    /// 报一次进度），`AsyncBytes` 的粒度是字节 —— 攒块的循环比逐字节交给上层省一堆调用。
+    /// （`bytes(for:)` 的逐字节迭代在内存里是缓冲弹出的循环，不是每字节一次挂起。）
+    public func stream(_ request: HTTPRequest) async throws -> HTTPStream {
+        let urlRequest = try prepare(request)
+        let session = session(for: urlRequest.url ?? request.url)
+        do {
+            let (bytes, response) = try await session.bytes(for: urlRequest)
+            let pump = StreamPump()
+            return HTTPStream(
+                status: httpStatus(response),
+                headers: headers(from: response),
+                chunks: pump.makeChunks(bytes: bytes),
+                cancel: { pump.cancel() }
+            )
+        } catch let error as CatVodError {
+            throw error
+        } catch {
+            throw CatVodError.network(status: nil, url: urlRequest.url?.absoluteString ?? "", reason: error.localizedDescription)
+        }
+    }
+
     private func httpStatus(_ response: URLResponse) -> Int {
         (response as? HTTPURLResponse)?.statusCode ?? 0
     }
@@ -233,5 +257,54 @@ public actor URLSessionTransport: HTTPDownloadingTransport {
             return lowered.hasSuffix(String(rule.dropFirst(1)))
         }
         return lowered.hasSuffix("." + rule) || lowered.contains(rule)
+    }
+}
+
+/// 把 `AsyncBytes` 攒成 64KB 的块、并留一个「取消」把手（M25P2）。
+///
+/// 单独一个类是因为 `AsyncThrowingStream` 没有「停止生产」的接口，而下载器暂停 /
+/// 放弃剩余时必须能把生产停掉 —— 否则取消之后生产者还会往无界缓冲里灌数据。
+private final class StreamPump: @unchecked Sendable {
+    private static let chunkBytes = 64 * 1024
+    private let lock = NSLock()
+    private var task: Task<Void, Never>?
+
+    func makeChunks(bytes: URLSession.AsyncBytes) -> AsyncThrowingStream<Data, Error> {
+        AsyncThrowingStream<Data, Error>(bufferingPolicy: .unbounded) { continuation in
+            let task = Task {
+                do {
+                    var buffer = Data(capacity: Self.chunkBytes)
+                    for try await byte in bytes {
+                        buffer.append(byte)
+                        if buffer.count >= Self.chunkBytes {
+                            continuation.yield(buffer)
+                            buffer.removeAll(keepingCapacity: true)
+                        }
+                    }
+                    if !buffer.isEmpty {
+                        continuation.yield(buffer)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            lock.lock()
+            self.task = task
+            lock.unlock()
+            // 消费端提前停下（流被释放 / 被放弃）：把生产也停掉。
+            continuation.onTermination = { [weak self] _ in
+                self?.cancel()
+            }
+        }
+    }
+
+    /// 取消生产：取消迭代任务 —— `AsyncBytes` 会随之收尾，`chunks` 以错误结束。
+    func cancel() {
+        lock.lock()
+        let task = self.task
+        self.task = nil
+        lock.unlock()
+        task?.cancel()
     }
 }

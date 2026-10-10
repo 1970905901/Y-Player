@@ -100,6 +100,26 @@ struct LocalHTTPServerTests {
         }
     }
 
+    @Test("流式取回：URLSessionTransport.stream 的块拼起来就是整份响应（M25P2）")
+    func streamingTransportReadsBody() async throws {
+        // 200KB：跨过实现里 64KB 攒块的边界，块数不止一块
+        let blob = Data(repeating: 0x41, count: 200_000)
+        let upstream = StubUpstreamTransport(body: blob)
+        try await withLocalServer(upstream: upstream) { port in
+            let target = "https://cdn.example.com/movie.mp4"
+            let url = try #require(LocalProxyURLBuilder(port: port).proxyURL(for: target))
+            let transport = URLSessionTransport()
+
+            let stream = try await transport.stream(HTTPRequest(url: url))
+            #expect(stream.status == 200)
+            var received = Data()
+            for try await chunk in stream.chunks {
+                received.append(chunk)
+            }
+            #expect(received == blob)
+        }
+    }
+
     @Test("缺 url → 400；未知路径 → 404；上游失败 → 502")
     func errorPaths() async throws {
         let failing = StubUpstreamTransport(

@@ -14,17 +14,20 @@ import Foundation
 /// 2. **每片都带同一套 header**：站点鉴权多半挂在 header 上，漏一片就是 403；
 /// 3. **失败即停**：一片失败就按 ``DownloadQueue`` 的规则回退，**不跳过接着下** ——
 ///    那样会得到一个中间少一段的文件，而且没有任何迹象；
-/// 4. **半途停下留着半成品，下次接着下**（M10n）：账目 = ``DownloadTask/completedSegments``
-///    + 清单前缀指纹（``HLSManifest/segmentFingerprint(prefix:)``），都存在任务里。
-///    文件按账目的字节数对账（多出来的尾巴截掉）；指纹对不上就整份重下 —— 绝不硬拼。
-///    直链不做续下（一整块一次写，账目无处可对）；
+/// 4. **半途停下留着半成品，下次接着下**（M10n / M25P2）：账目都存在任务里 ——
+///    HLS 是 ``DownloadTask/completedSegments`` + 清单前缀指纹
+///    （``HLSManifest/segmentFingerprint(prefix:)``），直链是 ``DownloadTask/receivedBytes``
+///    + ``DownloadTask/expectedBytes``（整份总长）。对账不过就整份重下 —— 绝不硬拼；
 /// 5. **加密片段（AES-128）先解密再写**（M10k）：密钥按 URI 缓存（同一份清单同一把 key 只取一次）、
 ///    IV 用解析器兜好的那个；密钥 / IV / 密文任何一步不对就**直接报错**，绝不把密文写进成品；
 /// 6. **字节范围片段发 `Range` 再拼**（M10l）：同一条 URI 上的多段靠范围区分；
 ///    上游没按范围回（非 206）或回的字节数对不上就**报错**，不把整段文件当一段拼进去。
 /// 7. **暂停 = 取消执行句柄**（M10m）：上层暂停 / 删除一条正在下的任务时取消它的 `Task`，
 ///    这里在分片之间（`Task.checkCancellation`）与当前请求被中断时停下，回「已暂停」而不是失败；
-///    停下的账目见第 4 条（半成品留着、下次接着下）。
+///    停下的账目见第 4 条（半成品留着、下次接着下）；
+/// 8. **直链走流式落盘**（M25P2，`DownloadRunner+Direct.swift`）：响应体分块写盘，
+///    大文件不进内存；半途失败 / 暂停留下的字节就是直链的续下账目。传输不支持流式时
+///    退回「整份取回来再写」（小响应与测试替身走这条）。
 ///
 /// 不持有 `FileManager`：`FileManager` 在 Swift 6 下不是 `Sendable`，各方法内部用 `.default`
 /// 反而更省事（与 ``StorageSpace`` 把 fileManager 当参数传是同一个理由）。
@@ -105,6 +108,7 @@ public struct DownloadRunner: Sendable {
                 stopped.completedSegments = partial.completedSegments
                 stopped.resumeFingerprint = partial.fingerprint
                 stopped.receivedBytes = partial.receivedBytes
+                stopped.expectedBytes = partial.expectedBytes
                 underlying = partial.underlying
             }
             // 句柄被取消 = 用户暂停 / 删除（AppModel 只在这两处取消它）。
@@ -122,7 +126,8 @@ public struct DownloadRunner: Sendable {
 
     // MARK: - 内部
 
-    private struct FetchDone {
+    // （internal：拆分出的 `DownloadRunner+Direct.swift` 也要用，不能是 private。）
+    struct FetchDone {
         var received: Int64
         var expected: Int64
         var fileURL: URL
@@ -137,11 +142,13 @@ public struct DownloadRunner: Sendable {
     /// 为什么包一层错误：账目是 `writeSegments` 的局部变量长出来的，抛错是它唯一能出去的通道 ——
     /// 不能再像 M10d 那样「失败就把半成品删了」（那样续下无从谈起）。
     ///
-    /// **不带 `expectedBytes`**（M25）：中途停下只知道「收过的那些片」的长度之和，那不是整份
-    /// 总长 —— 宁可让进度保持「未知」，也不拿前缀冒充总量。
-    private struct PartialStop: Error {
+    /// `expectedBytes` 只带**真知道的**整份总长（M25P2 的直链：Content-Length / Content-Range）；
+    /// HLS 中途只知道「收过的那些片」的长度之和，那不是总长 —— 传 0（宁可保持未知）。
+    // （internal：拆分出的 `DownloadRunner+Direct.swift` 也要用，不能是 private。）
+    struct PartialStop: Error {
         var completedSegments: Int
         var receivedBytes: Int64
+        var expectedBytes: Int64
         var fingerprint: String
         var underlying: Error
     }
@@ -162,6 +169,19 @@ public struct DownloadRunner: Sendable {
     ) async throws -> FetchDone {
         // 已经取消（暂停落在开跑之前）：一个请求都不发。
         try Task.checkCancellation()
+        // 能流式就流式（M25P2）：直链大文件不该整份进内存 —— 先流式看开头，
+        // 不是清单就当场落盘、边收边写；清单（本来就小）才整份收进内存走 HLS 那套。
+        if let streaming = transport as? HTTPStreamingTransport {
+            return try await downloadStreaming(task, streaming: streaming, onProgress: onProgress)
+        }
+        return try await downloadBuffered(task, onProgress: onProgress)
+    }
+
+    /// 非流式传输：整份取回来再判断（小响应与测试替身走这条）。
+    private func downloadBuffered(
+        _ task: DownloadTask,
+        onProgress: (@Sendable (DownloadProgress) -> Void)?
+    ) async throws -> FetchDone {
         let first = try await fetch(task.url, task: task)
         let manifest = HLSManifestParser.parse(text: first.text, baseURL: task.url)
 
@@ -172,7 +192,16 @@ public struct DownloadRunner: Sendable {
             onProgress?(DownloadProgress(receivedBytes: size, expectedBytes: size, completedSegments: 0, totalSegments: 0))
             return FetchDone(received: size, expected: size, fileURL: fileURL, completedSegments: 0, fingerprint: "")
         }
+        return try await downloadManifest(manifest, task: task, onProgress: onProgress)
+    }
 
+    /// 清单 → 主清单选路 → 四道对账 → 逐片下载（两条取回路径共用；M10c / M10n）。
+    // （internal：拆分出的 `DownloadRunner+Direct.swift` 也要用，不能是 private。）
+    func downloadManifest(
+        _ manifest: HLSManifest,
+        task: DownloadTask,
+        onProgress: (@Sendable (DownloadProgress) -> Void)?
+    ) async throws -> FetchDone {
         // 主清单：按带宽最高的变体再取一次媒体清单（M10c 的选路规则）。
         var media = manifest
         if manifest.isMaster {
@@ -272,6 +301,7 @@ public struct DownloadRunner: Sendable {
     }
 
     /// `Content-Length`（不区分大小写；取不到 = nil —— 那时进度就是「未知」）。
+    // （internal：拆分出的 `DownloadRunner+Direct.swift` 也要用，不能是 private。）
     static func contentLength(_ headers: [String: String]) -> Int64? {
         for (key, value) in headers where key.lowercased() == "content-length" {
             if let length = Int64(value.trimmingCharacters(in: .whitespaces)), length >= 0 {
@@ -335,6 +365,8 @@ public struct DownloadRunner: Sendable {
             throw PartialStop(
                 completedSegments: completed,
                 receivedBytes: received,
+                // HLS 中途的总长是不知道的（只见过前缀）—— 传 0，别让进度条显示一个假百分比。
+                expectedBytes: 0,
                 fingerprint: manifest.segmentFingerprint(prefix: completed),
                 underlying: error
             )
@@ -393,7 +425,8 @@ public struct DownloadRunner: Sendable {
     ///
     /// 文件名里带上**站点 key**：不同站点可能有同名同集的剧，不带就会互相覆盖
     /// （`fileNameBase` 只由片名 / 集名 / 线路拼成）。
-    private func fileURL(for task: DownloadTask, suffix: String) throws -> URL {
+    // （internal：拆分出的 `DownloadRunner+Direct.swift` 也要用，不能是 private。）
+    func fileURL(for task: DownloadTask, suffix: String) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let base = DownloadTask.sanitized("\(task.fileNameBase) · \(task.siteKey)")
         return directory.appendingPathComponent(base).appendingPathExtension(suffix)
@@ -434,6 +467,7 @@ public struct DownloadRunner: Sendable {
     }
 
     /// 文件现在多大（不存在 = nil）。
+    // （internal：拆分出的 `DownloadRunner+Direct.swift` 也要用，不能是 private。）
     static func fileSize(of url: URL) -> Int64? {
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
         return (attributes?[.size] as? NSNumber)?.int64Value
@@ -447,14 +481,16 @@ public struct DownloadRunner: Sendable {
         try handle.truncate(atOffset: UInt64(size))
     }
 
-    /// 一次性写一个文件（直链那条路径）。
-    private func write(_ data: Data, as task: DownloadTask, suffix: String) throws -> URL {
+    /// 一次性写一个文件（直链那条路径 / 流式路径里「清单却不是清单」的兜底）。
+    // （internal：拆分出的 `DownloadRunner+Direct.swift` 也要用，不能是 private。）
+    func write(_ data: Data, as task: DownloadTask, suffix: String) throws -> URL {
         let url = try makeFile(for: task, suffix: suffix)
         try data.write(to: url)
         return url
     }
 
     /// 直链的后缀：取地址路径里的扩展名；认不出来就按 `mp4`（播放器主要吃这个）。
+    // （internal：拆分出的 `DownloadRunner+Direct.swift` 也要用，不能是 private。）
     static func suffix(for url: String) -> String {
         let path = URL(string: url)?.pathExtension ?? ""
         guard (1 ... 5).contains(path.count), path.allSatisfy({ $0.isLetter || $0.isNumber }) else {

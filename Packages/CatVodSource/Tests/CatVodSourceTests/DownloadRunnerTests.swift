@@ -18,30 +18,8 @@ private actor DownloadStubTransport: HTTPTransport {
         guard let response = responses[request.url.absoluteString] else {
             return HTTPResponse(status: 404)
         }
-        // 带 Range 的请求按真服务器那样切片回 206（M10l 的字节范围夹具要用）。
-        guard let rangeHeader = request.headers["Range"], let range = Self.parseRange(rangeHeader) else {
-            return response
-        }
-        guard range.lowerBound >= 0, range.upperBound <= response.body.count else {
-            return HTTPResponse(status: 416)
-        }
-        return HTTPResponse(
-            status: 206,
-            headers: ["Content-Range": "bytes \(range.lowerBound)-\(range.upperBound - 1)/\(response.body.count)"],
-            body: response.body.subdata(in: range)
-        )
-    }
-
-    /// `bytes=a-b` → 半开区间（`b` 含）。
-    private static func parseRange(_ text: String) -> Range<Int>? {
-        guard text.hasPrefix("bytes=") else {
-            return nil
-        }
-        let parts = text.dropFirst("bytes=".count).split(separator: "-")
-        guard parts.count == 2, let start = Int(parts[0]), let end = Int(parts[1]), start <= end else {
-            return nil
-        }
-        return start ..< (end + 1)
+        // 带 Range 的请求按真服务器那样切片回 206（M10l 的字节范围夹具、M25P2 的直链续下都要用）。
+        return sliced(response, for: request.headers["Range"])
     }
 
     func requestedURLs() -> [String] {
@@ -59,7 +37,8 @@ private actor DownloadStubTransport: HTTPTransport {
 }
 
 /// 进度回调的记录器（回调从执行器的上下文来，得自己上锁）。
-private final class ProgressRecorder: @unchecked Sendable {
+// （internal：拆分出的 `DownloadRunnerStreamingTests.swift` 也要用，不能是 private。）
+final class ProgressRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var items: [DownloadProgress] = []
 
@@ -131,8 +110,47 @@ private actor CancellableStubTransport: HTTPTransport {
     }
 }
 
-/// 一条标准下载任务（各用例共用；放文件级是为了让测试结构体的类型体留在 lint 上限里）。
-private func makeTask(_ url: String) -> DownloadTask {
+/// `bytes=a-b` / `bytes=a-` → `(start, end?)`（`end` 含；nil = 到文件末尾）。
+// （internal：拆分出的 `DownloadRunnerStreamingTests.swift` 也要用，不能是 private。）
+func parseRangeBounds(_ text: String) -> (start: Int, end: Int?)? {
+    guard text.hasPrefix("bytes=") else {
+        return nil
+    }
+    let parts = text.dropFirst("bytes=".count).split(separator: "-", omittingEmptySubsequences: false)
+    guard parts.count == 2, let start = Int(parts[0]) else {
+        return nil
+    }
+    if parts[1].isEmpty {
+        return (start, nil)
+    }
+    guard let end = Int(parts[1]), start <= end else {
+        return nil
+    }
+    return (start, end)
+}
+
+/// 像真服务器那样切一段（M10l / M25P2 的桩共用）：带 `Range` 就回 206 + `Content-Range`，
+/// 起点越界回 416，没带 Range 原样回 200。
+// （internal：拆分出的 `DownloadRunnerStreamingTests.swift` 也要用，不能是 private。）
+func sliced(_ response: HTTPResponse, for rangeHeader: String?) -> HTTPResponse {
+    guard let rangeHeader, let bounds = parseRangeBounds(rangeHeader) else {
+        return response
+    }
+    let count = response.body.count
+    guard bounds.start < count else {
+        return HTTPResponse(status: 416)
+    }
+    let end = min(bounds.end ?? (count - 1), count - 1)
+    return HTTPResponse(
+        status: 206,
+        headers: ["Content-Range": "bytes \(bounds.start)-\(end)/\(count)"],
+        body: response.body.subdata(in: bounds.start ..< (end + 1))
+    )
+}
+
+/// 一条标准下载任务（两套下载用例共用；放文件级是为了让测试结构体的类型体留在 lint 上限里）。
+// （internal：拆分出的 `DownloadRunnerStreamingTests.swift` 也要用，不能是 private。）
+func makeTask(_ url: String) -> DownloadTask {
     DownloadTask(
         siteKey: "wogg",
         title: "某剧",
@@ -165,20 +183,43 @@ private func partialTask(
     return (task, fileName)
 }
 
-private func writePartial(_ text: String, named name: String, in directory: URL) throws {
+// （internal：拆分出的 `DownloadRunnerStreamingTests.swift` 也要用，不能是 private。）
+func writePartial(_ data: Data, named name: String, in directory: URL) throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    try Data(text.utf8).write(to: directory.appendingPathComponent(name))
+    try data.write(to: directory.appendingPathComponent(name))
+}
+
+func writePartial(_ text: String, named name: String, in directory: URL) throws {
+    try writePartial(Data(text.utf8), named: name, in: directory)
+}
+
+/// 下载测试的落盘根目录（`DownloadRunnerTests` 与 `DownloadRunnerStreamingTests` 共用）。
+private let downloadTestRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+    .appendingPathComponent("yplayer-download-tests")
+
+/// 清出一个干净的测试目录（两套下载用例共用）。
+func makeDownloadTestDirectory(_ name: String) throws -> URL {
+    let url = downloadTestRoot.appendingPathComponent(name)
+    try? FileManager.default.removeItem(at: url)
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    return url
+}
+
+/// 轮询等一个条件成立（最多约 2 秒）—— 两套下载用例共用。
+func waitUntil(_ condition: () async -> Bool) async -> Bool {
+    for _ in 0 ..< 100 {
+        if await condition() {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+    }
+    return await condition()
 }
 
 @Suite("下载执行器：直链 / HLS 拼接 / 失败回退")
 struct DownloadRunnerTests {
-    private let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("yplayer-download-tests")
-
     private func makeDirectory(_ name: String) throws -> URL {
-        let url = root.appendingPathComponent(name)
-        try? FileManager.default.removeItem(at: url)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
+        try makeDownloadTestDirectory(name)
     }
 
     private func playlist(_ body: String) -> HTTPResponse {
@@ -562,17 +603,6 @@ struct DownloadRunnerTests {
 
     // MARK: - 暂停 = 取消执行句柄（M10m）
 
-    /// 轮询等一个条件成立（最多约 2 秒）。
-    private static func waitUntil(_ condition: () async -> Bool) async -> Bool {
-        for _ in 0 ..< 100 {
-            if await condition() {
-                return true
-            }
-            try? await Task.sleep(nanoseconds: 20_000_000)
-        }
-        return await condition()
-    }
-
     @Test("取分片途中被取消：回「已暂停」，不吃重试额度，半成品删掉（M10m）")
     func cancellationDuringSegment() async throws {
         let directory = try makeDirectory("cancel-segment")
@@ -589,7 +619,7 @@ struct DownloadRunnerTests {
         let task = makeTask(index)
 
         let handle = Task { await runner.run(task) }
-        let inFlight = await Self.waitUntil { await transport.hasStarted(second) }
+        let inFlight = await waitUntil { await transport.hasStarted(second) }
         #expect(inFlight)
         handle.cancel()
         let outcome = await handle.value
@@ -649,7 +679,7 @@ struct DownloadRunnerTests {
         let task = makeTask(index)
 
         let handle = Task { await runner.run(task) }
-        let inFlight = await Self.waitUntil { await transport.hasStarted(second) }
+        let inFlight = await waitUntil { await transport.hasStarted(second) }
         #expect(inFlight)
         handle.cancel()
         let outcome = await handle.value

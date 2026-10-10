@@ -296,7 +296,8 @@ public extension AppModel {
     /// 为什么不动状态：用户可能已经点了「继续」（状态是 `.waiting`），账目晚一步回来
     /// 不能把它按回去 —— M10m 首验的抢写就是栽在「谁都能写状态」上。
     func mergeDownloadLedger(id: String, from outcome: DownloadTask) async {
-        guard outcome.completedSegments > 0 else {
+        // 有账目才并：HLS 是片段数、直链是字节数（M25P2）；两样都没有就没什么可留的。
+        guard outcome.completedSegments > 0 || outcome.receivedBytes > 0 else {
             return
         }
         await updateDownload(id: id) { task in

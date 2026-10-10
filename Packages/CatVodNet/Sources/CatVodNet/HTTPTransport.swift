@@ -111,6 +111,42 @@ public struct HTTPDownloadedResponse: Sendable {
         (200 ..< 300).contains(status)
     }
 }
+
+/// 「响应体分块吐出来」的可选能力（M25P2 直链下载用）。
+///
+/// 与 ``HTTPDownloadingTransport`` 同一套做法（单独一个协议 + `as?` 探测）：
+/// 站点 / 解析链要的仍是内存里的 `Data`，只有「可能是几十 GB 的直链下载」需要分块 ——
+/// 分块才能「边下边写盘 / 边报进度 / 取消时把已经写下的字节留下」（续下的地基）。
+public protocol HTTPStreamingTransport: HTTPTransport {
+    /// 发出请求、拿到响应头；响应体以 ``HTTPStream/chunks`` 一块块交付。
+    ///
+    /// 失败语义与 ``HTTPTransport/send(_:)`` 一致：一律抛 ``CatVodError``。
+    func stream(_ request: HTTPRequest) async throws -> HTTPStream
+}
+
+/// 流式取回的结果：与 ``HTTPResponse`` 同构，只是 body 换成按顺序吐出的块。
+public struct HTTPStream: Sendable {
+    public var status: Int
+    public var headers: [String: String]
+    /// 响应体分块（按顺序消费）。
+    public var chunks: AsyncThrowingStream<Data, Error>
+    /// 中止读取：让 `chunks` 以错误收尾、底层连接随之关掉。
+    /// 消费端提前停下（暂停 / 放弃剩余）时**必须**调它 —— 不调的话生产者还在往回灌。
+    public var cancel: @Sendable () -> Void
+
+    public init(
+        status: Int,
+        headers: [String: String] = [:],
+        chunks: AsyncThrowingStream<Data, Error>,
+        cancel: @escaping @Sendable () -> Void = {}
+    ) {
+        self.status = status
+        self.headers = headers
+        self.chunks = chunks
+        self.cancel = cancel
+    }
+}
+
 /// 请求 header 合并工具：站点 header → 结果 header → 解析器 header，后者覆盖前者。
 public enum HTTPHeaderMerger {
     public static func merge(_ sources: [[String: String]]) -> [String: String] {
