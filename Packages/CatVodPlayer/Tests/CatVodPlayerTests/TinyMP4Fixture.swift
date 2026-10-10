@@ -173,14 +173,9 @@ enum TinyMP4Fixture {
         frames: Int = 10
     ) async throws {
         try? FileManager.default.removeItem(at: url)
-        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: nil)
-        input.expectsMediaDataInRealTime = false
-        guard writer.canAdd(input) else { throw FixtureError.writerRejectedInput }
-        writer.add(input)
-        guard writer.startWriting() else { throw writer.error ?? FixtureError.startFailed }
-        writer.startSession(atSourceTime: .zero)
 
+        // 1) VideoToolbox 直编 Main10：先编完拿样本 —— 直通 input 要用样本的 format description 当 hint，
+        //    没 hint 时 `writer.canAdd` 直接拒（首轮就撞在这）。
         let collector = HEVCSampleCollector()
         var session: VTCompressionSession?
         let attributes: [String: Any] = [
@@ -229,7 +224,20 @@ enum TinyMP4Fixture {
         VTCompressionSessionCompleteFrames(session, untilPresentationTimeStamp: .invalid)
 
         let samples = collector.sortedSamples()
-        guard samples.count == frames else { throw FixtureError.encodedSampleMissing }
+        guard samples.count == frames, let firstSample = samples.first,
+              let formatHint = CMSampleBufferGetFormatDescription(firstSample)
+        else {
+            throw FixtureError.encodedSampleMissing
+        }
+
+        // 2) AVAssetWriter 直通（`outputSettings: nil`）把编好的样本封成 mp4。
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: nil, sourceFormatHint: formatHint)
+        input.expectsMediaDataInRealTime = false
+        guard writer.canAdd(input) else { throw FixtureError.writerRejectedInput }
+        writer.add(input)
+        guard writer.startWriting() else { throw writer.error ?? FixtureError.startFailed }
+        writer.startSession(atSourceTime: .zero)
         for sample in samples {
             while !input.isReadyForMoreMediaData {
                 try await Task.sleep(nanoseconds: 5_000_000)
@@ -242,7 +250,6 @@ enum TinyMP4Fixture {
         }
         guard writer.status == .completed else { throw writer.error ?? FixtureError.finishFailed }
     }
-
     /// VT 的输出回调可能在别的线程上回来：样本先收进这里，编码完再按 pts 排好交给 writer。
     private final class HEVCSampleCollector: @unchecked Sendable {
         private let lock = NSLock()
