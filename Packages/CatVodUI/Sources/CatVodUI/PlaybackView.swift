@@ -91,6 +91,10 @@ public struct PlaybackView: View {
     @State private var latestDuration: Double = 0
     /// 当前倍速（初值在 `start()` 里从存档读；范围与预设见 ``SpeedSetting``）。
     @State private var speed: Float = SpeedSetting.normal
+    /// 画面比例（M03P9）：**页面内偏好**（不落盘）—— 换页回到「适应」。
+    /// 上游把 scale 存在 LiveSetting 里（按直播页）；我们没有「按页面分的播放设置」这套容器，
+    /// 而一个全局落盘的值会把下一部片也按上一部选的比例放，所以先不做存档。
+    @State private var scaleMode: PlaybackScaleMode = .fit
     @State private var isFinished = false
     @State private var lastPersistAt = Date.distantPast
     /// 弹幕上屏的数据（M08h）：计划 + 它用的版面。
@@ -173,6 +177,7 @@ public struct PlaybackView: View {
                 if !audioTracks.isEmpty || !subtitleTracks.isEmpty {
                     tracksSection
                 }
+                scaleSection
                 if let playlist {
                     Section("选集") {
                         Button("选集（共 \(playlist.episodes.count) 集）") {
@@ -740,6 +745,32 @@ extension PlaybackView {
                 }
             }
         }
+    }
+
+    /// 画面比例（M03P9）：只列**当前内核真的支持**的档位 —— 系统内核一档都不支持，整行不出现；
+    /// 自研 FFmpeg 只有 gravity 三态（三档）。不做「点了没反应」的开关。
+    @ViewBuilder private var scaleSection: some View {
+        let modes = PlaybackScaleMode.supportedModes(by: settings.engine)
+        if !modes.isEmpty {
+            Section("画面比例") {
+                Picker("画面比例", selection: scaleBinding) {
+                    ForEach(modes, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 改画面比例：记进界面态 + 立刻下发内核（`setScaleMode`）。
+    private var scaleBinding: Binding<PlaybackScaleMode> {
+        Binding(
+            get: { scaleMode },
+            set: { mode in
+                scaleMode = mode
+                Task { await engine?.setScaleMode(mode) }
+            }
+        )
     }
 
     /// 音轨选择：改界面态 + 立刻下发内核（`selectTrack`）。

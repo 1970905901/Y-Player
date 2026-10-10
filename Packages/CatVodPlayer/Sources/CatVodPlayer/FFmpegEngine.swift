@@ -24,6 +24,8 @@ public actor FFmpegEngine: PlayerEngine, PlaybackStatsProviding {
 
     /// 会话工厂（单测注假的；生产走 ``FFmpegSessionFactory`` —— 需要画面层）。
     private let makeSession: @Sendable () -> (any FFmpegSession)?
+    /// 画面层（M03P9 的「画面比例」要改它的 `videoGravity`；单测不传 = 没有画面层）。
+    private let videoSurface: FFmpegVideoSurface?
     private var session: (any FFmpegSession)?
     private var eventLoop: Task<Void, Never>?
     private var continuation: AsyncStream<PlayerEvent>.Continuation?
@@ -31,12 +33,21 @@ public actor FFmpegEngine: PlayerEngine, PlaybackStatsProviding {
     private var duration: Double = 0
 
     public init(decoderMode: DecoderMode = .hardware, videoSurface: FFmpegVideoSurface? = nil) {
-        self.init(decoderMode: decoderMode, makeSession: { FFmpegSessionFactory.make(surface: videoSurface) })
+        self.init(
+            decoderMode: decoderMode,
+            videoSurface: videoSurface,
+            makeSession: { FFmpegSessionFactory.make(surface: videoSurface) }
+        )
     }
 
     /// 单测入口：注入会话工厂，不碰真管线。
-    init(decoderMode: DecoderMode, makeSession: @escaping @Sendable () -> (any FFmpegSession)?) {
+    init(
+        decoderMode: DecoderMode,
+        videoSurface: FFmpegVideoSurface? = nil,
+        makeSession: @escaping @Sendable () -> (any FFmpegSession)?
+    ) {
         self.decoderMode = decoderMode
+        self.videoSurface = videoSurface
         self.makeSession = makeSession
         var captured: AsyncStream<PlayerEvent>.Continuation?
         events = AsyncStream<PlayerEvent> { captured = $0 }
@@ -108,6 +119,12 @@ public actor FFmpegEngine: PlayerEngine, PlaybackStatsProviding {
     public func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async {
         guard let session else { return }
         await session.selectTrack(selection, for: kind)
+    }
+
+    /// 画面比例（M03P9）：自研内核只有 `videoGravity` 三态，16:9 / 4:3 这两档什么都不做
+    /// （播放页对自研内核不列它们，见 `PlaybackScaleMode.supportedModes(by:)`）。
+    public func setScaleMode(_ mode: PlaybackScaleMode) async {
+        videoSurface?.setScaleMode(mode)
     }
 
     public func teardown() async {

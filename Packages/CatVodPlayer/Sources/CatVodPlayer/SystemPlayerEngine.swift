@@ -128,7 +128,13 @@ public final class AVPlayerEngine: PlayerEngine {
         applyTrackSelection(selection, for: kind)
     }
 
-    public func teardown() async {
+    public func setScaleMode(_ mode: PlaybackScaleMode) async {
+        // 系统内核（SwiftUI `VideoPlayer`）没有对外接口能改画面比例 —— 空实现是**如实的**：
+        // 播放页对它根本不显示这一项（`PlaybackScaleMode.supportedModes(by: .system)` 为空）。
+        _ = mode
+    }
+
+    func teardown() async {
         monitoringTask?.cancel()
         monitoringTask = nil
         if let timeObserver {

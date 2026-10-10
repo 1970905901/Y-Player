@@ -154,6 +154,9 @@ public protocol PlayerEngine: AnyObject, Sendable {
     /// 音量（0...1）。系统内核写 `AVPlayer.volume`；MPV 写 `volume`（0–100，100 = 原声）。
     func setVolume(_ volume: Float) async
     func selectTrack(_ selection: TrackSelection, for kind: TrackKind) async
+    /// 画面比例 / 缩放（M03P9）。各内核的落实方式见 ``PlaybackScaleMode`` 的支持矩阵：
+    /// 系统内核没有这个能力（空实现），界面也不会对它显示这一项。
+    func setScaleMode(_ mode: PlaybackScaleMode) async
     func teardown() async
 }
 
