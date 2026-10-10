@@ -326,111 +326,6 @@ public enum HLSManifestCleaner {
         }
     }
 
-    // MARK: - 解析
-
-    /// 解析出来的一行或一段：`uri == nil` 是普通标签行，否则是一个片段。
-    private struct Node {
-        /// 片段前面的标签行（普通行节点就只有这一行）。
-        var leading: [String]
-        /// 片段地址；非 nil 表示这是片段节点。
-        var uri: String?
-        var durationSec: Double
-        var discontinuityBefore: Bool
-        var removed: Bool
-
-        /// 这个节点要输出的行。
-        var outputLines: [String] {
-            guard let uri else { return leading }
-            return leading + [uri]
-        }
-
-        static func line(_ value: String) -> Node {
-            Node(leading: [value], uri: nil, durationSec: 0, discontinuityBefore: false, removed: false)
-        }
-    }
-
-    private static func lineCount(_ value: String) -> Int {
-        value.reduce(1) { count, character in character == "\n" ? count + 1 : count }
-    }
-
-    /// 把清单切成节点：`#EXTINF` 后面的第一行非标签行才算片段，其余都是独立行。
-    private static func parse(_ manifest: String) throws -> [Node] {
-        let normalized = manifest
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-        var nodes: [Node] = []
-        var pending: [String] = []
-        var discontinuityBefore = false
-
-        for line in normalized.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
-            if line.isEmpty, pending.isEmpty {
-                continue
-            }
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed == "#EXT-X-DISCONTINUITY" {
-                discontinuityBefore = true
-            }
-            if trimmed.hasPrefix("#EXTINF:") {
-                flush(&nodes, pending: &pending)
-                pending.append(line)
-                continue
-            }
-            if !trimmed.isEmpty, !trimmed.hasPrefix("#") {
-                if hasExtInf(pending) {
-                    try nodes.append(Node(
-                        leading: pending,
-                        uri: line,
-                        durationSec: duration(pending),
-                        discontinuityBefore: discontinuityBefore,
-                        removed: false
-                    ))
-                    pending.removeAll()
-                    discontinuityBefore = false
-                } else {
-                    flush(&nodes, pending: &pending)
-                    nodes.append(.line(line))
-                }
-            } else {
-                pending.append(line)
-            }
-        }
-        flush(&nodes, pending: &pending)
-        return nodes
-    }
-
-    private static func flush(_ nodes: inout [Node], pending: inout [String]) {
-        for line in pending {
-            nodes.append(.line(line))
-        }
-        pending.removeAll()
-    }
-
-    private static func hasExtInf(_ lines: [String]) -> Bool {
-        lines.contains { $0.trimmingCharacters(in: .whitespaces).hasPrefix("#EXTINF:") }
-    }
-
-    /// `#EXTINF:<秒>,<标题>` 里的秒数。解析不出来按参考实现**抛错**（整份清单走 fallback，不猜 0）。
-    private static func duration(_ lines: [String]) throws -> Double {
-        for line in lines {
-            let value = line.trimmingCharacters(in: .whitespaces)
-            guard value.hasPrefix("#EXTINF:") else { continue }
-            let start = value.index(value.startIndex, offsetBy: 8)
-            let end = value.firstIndex(of: ",") ?? value.endIndex
-            let number = String(value[start ..< end])
-            guard let seconds = Double(number) else {
-                throw Failure.invalidDuration(number)
-            }
-            return seconds
-        }
-        return 0
-    }
-
-    /// 相对分片地址 → 绝对地址（Swift 的 `URL` 比 Java 的 `URI` 严格，解析不出来返回 nil）。
-    private static func resolvedURL(segmentURI: String?, baseURL: String) -> URL? {
-        guard let segmentURI else { return nil }
-        return URL(string: segmentURI, relativeTo: URL(string: baseURL))
-    }
-
     // MARK: - 匹配
 
     /// 第一条命中的规则（**顺序敏感**：与参考实现一样取「第一条凑够信号的」）。
@@ -570,5 +465,116 @@ public enum HLSManifestCleaner {
     private static func isTransparentStateTag(_ line: String) -> Bool {
         let value = line.trimmingCharacters(in: .whitespaces)
         return value.hasPrefix("#EXT-X-KEY:") || value.hasPrefix("#EXT-X-MAP:")
+    }
+}
+
+// MARK: - 解析（Node / parse / 片段行小工具）
+
+/// 为什么拆成扩展：类型体行数（`type_body_length`）离 CI 的 error 线（450）只剩十几行 ——
+/// 扩展不计入类型体，而这一组只被本文件的 `clean(baseURL:manifest:rules:)` 与 `render` 用
+/// （同文件扩展的 `private` 照样可见）。
+
+extension HLSManifestCleaner {
+    /// 解析出来的一行或一段：`uri == nil` 是普通标签行，否则是一个片段。
+    private struct Node {
+        /// 片段前面的标签行（普通行节点就只有这一行）。
+        var leading: [String]
+        /// 片段地址；非 nil 表示这是片段节点。
+        var uri: String?
+        var durationSec: Double
+        var discontinuityBefore: Bool
+        var removed: Bool
+
+        /// 这个节点要输出的行。
+        var outputLines: [String] {
+            guard let uri else { return leading }
+            return leading + [uri]
+        }
+
+        static func line(_ value: String) -> Node {
+            Node(leading: [value], uri: nil, durationSec: 0, discontinuityBefore: false, removed: false)
+        }
+    }
+
+    private static func lineCount(_ value: String) -> Int {
+        value.reduce(1) { count, character in character == "\n" ? count + 1 : count }
+    }
+
+    /// 把清单切成节点：`#EXTINF` 后面的第一行非标签行才算片段，其余都是独立行。
+    private static func parse(_ manifest: String) throws -> [Node] {
+        let normalized = manifest
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        var nodes: [Node] = []
+        var pending: [String] = []
+        var discontinuityBefore = false
+
+        for line in normalized.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            if line.isEmpty, pending.isEmpty {
+                continue
+            }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == "#EXT-X-DISCONTINUITY" {
+                discontinuityBefore = true
+            }
+            if trimmed.hasPrefix("#EXTINF:") {
+                flush(&nodes, pending: &pending)
+                pending.append(line)
+                continue
+            }
+            if !trimmed.isEmpty, !trimmed.hasPrefix("#") {
+                if hasExtInf(pending) {
+                    try nodes.append(Node(
+                        leading: pending,
+                        uri: line,
+                        durationSec: duration(pending),
+                        discontinuityBefore: discontinuityBefore,
+                        removed: false
+                    ))
+                    pending.removeAll()
+                    discontinuityBefore = false
+                } else {
+                    flush(&nodes, pending: &pending)
+                    nodes.append(.line(line))
+                }
+            } else {
+                pending.append(line)
+            }
+        }
+        flush(&nodes, pending: &pending)
+        return nodes
+    }
+
+    private static func flush(_ nodes: inout [Node], pending: inout [String]) {
+        for line in pending {
+            nodes.append(.line(line))
+        }
+        pending.removeAll()
+    }
+
+    private static func hasExtInf(_ lines: [String]) -> Bool {
+        lines.contains { $0.trimmingCharacters(in: .whitespaces).hasPrefix("#EXTINF:") }
+    }
+
+    /// `#EXTINF:<秒>,<标题>` 里的秒数。解析不出来按参考实现**抛错**（整份清单走 fallback，不猜 0）。
+    private static func duration(_ lines: [String]) throws -> Double {
+        for line in lines {
+            let value = line.trimmingCharacters(in: .whitespaces)
+            guard value.hasPrefix("#EXTINF:") else { continue }
+            let start = value.index(value.startIndex, offsetBy: 8)
+            let end = value.firstIndex(of: ",") ?? value.endIndex
+            let number = String(value[start ..< end])
+            guard let seconds = Double(number) else {
+                throw Failure.invalidDuration(number)
+            }
+            return seconds
+        }
+        return 0
+    }
+
+    /// 相对分片地址 → 绝对地址（Swift 的 `URL` 比 Java 的 `URI` 严格，解析不出来返回 nil）。
+    private static func resolvedURL(segmentURI: String?, baseURL: String) -> URL? {
+        guard let segmentURI else { return nil }
+        return URL(string: segmentURI, relativeTo: URL(string: baseURL))
     }
 }
