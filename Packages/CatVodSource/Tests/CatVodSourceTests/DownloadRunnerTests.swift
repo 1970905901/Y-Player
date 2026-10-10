@@ -389,7 +389,9 @@ struct DownloadRunnerTests {
             baseURL: index
         )
         var task = makeTask(index)
-        task.status = .paused
+        // 状态给 `.waiting`：队列把「继续」的暂停任务转成 `.waiting` 才交给执行器
+        // （`paused → running` 不是合法迁移，直接塞 `.paused` 会原地不动）。
+        task.status = .waiting
         task.completedSegments = segments
         task.receivedBytes = Int64(fileBytes)
         task.resumeFingerprint = fingerprint ?? manifest.segmentFingerprint(prefix: segments)
