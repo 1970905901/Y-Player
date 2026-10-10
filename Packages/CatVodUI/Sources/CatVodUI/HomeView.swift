@@ -459,9 +459,9 @@ public struct HomeView: View {
         if model.allSites.isEmpty {
             // 多仓配置（`urls`）：站点本来就是空的 —— 说清「要自己挑一条子配置」，
             // 否则用户看到的就是「还没有可用站点」，只会以为配置没生效（M18P1）。
-            if !model.configSubURLs.isEmpty {
-                return "这份配置是多配置入口（`urls`，共 \(model.configSubURLs.count) 条），本平台不列出来挑 —— "
-                    + "请把其中一条子配置地址填进「设置 → 源地址」再加载。"
+            if !model.configSubURLEntries.isEmpty {
+                return "这份配置是多配置入口（`urls`，共 \(model.configSubURLEntries.count) 条）："
+                    + "去「设置 → 源地址 → 多配置入口」点一条加载。"
             }
             if !model.liveSources.isEmpty {
                 // 只有直播源的配置：点播确实没内容，但直播能用 —— 别让用户以为配置坏了。

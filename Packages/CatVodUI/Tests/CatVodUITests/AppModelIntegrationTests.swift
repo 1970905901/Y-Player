@@ -223,7 +223,9 @@ struct AppModelIntegrationTests {
         {"urls":["https://a.example/1.json","   ","https://b.example/2.json"]}
         """)
 
-        #expect(fixture.model.configSubURLs == ["https://a.example/1.json", "https://b.example/2.json"])
+        #expect(fixture.model.configSubURLEntries.map(\.raw) == ["https://a.example/1.json", "https://b.example/2.json"])
+        // 内联配置没有基准地址，但这两条是绝对地址，所以都点得动（url 非 nil）。
+        #expect(fixture.model.configSubURLEntries.allSatisfy { $0.url != nil })
         #expect(fixture.model.sites.isEmpty)
         // 告警里要说清「不支持多配置入口」——否则用户只会看到「没有可用站点」
         let warned = fixture.model.warnings.contains { $0.contains("多配置入口") }

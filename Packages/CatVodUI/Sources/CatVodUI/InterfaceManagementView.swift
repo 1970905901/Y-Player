@@ -29,6 +29,7 @@ public struct InterfaceManagementView: View {
     public var body: some View {
         List {
             configSection
+            subConfigSection
             if case let .loaded(source) = model.state {
                 summarySection(source)
             }
@@ -79,6 +80,60 @@ public struct InterfaceManagementView: View {
                 if model.state.isLoading {
                     ProgressView()
                 }
+            }
+        }
+    }
+
+    // MARK: - 多配置入口（多仓）
+
+    /// 多仓（`urls`）里的子配置：一条一行，点了就**用它替换当前接口**并加载（M18P2）。
+    ///
+    /// 「点不动」的条目**置灰并写明原因**（相对地址但当前配置没有基准地址）——
+    /// 与前几片同一条口径：不做「点了没反应」。
+    @ViewBuilder
+    private var subConfigSection: some View {
+        let entries = model.configSubURLEntries
+        if !entries.isEmpty {
+            Section {
+                ForEach(entries) { entry in
+                    subConfigRow(entry)
+                }
+            } header: {
+                Text("多配置入口")
+            } footer: {
+                Text("这份配置是多仓（`urls`）：点一条就**用它替换当前接口**并加载（上面的地址框也会换成它）。想回仓库那份，把仓库地址再填一次即可。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func subConfigRow(_ entry: ConfigSubURLEntry) -> some View {
+        if let url = entry.url {
+            Button {
+                Task { await model.loadSubConfig(entry) }
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.raw)
+                        .font(.footnote)
+                    if url.absoluteString != entry.raw {
+                        // 相对路径解析出来的实际地址：写出来，免得用户以为点的是别处。
+                        Text(url.absoluteString)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .disabled(model.state.isLoading)
+        } else {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.raw)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Text("这条解析不出地址（相对路径、而这份配置没有基准地址）：请把完整地址填进上面的输入框。")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
             }
         }
     }

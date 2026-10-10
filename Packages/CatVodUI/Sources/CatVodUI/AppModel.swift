@@ -681,14 +681,26 @@ public final class AppModel: ObservableObject {
         state.loadedSource?.warnings ?? []
     }
 
-    /// 配置里的**多配置入口**（`urls`，多仓），去掉空项。
+    /// 配置里的**多配置入口**（`urls`，多仓）：去掉空项 + 按当前配置地址解析相对路径（M18P2）。
     ///
-    /// **本平台没接**（不列出来给用户挑，见 `ConfigCoverage.urlsReason`）——
-    /// 这里只把它取出来，供界面在「站点为空」时说清原因，而不是让用户以为配置没生效。
-    public var configSubURLs: [String] {
-        (state.loadedSource?.config.urls ?? [])
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+    /// 界面两处用它：源地址页列出来让用户点（``loadSubConfig(_:)``），以及
+    /// 发现页在「站点为空」时说清原因 —— 而不是让用户以为配置没生效。
+    /// 可见性刻意是「模块内」：`ConfigSubURLEntry` 是本模块类型，而 public 位置不能用 internal 类型
+    /// （编译期直接拦，同一类错踩过三次了 —— 见 M10h / M17P1）。
+    var configSubURLEntries: [ConfigSubURLEntry] {
+        ConfigSubURLs.entries(state.loadedSource?.config.urls ?? [], relativeTo: state.loadedSource?.originURL)
+    }
+
+    /// 用多仓里的一条子配置**替换当前接口地址并加载**。
+    ///
+    /// 与用户在地址框里手填是**同一条路**：加载完当前配置就是那条子配置（地址框里也是它）——
+    /// 不另立「多仓状态」，想回仓库那份就把仓库地址再填一次。`url == nil` 的条目不动。
+    func loadSubConfig(_ entry: ConfigSubURLEntry) async {
+        guard let url = entry.url else {
+            return
+        }
+        configURL = url.absoluteString
+        await load(forceRefresh: true)
     }
 
     public var loadedKind: LoadedSource.Kind? {
