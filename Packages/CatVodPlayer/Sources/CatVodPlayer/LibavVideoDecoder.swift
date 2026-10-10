@@ -96,9 +96,10 @@ final class LibavVideoDecoder: @unchecked Sendable {
         timeBase = stream.pointee.time_base
         // 硬解有没有真的生效，看这一行：输出不是 VT 帧的话，后面每一帧都会被丢掉（= 有声音没画面）。
         let codecName = String(cString: avcodec_get_name(parameters.pointee.codec_id))
-        let vtActive = codecContext.pointee.pix_fmt == Int32(AV_PIX_FMT_VIDEOTOOLBOX.rawValue)
+        let pixelFormat = codecContext.pointee.pix_fmt
+        let vtActive = pixelFormat == AV_PIX_FMT_VIDEOTOOLBOX
         let ready = "视频解码器就绪：流=\(index) 解码器=\(codecName) "
-            + "输出格式=\(Int(codecContext.pointee.pix_fmt)) VT=\(vtActive)"
+            + "输出格式=\(Int(pixelFormat.rawValue)) VT=\(vtActive)"
         LibavTrace.logger.notice("\(ready, privacy: .public)")
         return nil
         #else
@@ -226,7 +227,7 @@ final class LibavVideoDecoder: @unchecked Sendable {
             UInt8((type >> 8) & 0xFF),
             UInt8(type & 0xFF),
         ]
-        let text = String(bytes: bytes, encoding: .ascii) ?? ""
+        let text = String(decoding: bytes, as: UTF8.self)
         let printable = text.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
         return printable ? text : "0x\(String(type, radix: 16))"
     }
@@ -266,8 +267,10 @@ final class LibavVideoDecoder: @unchecked Sendable {
                 let text = LibavInput.errorText(code)
                 lastDecodeErrorText = text
                 if decodeErrorCount <= 3 {
+                    // 计数拷进局部：OSLog 的插值是 escaping autoclosure，直接引用属性会被要求显式 self。
+                    let count = decodeErrorCount
                     LibavTrace.logger.error(
-                        "视频解码出错（第 \(decodeErrorCount, privacy: .public) 次）：\(text, privacy: .public)"
+                        "视频解码出错（第 \(count, privacy: .public) 次）：\(text, privacy: .public)"
                     )
                 }
             }
@@ -279,9 +282,9 @@ final class LibavVideoDecoder: @unchecked Sendable {
         guard frame.pointee.format == Int32(AV_PIX_FMT_VIDEOTOOLBOX.rawValue) else {
             droppedNonVTCount += 1
             if droppedNonVTCount <= 3 {
-                LibavTrace.logger.error(
-                    "丢帧：硬解没生效，收到非 VT 帧（format=\(Int(frame.pointee.format), privacy: .public)）"
-                )
+                let format = Int(frame.pointee.format)
+                let dropped = "丢帧：硬解没生效，收到非 VT 帧（format=\(format)）"
+                LibavTrace.logger.error("\(dropped, privacy: .public)")
             }
             return true
         }

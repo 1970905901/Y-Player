@@ -77,9 +77,9 @@ final class LibavVideoRenderer: FFmpegVideoRendering, @unchecked Sendable {
         // 先 flush（Apple 的规矩）再喂，并把它打出来，别让证据烂在内存里。
         if layer.status == .failed {
             failedStatusCount += 1
-            LibavTrace.logger.error(
-                "显示层 failed：\(layer.error.map { String(describing: $0) } ?? "无详情", privacy: .public)；flush 后继续"
-            )
+            // 同理：插值里别引用属性（escaping autoclosure 要显式 self），先落成局部再打。
+            let detail = layer.error.map { String(describing: $0) } ?? "无详情"
+            LibavTrace.logger.error("显示层 failed：\(detail, privacy: .public)；flush 后继续")
             layer.flush()
         }
         if layer.requiresFlushToResumeDecoding {
