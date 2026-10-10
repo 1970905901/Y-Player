@@ -53,7 +53,10 @@ final class LibavVideoDecoder: @unchecked Sendable {
     private var timeBase = AVRational(num: 0, den: 1)
 
     /// 软解那条路的像素转换器（M04P14）：`yuv*` → BGRA。按「源格式 + 尺寸」缓存，变了才重建。
-    private var swsContext: OpaquePointer?
+    ///
+    /// 类型是 `UnsafeMutablePointer<SwsContext>`：libswscale 的头里 `struct SwsContext` 是**前向声明**，
+    /// Swift 把它导成一个没有成员的 `SwsContext` —— 只在指针后面用（不是 `OpaquePointer`，别猜）。
+    private var swsContext: UnsafeMutablePointer<SwsContext>?
     private var swsSourceFormat: Int32 = -1
     private var swsWidth = 0
     private var swsHeight = 0
@@ -390,7 +393,11 @@ final class LibavVideoDecoder: @unchecked Sendable {
     }
 
     /// 缓存 sws 转换器（源格式 / 尺寸变了才重建）；建不出来给 nil。
-    private func swsConverter(width: Int, height: Int, sourceFormat: AVPixelFormat) -> OpaquePointer? {
+    private func swsConverter(
+        width: Int,
+        height: Int,
+        sourceFormat: AVPixelFormat
+    ) -> UnsafeMutablePointer<SwsContext>? {
         #if canImport(Libswscale) && canImport(Libavutil)
         let format = Int32(sourceFormat.rawValue)
         if let swsContext, swsSourceFormat == format, swsWidth == width, swsHeight == height {
