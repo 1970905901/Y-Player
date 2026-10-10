@@ -268,6 +268,9 @@ public final class AppModel: ObservableObject {
     /// 宿主状态：界面据此显示「不可用 / 启动中 / 运行中 / 失败」，而不是一句笼统的占位文案。
     @Published public internal(set) var hostStatus: JS2PHostStatus = .idle
 
+    /// 宿主**现探**结果（M22P1）：`hostStatus` 是最近一次刷新的结论，这个是「刚探过」的答案。
+    @Published public internal(set) var hostHealth: HostHealth = .unknown
+
     /// 宿主提供的站点。
     ///
     /// JS 源时这是站点的**唯一**来源：`LoadedSource.config` 是空配置（站点清单要由 Node 执行后给出）。

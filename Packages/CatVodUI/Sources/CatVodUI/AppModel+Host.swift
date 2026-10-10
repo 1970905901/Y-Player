@@ -45,6 +45,8 @@ public extension AppModel {
             let bundleReplaced = !source.usedCache
             let snapshot = try await service.sites(forceRestartHost: forceRestart || bundleReplaced)
             hostSites = snapshot.sites
+            // 刚拿到清单 = 宿主现在活着（省掉一次探活）。
+            hostHealth = .online
             let baseURL = await service.currentBaseURL()
             hostStatus = .running(
                 baseURL: baseURL?.absoluteString ?? "",
@@ -75,7 +77,19 @@ public extension AppModel {
         js2pHost = nil
         hostSites = []
         hostStatus = .idle
+        hostHealth = .unknown
         bumpSiteCatalogRevision()
+    }
+
+    /// 探一次宿主**现在**是否还活着（M22P1）：`GET /health`，几毫秒的事。
+    ///
+    /// 没有宿主时给 `.unknown`（不是 `offline` —— 那不叫离线，那叫「当前接口不需要宿主」）。
+    func refreshHostHealth() async {
+        guard let host = js2pHost else {
+            hostHealth = .unknown
+            return
+        }
+        hostHealth = await host.health() ? .online : .offline
     }
 
     /// 宿主落盘日志路径（没有落盘能力时为 nil）。

@@ -49,6 +49,10 @@ public struct InterfaceManagementView: View {
         }
         .adaptiveListStyle()
         .navigationTitle("源地址")
+        .task {
+            // 进页面探一次活：`hostStatus` 是旧结论，宿主可能已经崩了（M22P1）。
+            await model.refreshHostHealth()
+        }
     }
 
     // MARK: - 配置输入
@@ -195,6 +199,12 @@ public struct InterfaceManagementView: View {
             Text(model.hostStatus.summary)
                 .font(.footnote)
                 .foregroundStyle(model.hostStatus.isRunning ? Color.secondary : Color.orange)
+            // 探活（M22P1）：上面那行是**上次刷新**的结论，宿主可能已经崩了 ——
+            // 这一行回答「现在这一刻还在不在」。
+            InfoRow(title: "探活", value: model.hostHealth.text)
+            Button("检测宿主") {
+                Task { await model.refreshHostHealth() }
+            }
             Button("重启宿主") {
                 hostOutput = []
                 Task {
