@@ -126,17 +126,39 @@ struct DiscoverSectionHeader: View {
 /// 海报卡：封面 + 右上角角标 + 居中片名（参考视频的网格单元）。
 struct DiscoverPosterCard: View {
     let item: VodItem
+    /// 卡片样式（**站点级**，M23P1）：配置声明了才照做 —— 没声明保持参考视频那个 2:3。
+    ///
+    /// 条目级样式（`VodItem.style`）**故意不在这里用**：网格里逐卡不同比例会排成锯齿。
+    /// 这是排版取舍，不是漏接（协议上的优先级规则在 `CardStyleResolver` 里，由调用方决定用哪一级）。
+    var style: CardStyle?
 
-    /// 海报宽高比（参考视频里约 2:3）。
+    /// 海报宽高比：配置声明了就用它的，否则参考视频那个 2:3（见 ``PosterCardLayout``）。
     static let aspectRatio: CGFloat = 2.0 / 3.0
+
+    private var isCircularCard: Bool {
+        PosterCardLayout.isCircular(style)
+    }
+
+    private var cardRatio: CGFloat {
+        PosterCardLayout.ratio(for: style, circular: isCircularCard)
+    }
 
     var body: some View {
         VStack(spacing: 6) {
             ZStack(alignment: .topTrailing) {
-                Color.secondary.opacity(0.12)
-                    .aspectRatio(Self.aspectRatio, contentMode: .fit)
-                    .overlay { poster }
-                    .clipShape(RoundedRectangle(cornerRadius: PlatformShims.cardCornerRadius))
+                // 圆形卡（`oval` / `circle=1`）与圆角矩形分开画：
+                // iOS 15 没有 `AnyShape`，只能各走各的分支。
+                if isCircularCard {
+                    Color.secondary.opacity(0.12)
+                        .aspectRatio(1, contentMode: .fit)
+                        .overlay { poster }
+                        .clipShape(Circle())
+                } else {
+                    Color.secondary.opacity(0.12)
+                        .aspectRatio(cardRatio, contentMode: .fit)
+                        .overlay { poster }
+                        .clipShape(RoundedRectangle(cornerRadius: PlatformShims.cardCornerRadius))
+                }
                 if !item.vodRemarks.isEmpty {
                     badge
                 }

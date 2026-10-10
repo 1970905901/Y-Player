@@ -221,7 +221,7 @@ public struct HomeView: View {
                             LazyHStack(spacing: 10) {
                                 ForEach(section.items) { item in
                                     posterLink(item) {
-                                        DiscoverPosterCard(item: item)
+                                        DiscoverPosterCard(item: item, style: selectedSite?.style)
                                             .frame(width: Self.sectionCardWidth)
                                     }
                                 }
@@ -268,7 +268,7 @@ public struct HomeView: View {
         LazyVGrid(columns: posterColumns, spacing: 14) {
             ForEach(result.list) { item in
                 posterLink(item) {
-                    DiscoverPosterCard(item: item)
+                    DiscoverPosterCard(item: item, style: selectedSite?.style)
                 }
             }
         }
