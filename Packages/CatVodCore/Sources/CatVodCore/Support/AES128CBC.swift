@@ -9,13 +9,16 @@ import Foundation
 /// 两种调用方各自把关：
 /// - 密钥 / IV 长度不对、数据不是块长整数倍 → 给 nil，调用方**如实报错**，绝不把密文写进成品；
 /// - 不抛错：失败在下载链路里已经有一层「带 episode 的可读原因」，这里只管算。
-enum AES128CBC {
+public enum AES128CBC {
     /// 解密。
-    static func decrypt(_ data: Data, key: Data, iv: Data) -> Data? {
+    ///
+    /// `public`：下载链路（CatVodSource 的 `DownloadRunner`）要用 —— 解密本身是 Core 的职责，
+    /// 让上层各自去 `import CommonCrypto` 就会把同一套参数抄两遍。
+    public static func decrypt(_ data: Data, key: Data, iv: Data) -> Data? {
         crypt(data, key: key, iv: iv, operation: CCOperation(kCCDecrypt))
     }
 
-    /// 加密（测试夹具用；与 ``decrypt(_:key:iv:)`` 严格对称）。
+    /// 加密（**测试夹具用**，所以是 internal；与 ``decrypt(_:key:iv:)`` 严格对称）。
     static func encrypt(_ data: Data, key: Data, iv: Data) -> Data? {
         crypt(data, key: key, iv: iv, operation: CCOperation(kCCEncrypt))
     }
