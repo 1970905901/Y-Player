@@ -29,7 +29,10 @@ extension VodDetailView {
             return []
         }
         return episodes.filter { episode in
-            makeResource(for: episode) == nil
+            // 地址为空的不算「能换地址」——换下去只会得到一次无意义的失败（spider 站点的
+            // `isSpiderPlayable` 是**站点级**判定，不看单集，所以这里必须自己挡）。
+            !episode.url.isEmpty
+                && makeResource(for: episode) == nil
                 && (isSpiderPlayable(site) || requiresSitePlay(site, episode: episode))
         }
     }
