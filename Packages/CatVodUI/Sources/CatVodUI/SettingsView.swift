@@ -154,7 +154,9 @@ public struct SettingsView: View {
             NavigationLink {
                 SettingsPlaybackPageView(model: model)
             } label: {
-                InfoRow(title: "播放页", value: "系统原生")
+                // 值给当前排布：这行点进去是「显示视图 + 自动播放」。原来写死的「系统原生」
+                // 是 M02 那个「现状说明页」的残留 —— 播放器类型已经由上一行「播放器」说了。
+                InfoRow(title: "播放页", value: model.playbackPageLayout.displayName)
             }
             NavigationLink {
                 SettingsDanmakuAPIView(model: model)
