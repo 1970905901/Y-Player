@@ -58,6 +58,61 @@ private actor DownloadStubTransport: HTTPTransport {
     }
 }
 
+/// 带「挂起」的假传输（M10m 的暂停用）：`hang` 里的地址先等再回。
+///
+/// 默认的合作式等待（`Task.sleep`）在取消时**立刻抛** —— 真实 `URLSession` 就是这样；
+/// `uncancellable` 里的地址则等满才回，模拟「不理会取消」的传输，
+/// 用来验执行器自己会在分片边界停下。
+private actor CancellableStubTransport: HTTPTransport {
+    private let responses: [String: HTTPResponse]
+    private let hang: Set<String>
+    private let uncancellable: Set<String>
+    private var started: Set<String> = []
+    private var requests: [String] = []
+
+    init(
+        _ responses: [String: HTTPResponse],
+        hang: Set<String> = [],
+        uncancellable: Set<String> = []
+    ) {
+        self.responses = responses
+        self.hang = hang
+        self.uncancellable = uncancellable
+    }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        let url = request.url.absoluteString
+        requests.append(url)
+        started.insert(url)
+        if hang.contains(url) {
+            if uncancellable.contains(url) {
+                await Self.uncancellableSleep(seconds: 0.5)
+            } else {
+                try await Task.sleep(nanoseconds: 500_000_000)
+            }
+        }
+        return responses[url] ?? HTTPResponse(status: 404)
+    }
+
+    /// 「取消也打断不了」的等待：用不会被打断的 detached 任务来 resume。
+    static func uncancellableSleep(seconds: Double) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            Task.detached {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                continuation.resume()
+            }
+        }
+    }
+
+    func requestedURLs() -> [String] {
+        requests
+    }
+
+    func hasStarted(_ url: String) -> Bool {
+        started.contains(url)
+    }
+}
+
 @Suite("下载执行器：直链 / HLS 拼接 / 失败回退")
 struct DownloadRunnerTests {
     private let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("yplayer-download-tests")
@@ -303,5 +358,100 @@ struct DownloadRunnerTests {
         let fileURL = try #require(outcome.fileURL)
         #expect(fileURL.lastPathComponent.contains("wogg"))
         #expect(fileURL.lastPathComponent.contains("某剧"))
+    }
+
+    // MARK: - 暂停 = 取消执行句柄（M10m）
+
+    /// 轮询等一个条件成立（最多约 2 秒）。
+    private static func waitUntil(_ condition: () async -> Bool) async -> Bool {
+        for _ in 0 ..< 100 {
+            if await condition() {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        return await condition()
+    }
+
+    @Test("取分片途中被取消：回「已暂停」，不吃重试额度，半成品删掉（M10m）")
+    func cancellationDuringSegment() async throws {
+        let directory = try makeDirectory("cancel-segment")
+        let index = "https://cdn.example/v/index.m3u8"
+        let second = "https://cdn.example/v/seg-2.ts"
+        let transport = CancellableStubTransport(
+            [
+                index: playlist("#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-2.ts"),
+                "https://cdn.example/v/seg-1.ts": segment("AAA"),
+            ],
+            hang: [second]
+        )
+        let runner = DownloadRunner(transport: transport, directory: directory)
+        let task = makeTask(index)
+
+        let handle = Task { await runner.run(task) }
+        let inFlight = await Self.waitUntil { await transport.hasStarted(second) }
+        #expect(inFlight)
+        handle.cancel()
+        let outcome = await handle.value
+
+        #expect(outcome.task.status == .paused)
+        #expect(outcome.task.retryCount == 0)
+        #expect(outcome.task.failureReason.isEmpty)
+        #expect(outcome.fileURL == nil)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+    }
+
+    @Test("开跑前就被取消：一个请求都不发，回「已暂停」")
+    func cancellationBeforeStart() async throws {
+        let directory = try makeDirectory("cancel-early")
+        let url = "https://cdn.example/movie.mp4"
+        let transport = CancellableStubTransport([url: HTTPResponse(status: 200, body: Data("A".utf8))])
+        let runner = DownloadRunner(transport: transport, directory: directory)
+        let task = makeTask(url)
+
+        let handle = Task {
+            // 等一段「取消也打断不了」的时间，保证 cancel 落在 run 之前（否则这段就是掷骰子）
+            await CancellableStubTransport.uncancellableSleep(seconds: 0.1)
+            return await runner.run(task)
+        }
+        handle.cancel()
+        let outcome = await handle.value
+
+        #expect(outcome.task.status == .paused)
+        let requested = await transport.requestedURLs()
+        #expect(requested.isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+    }
+
+    @Test("取消打断不了当前分片：在分片边界停住（下一片不发），半成品删掉")
+    func cancellationStopsAtSegmentBoundary() async throws {
+        let directory = try makeDirectory("cancel-boundary")
+        let index = "https://cdn.example/v/index.m3u8"
+        let second = "https://cdn.example/v/seg-2.ts"
+        let third = "https://cdn.example/v/seg-3.ts"
+        let transport = CancellableStubTransport(
+            [
+                index: playlist("#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-2.ts\n#EXTINF:4,\nseg-3.ts"),
+                "https://cdn.example/v/seg-1.ts": segment("AAA"),
+                second: segment("BBBB"),
+                third: segment("CC"),
+            ],
+            hang: [second],
+            uncancellable: [second]
+        )
+        let runner = DownloadRunner(transport: transport, directory: directory)
+        let task = makeTask(index)
+
+        let handle = Task { await runner.run(task) }
+        let inFlight = await Self.waitUntil { await transport.hasStarted(second) }
+        #expect(inFlight)
+        handle.cancel()
+        let outcome = await handle.value
+
+        #expect(outcome.task.status == .paused)
+        // 第二片是「取消也打断不了」的那片：它被取了回来，但第三片一个请求都不发
+        let requested = await transport.requestedURLs()
+        #expect(requested == [index, "https://cdn.example/v/seg-1.ts", second])
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
     }
 }

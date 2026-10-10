@@ -529,6 +529,9 @@ public final class AppModel: ObservableObject {
     /// 与 `isDownloading` 分开：后者是「这一轮队列在跑」，前者是「有没有人负责把队列接着往下推」。
     var downloadDriverTask: Task<Void, Never>?
 
+    /// 正在跑的任务句柄（任务 id → Task，M10m）：暂停 / 删除「正在下的那一条」要能取消它。
+    var downloadRunTasks: [String: Task<DownloadRunner.Outcome, Never>] = [:]
+
     /// 下载任务存储（GRDB；打开失败时降级为内存实现，与进度 / 收藏同一套）。
     public let downloadStore: DownloadTaskStore
 

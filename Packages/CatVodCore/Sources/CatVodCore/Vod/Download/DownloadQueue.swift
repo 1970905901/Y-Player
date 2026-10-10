@@ -89,7 +89,8 @@ public enum DownloadQueue {
         return copy.transitioning(to: .waiting)
     }
 
-    /// 用户暂停。
+    /// 用户暂停（也用于「正在下的那条被取消」的回执，M10m）：暂停不是失败 ——
+    /// 不动重试额度，恢复走 ``retrying(_:)``。
     public static func pausing(_ task: DownloadTask) -> DownloadTask {
         task.transitioning(to: .paused)
     }

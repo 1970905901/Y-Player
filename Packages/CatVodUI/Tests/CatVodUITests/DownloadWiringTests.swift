@@ -18,6 +18,53 @@ private actor WiringTransport: HTTPTransport {
     }
 }
 
+/// 带「挂起」的假传输（M10m 的暂停用）：`hang` 里的地址一直等（取消时立刻抛）；其余按 `responses` 回。
+private actor HangingWiringTransport: HTTPTransport {
+    private let responses: [String: HTTPResponse]
+    private let hang: Set<String>
+    private var started: Set<String> = []
+
+    init(_ responses: [String: HTTPResponse], hang: Set<String> = []) {
+        self.responses = responses
+        self.hang = hang
+    }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        let url = request.url.absoluteString
+        started.insert(url)
+        if hang.contains(url) {
+            try await Task.sleep(nanoseconds: 10_000_000_000)
+        }
+        return responses[url] ?? HTTPResponse(status: 404)
+    }
+
+    func hasStarted(_ url: String) -> Bool {
+        started.contains(url)
+    }
+}
+
+/// 第一次取就挂起（取消即抛）、之后正常回：演「暂停后马上点继续」的接力（M10m）。
+private actor HangOnceWiringTransport: HTTPTransport {
+    private let response: HTTPResponse
+    private var sends = 0
+
+    init(_ response: HTTPResponse) {
+        self.response = response
+    }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        sends += 1
+        if sends == 1 {
+            try await Task.sleep(nanoseconds: 10_000_000_000)
+        }
+        return response
+    }
+
+    func sendCount() -> Int {
+        sends
+    }
+}
+
 @Suite("离线下载接线：入队 / 驱动 / 删除")
 @MainActor
 struct DownloadWiringTests {
@@ -215,15 +262,20 @@ struct DownloadWiringTests {
 
     // MARK: - 前台驱动（M10h）
 
-    /// 轮询等这条任务跑完（最多约 2 秒）：驱动是真的异步任务，这里不能靠「调用返回了」下结论。
-    private func waitForFirstTaskToFinish(_ model: AppModel) async -> Bool {
+    /// 轮询等一个条件成立（最多约 2 秒）：驱动是真的异步任务，这里不能靠「调用返回了」下结论。
+    private func waitUntil(_ condition: () async -> Bool) async -> Bool {
         for _ in 0 ..< 100 {
-            if model.downloadTasks.first?.status == DownloadTask.Status.finished {
+            if await condition() {
                 return true
             }
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
-        return model.downloadTasks.first?.status == DownloadTask.Status.finished
+        return await condition()
+    }
+
+    /// 等这条任务跑完。
+    private func waitForFirstTaskToFinish(_ model: AppModel) async -> Bool {
+        await waitUntil { model.downloadTasks.first?.status == DownloadTask.Status.finished }
     }
 
     @Test("入队即开跑：不调驱动、不进下载管理页，也会自己下完")
@@ -279,5 +331,83 @@ struct DownloadWiringTests {
         #expect(outcome == .unsupported)
         #expect(fixture.model.downloadTasks.isEmpty)
         #expect(!fixture.model.hasPendingDownloads)
+    }
+
+    // MARK: - 暂停正在下的那一条（M10m）
+
+    @Test("暂停「正在下」的那一条：当场停下、停在已暂停，不是失败")
+    func pauseRunningDownload() async throws {
+        let index = "https://cdn.example/v/index.m3u8"
+        let second = "https://cdn.example/v/seg-2.ts"
+        let transport = HangingWiringTransport(
+            [
+                index: playlist("#EXTM3U\n#EXTINF:4,\nseg-1.ts\n#EXTINF:4,\nseg-2.ts"),
+                "https://cdn.example/v/seg-1.ts": HTTPResponse(status: 200, body: Data("AAA".utf8)),
+            ],
+            hang: [second]
+        )
+        let fixture = try AppModelFixture(downloadTransport: transport)
+        defer { fixture.tearDown() }
+        await fixture.load()
+
+        let added = await fixture.model.enqueueDownloads(
+            [DownloadRequest(episode: "第 1 集", line: "线路一", url: index)],
+            siteKey: "a",
+            title: "某剧"
+        )
+        let id = try #require(added.first?.id)
+        fixture.model.startDownloadDriverIfNeeded()
+        let reachedSecond = await waitUntil { await transport.hasStarted(second) }
+        #expect(reachedSecond)
+
+        await fixture.model.pauseDownload(id: id)
+        #expect(fixture.model.downloadTasks.first?.status == DownloadTask.Status.paused)
+
+        // 等驱动收尾：晚到的「取消结果」不能把状态盖成别的
+        let stopped = await waitUntil { !fixture.model.isDownloading }
+        #expect(stopped)
+        let task = try #require(fixture.model.downloadTasks.first)
+        #expect(task.status == DownloadTask.Status.paused)
+        #expect(task.retryCount == 0)
+        #expect(task.failureReason.isEmpty)
+
+        // 半成品删掉：暂停后再继续要能从头下（M10d 的规矩）
+        let directory = AppModelFixture.downloadDirectory(in: fixture.directory)
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        #expect(files.isEmpty)
+    }
+
+    @Test("暂停后马上点继续：晚到的取消结果不能把任务按回暂停")
+    func resumeAfterPauseWins() async throws {
+        let url = "https://cdn.example/1.mp4"
+        let transport = HangOnceWiringTransport(direct("hello"))
+        let fixture = try AppModelFixture(downloadTransport: transport)
+        defer { fixture.tearDown() }
+        await fixture.load()
+
+        let added = await fixture.model.enqueueDownloads(
+            [DownloadRequest(episode: "第 1 集", line: "线路一", url: url)],
+            siteKey: "a",
+            title: "某剧"
+        )
+        let id = try #require(added.first?.id)
+        fixture.model.startDownloadDriverIfNeeded()
+        let inFlight = await waitUntil {
+            let sends = await transport.sendCount()
+            return sends == 1
+        }
+        #expect(inFlight)
+
+        await fixture.model.pauseDownload(id: id)
+        await fixture.model.resumeDownload(id: id)
+
+        let finished = await waitForFirstTaskToFinish(fixture.model)
+        #expect(finished)
+        let task = try #require(fixture.model.downloadTasks.first)
+        #expect(task.status == DownloadTask.Status.finished)
+        // 暂停不是失败：不吃重试额度；接力也确实跑了第二次
+        #expect(task.retryCount == 0)
+        let sends = await transport.sendCount()
+        #expect(sends == 2)
     }
 }

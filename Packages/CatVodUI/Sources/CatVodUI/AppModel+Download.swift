@@ -48,10 +48,12 @@ public extension AppModel {
         return added
     }
 
-    /// 暂停。只对**排队中**的那条立刻生效：正在下的那一条要等当前分片结束
-    /// （给执行器传取消信号是下一步的事，见 M10d 的留口）。
+    /// 暂停。排队中和**正在下的那一条**都当场生效（M10m）：先落「已暂停」，再取消执行句柄 ——
+    /// 执行器在下一个可停处停下（分片之间 / 当前请求被打断），交回的也是「已暂停」而不是失败；
+    /// 半成品按 M10d 的规矩删掉（「继续」时从头下）。
     func pauseDownload(id: String) async {
         await updateDownload(id: id) { DownloadQueue.pausing($0) }
+        downloadRunTasks[id]?.cancel()
     }
 
     /// 继续 / 重试（会重置自动重试额度，见 ``DownloadQueue/retrying(_:)``）。
@@ -113,6 +115,8 @@ public extension AppModel {
     ///
     /// 不删文件会留下「看不见但占着空间」的字节，而「下载管理」页第一眼就是空间占用。
     func removeDownload(id: String) async {
+        // 正在下的那条连下载一起停掉：任务都删了，还接着跑完是白占带宽（M10m）。
+        downloadRunTasks[id]?.cancel()
         if let task = downloadTasks.first(where: { $0.id == id }) {
             Self.removeDownloadedFiles(of: task, in: downloadDirectory)
         }
@@ -122,6 +126,10 @@ public extension AppModel {
 
     /// 清空全部任务（连文件）。
     func clearDownloads() async {
+        // 同上：在跑的都叫停。
+        for handle in downloadRunTasks.values {
+            handle.cancel()
+        }
         for task in downloadTasks {
             Self.removeDownloadedFiles(of: task, in: downloadDirectory)
         }
@@ -155,13 +163,27 @@ public extension AppModel {
             await synchronizeDownloads()
 
             let runner = DownloadRunner(transport: downloadTransport(), directory: downloadDirectory)
+            // 一条任务一个句柄（M10m）：暂停 / 删除要能把「正在下的那一条」单独取消，
+            // 而 `TaskGroup` 只能整组取消 —— 所以这里先建句柄，再用组只负责按完成顺序收结果。
+            var handles: [(id: String, handle: Task<DownloadRunner.Outcome, Never>)] = []
+            for task in running {
+                // 落库与开跑之间有等待，用户可能正好在这中间按了暂停 —— 那就别开跑了。
+                guard downloadTasks.first(where: { $0.id == task.id })?.status == .running else {
+                    continue
+                }
+                handles.append((task.id, Task { await runner.run(task) }))
+            }
+            for (id, handle) in handles {
+                downloadRunTasks[id] = handle
+            }
             await withTaskGroup(of: DownloadRunner.Outcome.self) { group in
-                for task in running {
+                for (_, handle) in handles {
                     group.addTask {
-                        await runner.run(task)
+                        await handle.value
                     }
                 }
                 for await outcome in group {
+                    downloadRunTasks[outcome.task.id] = nil
                     await applyDownloadOutcome(outcome)
                     completed += 1
                 }
@@ -180,10 +202,18 @@ public extension AppModel {
     /// **只更新还在清单里的任务**：用户中途删掉的那条，把它刚落下的文件也删掉 ——
     /// 否则「删除」之后空间占用不动，看着像没删掉。
     func applyDownloadOutcome(_ outcome: DownloadRunner.Outcome) async {
-        guard downloadTasks.contains(where: { $0.id == outcome.task.id }) else {
+        guard let current = downloadTasks.first(where: { $0.id == outcome.task.id }) else {
             if let fileURL = outcome.fileURL {
                 try? FileManager.default.removeItem(at: fileURL)
             }
+            return
+        }
+        // 「旧结果不盖新决定」（M10m）：暂停 / 继续是用户当场按的，执行器的结果晚一步回来时
+        // 不能把它们盖回去 —— 典型是「暂停后马上点继续」，晚到的取消结果若把任务按回暂停，
+        // 队列就卡死了（没人再启动它）。例外是「已完成」：文件完整落盘是既成事实，它永远落库。
+        let sameRun = current.status == .running
+            || (current.status == .paused && outcome.task.status == .paused)
+        guard sameRun || outcome.task.status == .finished else {
             return
         }
         await downloadStore.save(outcome.task)

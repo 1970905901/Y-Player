@@ -20,6 +20,9 @@ import Foundation
 ///    IV 用解析器兜好的那个；密钥 / IV / 密文任何一步不对就**直接报错**，绝不把密文写进成品；
 /// 6. **字节范围片段发 `Range` 再拼**（M10l）：同一条 URI 上的多段靠范围区分；
 ///    上游没按范围回（非 206）或回的字节数对不上就**报错**，不把整段文件当一段拼进去。
+/// 7. **暂停 = 取消执行句柄**（M10m）：上层暂停 / 删除一条正在下的任务时取消它的 `Task`，
+///    这里在分片之间（`Task.checkCancellation`）与当前请求被中断时停下，回「已暂停」而不是失败；
+///    半成品照第 4 条删掉 —— 暂停后的「继续」也是从头下。
 ///
 /// 不持有 `FileManager`：`FileManager` 在 Swift 6 下不是 `Sendable`，各方法内部用 `.default`
 /// 反而更省事（与 ``StorageSpace`` 把 fileManager 当参数传是同一个理由）。
@@ -46,6 +49,9 @@ public struct DownloadRunner: Sendable {
     /// **不抛错**：失败写进返回的任务 —— 状态由 ``DownloadQueue/applying(failure:to:)`` 决定
     /// （还在额度内就是「排队中」，用完就是「失败」）。执行层不管重试策略，只回答「这次成没成」。
     ///
+    /// **被取消**（用户暂停，见 `AppModel.pauseDownload`）不算失败：回 `.paused`，
+    /// 不乱动重试额度、不写失败原因 —— 恢复由用户点「继续」。
+    ///
     /// - Parameter onProgress: 每收下一片报一次「累计字节 / 期望字节」；总量未知时期望传 0。
     public func run(
         _ task: DownloadTask,
@@ -59,6 +65,12 @@ public struct DownloadRunner: Sendable {
             done.expectedBytes = result.expected
             return Outcome(task: done, fileURL: result.fileURL)
         } catch {
+            // 句柄被取消 = 用户暂停 / 删除（AppModel 只在这两处取消它）。
+            // 判据用 `Task.isCancelled` 而不是错误类型：`URLSessionTransport` 会把底层的
+            // `CancellationError` 包成 `CatVodError.network`，错误类型到这一层已经不可信。
+            if Task.isCancelled {
+                return Outcome(task: DownloadQueue.pausing(running), fileURL: nil)
+            }
             return Outcome(
                 task: DownloadQueue.applying(failure: Self.reason(for: error), to: running),
                 fileURL: nil
@@ -78,6 +90,8 @@ public struct DownloadRunner: Sendable {
         _ task: DownloadTask,
         onProgress: (@Sendable (Int64, Int64) -> Void)?
     ) async throws -> FetchDone {
+        // 已经取消（暂停落在开跑之前）：一个请求都不发。
+        try Task.checkCancellation()
         let first = try await fetch(task.url, task: task)
         let manifest = HLSManifestParser.parse(text: first.text, baseURL: task.url)
 
@@ -204,6 +218,8 @@ public struct DownloadRunner: Sendable {
         let handle = try FileHandle(forWritingTo: fileURL)
         do {
             for (index, segment) in manifest.segments.enumerated() {
+                // 暂停的停止点：上一片取完 / 写完就停，不接着取下一片。
+                try Task.checkCancellation()
                 let range = manifest.segmentRanges.indices.contains(index) ? manifest.segmentRanges[index] : nil
                 let piece = try await fetch(segment, task: task, range: range)
                 var body = piece.body
