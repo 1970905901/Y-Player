@@ -13,6 +13,7 @@ import SwiftUI
 /// | 单击 | 显隐控制条（双击优先，M03P10） |
 /// | 长按 | 临时加速，松手回到用户那份倍速（M03P12）；不在播不加速，但手势照样接管 |
 /// | 横拖 | 调进度：拖动中只预览，**松手才 seek**（一次拖动几十个中间值，逐个 seek 会把内核打爆） |
+/// | 双指捏合 | 缩放画面 1.0–5.0x（中心锚点），捏回 1.0 就是归位（M03P14） |
 /// | 左半屏纵拖 | 调屏幕亮度：拖动中即时生效；拿不到亮度（macOS）则这次拖动不做事 |
 /// | 右半屏纵拖 | 调音量：拖动中只看百分比，**松手下发内核** |
 ///
@@ -43,6 +44,9 @@ extension PlaybackView {
     /// 松手后多久内补发的点按要吞掉（同一次触摸的尾巴）。
     static let speedBoostSwallowSeconds: TimeInterval = 0.5
 
+    /// 双指缩放的上限（上游 `Math.clamp(scale, 1.0f, 5.0f)` 里的那个 5）。
+    static let zoomMaximum: CGFloat = 5
+
     // MARK: - 判定与换算（纯函数，有单测）
 
     /// 这次拖动调什么：横向主导 → 进度；纵向主导 → 按起点分左右半屏（左亮度 / 右音量，中线算右半屏）。
@@ -69,6 +73,11 @@ extension PlaybackView {
         isPlaying && !isBoosting
     }
 
+    /// 双指捏合换出的倍数（纯函数，有单测）：夹在 1.0 ... ``zoomMaximum`` —— 捏回 1.0 就是归位。
+    static func zoomValue(base: CGFloat, magnification: CGFloat) -> CGFloat {
+        min(max(base * magnification, 1), zoomMaximum)
+    }
+
     // MARK: - 画面外壳
 
     /// 自绘内核画面的共同外壳：单击 / 双击 / 长按 / 拖动全在这一层。
@@ -76,31 +85,60 @@ extension PlaybackView {
     /// **单击 / 双击的优先级**（M03P10）：`exclusively(before:)` 让双击先决 —— 单击只在
     /// 「没有第二下」之后才触发，所以双击播放时控制条不会先闪一下。
     func interactiveLayer(_ content: some View, size: CGSize) -> some View {
-        content
-            .contentShape(Rectangle())
-            .gesture(
-                TapGesture(count: 2)
-                    .onEnded { _ in
-                        // 双击 = 播放 / 暂停。
-                        guard !shouldSwallowTap() else {
-                            return
-                        }
-                        Task { await togglePlayback() }
-                    }
-                    .exclusively(
-                        before: TapGesture(count: 1)
-                            .onEnded { _ in
-                                guard !shouldSwallowTap() else {
-                                    return
-                                }
-                                toggleControlsVisibility()
+        zoomable(
+            content
+                // 缩放只作用在画面上（弹幕 / 字幕 / 控制条不跟着放大）：先缩放、再裁切，
+                // 手势挂在**没被缩放的**那一层上 —— 拖动距离仍然按屏幕距离算。
+                .scaleEffect(zoomScale)
+                .clipped()
+                .contentShape(Rectangle())
+                .gesture(
+                    TapGesture(count: 2)
+                        .onEnded { _ in
+                            // 双击 = 播放 / 暂停。
+                            guard !shouldSwallowTap() else {
+                                return
                             }
-                    )
+                            Task { await togglePlayback() }
+                        }
+                        .exclusively(
+                            before: TapGesture(count: 1)
+                                .onEnded { _ in
+                                    guard !shouldSwallowTap() else {
+                                        return
+                                    }
+                                    toggleControlsVisibility()
+                                }
+                        )
+                )
+                // 长按加速与点按**同时**识别：不用 `exclusively`，那会把正常单击也一起赔进去；
+                // 长按松手后补发的那次点按由 `shouldSwallowTap()` 吞掉（见它的说明）。
+                .simultaneousGesture(speedBoostGesture)
+                .gesture(playerGesture(width: size.width))
+        )
+    }
+
+    /// 双指缩放（M03P14）：`MagnifyGesture` 是 iOS 17 / macOS 14 起，老的 `MagnificationGesture`
+    /// 从那时起被弃用 —— 部署目标是 iOS 15 / macOS 13，两条分支都得留（与 `AdaptiveNavigation`
+    /// 里的版本分支同一套做法，这样不多一类「故意的弃用警告」）。
+    ///
+    /// 与上游的差别：拿不到捏合焦点（两个 API 的旧那条只给倍数），所以锚点是**画面中心**；
+    /// 上游用捏合焦点当 pivot。它是一次性的「看细节」放大 —— 改画面比例时归位（上游同）。
+    @ViewBuilder
+    private func zoomable(_ content: some View) -> some View {
+        if #available(iOS 17.0, macOS 14.0, *) {
+            content.simultaneousGesture(
+                MagnifyGesture()
+                    .onChanged { value in applyZoom(magnification: value.magnification) }
+                    .onEnded { _ in finishZoom() }
             )
-            // 长按加速与点按**同时**识别：不用 `exclusively`，那会把正常单击也一起赔进去；
-            // 长按松手后补发的那次点按由 `shouldSwallowTap()` 吞掉（见它的说明）。
-            .simultaneousGesture(speedBoostGesture)
-            .gesture(playerGesture(width: size.width))
+        } else {
+            content.simultaneousGesture(
+                MagnificationGesture()
+                    .onChanged { value in applyZoom(magnification: value) }
+                    .onEnded { _ in finishZoom() }
+            )
+        }
     }
 
     /// 长按临时加速（M03P12）：按住画面 → 换成长按倍速；松手 → 回到用户那份倍速。
@@ -123,12 +161,13 @@ extension PlaybackView {
             .onEnded { _ in endSpeedBoost() }
     }
 
-    /// 拖动：进度 / 亮度 / 音量三选一。加速期间整条拖动不做事
-    /// （上游同款：`changeSpeed` 时 `onScroll` 直接 return —— 按住加速的手指抖一下不该变成拖进度）。
+    /// 拖动：进度 / 亮度 / 音量三选一。加速期间与捏合期间整条拖动不做事
+    /// （上游同款：`changeSpeed` 时 `onScroll` 直接 return —— 按住加速的手指抖一下不该变成拖进度；
+    /// 捏合时也是，两根手指本来就不是在拖）。
     private func playerGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 24)
             .onChanged { value in
-                guard !isSpeedBoostHolding else {
+                guard !isSpeedBoostHolding, !isZooming else {
                     return
                 }
                 let dx = value.translation.width
@@ -158,7 +197,7 @@ extension PlaybackView {
                 }
             }
             .onEnded { value in
-                guard !isSpeedBoostHolding else {
+                guard !isSpeedBoostHolding, !isZooming else {
                     return
                 }
                 if gestureDrag == .seek, let base = gestureBasePosition {
@@ -176,6 +215,24 @@ extension PlaybackView {
                 gestureDrag = nil
                 gestureHint = ""
             }
+    }
+
+    // MARK: - 双指缩放
+
+    /// 捏合过程中的倍数：两种 API 的入口都走这里（基准值进一次、后面都按它乘）。
+    private func applyZoom(magnification: CGFloat) {
+        isZooming = true
+        let base = gestureBaseZoom ?? zoomScale
+        gestureBaseZoom = base
+        zoomScale = Self.zoomValue(base: base, magnification: magnification)
+        gestureHint = "缩放 \(String(format: "%.1f", zoomScale))x"
+    }
+
+    /// 捏合结束：清基准与提示；**倍数留在原地**（捏回 1.0 就是用户自己要归位）。
+    private func finishZoom() {
+        isZooming = false
+        gestureBaseZoom = nil
+        gestureHint = ""
     }
 
     // MARK: - 长按加速

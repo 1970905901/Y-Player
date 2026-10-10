@@ -47,6 +47,15 @@ struct PlaybackGestureTests {
         #expect(PlaybackView.seekTarget(base: 590, dx: 200, width: 400, duration: 600) == 600)
     }
 
+    @Test("双指缩放：倍数夹在 1.0–5.0（捏回 1.0 就是归位）")
+    func zoomValue() {
+        #expect(PlaybackView.zoomMaximum == 5)
+        #expect(PlaybackView.zoomValue(base: 1, magnification: 2) == 2)
+        #expect(PlaybackView.zoomValue(base: 2, magnification: 3) == 5)
+        #expect(PlaybackView.zoomValue(base: 4, magnification: 0.25) == 1)
+        #expect(PlaybackView.zoomValue(base: 1, magnification: 0.5) == 1)
+    }
+
     @Test("长按加速的守卫：只在「正在播 + 还没在加速」时开始（上游同款）")
     func boostGuard() {
         #expect(PlaybackView.canStartSpeedBoost(isPlaying: true, isBoosting: false))

@@ -89,6 +89,12 @@ public struct PlaybackView: View {
     @State var volume: Double = 1
     /// 长按临时加速的目标倍速（M03P13：可调，初值在 `start()` 里从存档读）—— 跨文件扩展要读。
     @State var longPressSpeed: Float = SpeedSetting.longPress
+    /// 双指缩放的倍数（M03P14：1.0–5.0、锚点是画面中心）—— 跨文件扩展要读写，所以是模块内。
+    @State var zoomScale: CGFloat = 1
+    /// 捏合开始时的倍数基准（手势给的是相对量）。
+    @State var gestureBaseZoom: CGFloat?
+    /// 正在双指缩放：这条期间拖动（进度 / 音量 / 亮度）不做事 —— 捏合时手指也在动，别串台。
+    @State var isZooming = false
     /// 长按已识别（这次触摸还没松手）：拖动不做事、点按要吞 —— **不管在不在播**
     /// （上游同款：不在播不加速，但手势照样接管）。
     @State var isSpeedBoostHolding = false
@@ -776,11 +782,15 @@ extension PlaybackView {
         }
     }
 
-    /// 改画面比例：记进界面态 + 立刻下发内核（`setScaleMode`）。
+    /// 改画面比例：先归位双指缩放，再记进界面态 + 立刻下发内核（`setScaleMode`）。
+    ///
+    /// 归位这条对齐上游 `onScale(tag)`：`resetScale()` 之后才 `setScale(tag)` ——
+    /// 缩放是「临时看细节」，换比例就该回到 1.0（M03P14）。
     private var scaleBinding: Binding<PlaybackScaleMode> {
         Binding(
             get: { scaleMode },
             set: { mode in
+                zoomScale = 1
                 scaleMode = mode
                 Task { await engine?.setScaleMode(mode) }
             }
