@@ -15,7 +15,7 @@ import FoundationNetworking
 /// 这两项会在「接口管理 → 告警」里如实报给用户（见 `ConfigCoverage`），
 /// 而不是静默忽略。真正要支持，得自建连接层（`Network.framework` + 按主机名校验证书），
 /// 方案与代价见 `docs/任务记录/M06m-DNS方案与决策.md`。
-public actor URLSessionTransport: HTTPTransport {
+public actor URLSessionTransport: HTTPDownloadingTransport {
     /// 传输层配置。
     public struct Configuration: Sendable {
         /// 未显式指定超时时的默认值（秒）。
@@ -124,17 +124,48 @@ public actor URLSessionTransport: HTTPTransport {
         let session = session(for: urlRequest.url ?? request.url)
         do {
             let (data, response) = try await session.data(for: urlRequest)
-            let http = response as? HTTPURLResponse
-            let headers = http?.allHeaderFields.reduce(into: [String: String]()) { result, pair in
-                if let key = pair.key as? String, let value = pair.value as? String {
-                    result[key] = value
-                }
-            } ?? [:]
-            return HTTPResponse(status: http?.statusCode ?? 0, headers: headers, body: data)
+            return HTTPResponse(status: httpStatus(response), headers: headers(from: response), body: data)
         } catch let error as CatVodError {
             throw error
         } catch {
             throw CatVodError.network(status: nil, url: urlRequest.url?.absoluteString ?? "", reason: error.localizedDescription)
+        }
+    }
+
+    /// 大响应**落盘**取回（M06b 的流式转发）：`URLSession.download` 由系统把响应体写进临时文件，
+    /// 内存里不堆整份；广告拦截与 header 注入跟 ``send(_:)`` 共用 ``prepare(_:)``，规则只有一处。
+    public func download(_ request: HTTPRequest, to fileURL: URL) async throws -> HTTPDownloadedResponse {
+        let urlRequest = try prepare(request)
+        let session = session(for: urlRequest.url ?? request.url)
+        do {
+            let (temporaryURL, response) = try await session.download(for: urlRequest)
+            try? FileManager.default.removeItem(at: fileURL)
+            try FileManager.default.moveItem(at: temporaryURL, to: fileURL)
+            let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+            return HTTPDownloadedResponse(
+                status: httpStatus(response),
+                headers: headers(from: response),
+                fileURL: fileURL,
+                byteCount: (attributes?[.size] as? NSNumber)?.intValue ?? 0
+            )
+        } catch let error as CatVodError {
+            throw error
+        } catch {
+            throw CatVodError.network(status: nil, url: urlRequest.url?.absoluteString ?? "", reason: error.localizedDescription)
+        }
+    }
+
+    private func httpStatus(_ response: URLResponse) -> Int {
+        (response as? HTTPURLResponse)?.statusCode ?? 0
+    }
+
+    /// 响应 header（`URLSession` 给的是 `[AnyHashable: Any]`，只留字符串对）。
+    private func headers(from response: URLResponse) -> [String: String] {
+        guard let http = response as? HTTPURLResponse else { return [:] }
+        return http.allHeaderFields.reduce(into: [String: String]()) { result, pair in
+            if let key = pair.key as? String, let value = pair.value as? String {
+                result[key] = value
+            }
         }
     }
 

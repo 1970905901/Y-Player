@@ -9,7 +9,7 @@ import Foundation
 ///
 /// | 路由 | 说明 |
 /// | --- | --- |
-/// | `/proxy` | 转发目标地址并注入 header；支持 `GET`/`HEAD`/`POST` 与 `OPTIONS` 预检 |
+/// | `/proxy` | 转发目标地址并注入 header；支持 `GET`/`HEAD`/`POST` 与 `OPTIONS` 预检（GET 的响应体落临时文件再流给播放器，M06b） |
 /// | `/m3u8` | HLS 清单改写 + 分片/密钥原样转发（上游 `server/process/M3u8.java`） |
 /// | `/health` | 就绪探测（设置页与自检用） |
 /// | `/` | 服务标识 |
@@ -86,18 +86,33 @@ public struct LocalProxyHandler: HTTPHandler {
     }
 
     /// `/proxy`：解析 → 取回 → 过滤响应 header → 回给客户端。
+    ///
+    /// GET 走**落盘**那条（M06b 的流式转发）：媒体文件可能几十 GB，缓冲转发会撞 32MB 上限，
+    /// 播放器直接吃 502；现在响应体先落临时文件、再由 FlyingFox 流给它
+    /// （`HTTPBodySequence(file:)`，长度由本机服务按实际字节重算）。
+    /// HEAD 保持在内存那条 —— 本来就没有响应体，不值得写盘。
     private func forward(_ request: FlyingFox.HTTPRequest) async -> FlyingFox.HTTPResponse {
         do {
             guard let plan = try await LocalProxyRequestDecoder.decode(request, defaultTimeout: timeout) else {
                 return Self.errorResponse(status: .badRequest, reason: "缺少或无法解析 url 参数")
             }
-            let response = try await upstream.fetch(plan)
+            if request.method == .HEAD {
+                let response = try await upstream.fetch(plan)
+                let responseHeaders = ProxyForwardingPolicy.clientResponseHeaders(upstream: response.headers)
+                return FlyingFox.HTTPResponse(
+                    statusCode: Self.statusCode(response.status),
+                    headers: Self.makeHeaders(responseHeaders),
+                    body: Data()
+                )
+            }
+            let fileURL = try LocalProxyTempFiles.makeFileURL()
+            let response = try await upstream.fetchToFile(plan, fileURL: fileURL)
+            LocalProxyTempFiles.sweep()
             let responseHeaders = ProxyForwardingPolicy.clientResponseHeaders(upstream: response.headers)
-            let body = request.method == .HEAD ? Data() : response.body
             return FlyingFox.HTTPResponse(
                 statusCode: Self.statusCode(response.status),
                 headers: Self.makeHeaders(responseHeaders),
-                body: body
+                body: try HTTPBodySequence(file: response.fileURL)
             )
         } catch let error as CatVodError {
             return Self.errorResponse(status: .badGateway, reason: error.errorDescription ?? "转发失败")

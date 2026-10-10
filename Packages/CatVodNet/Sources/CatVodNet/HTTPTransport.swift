@@ -79,6 +79,38 @@ public struct HTTPResponse: Sendable {
     }
 }
 
+/// 「大响应直接落盘」的可选能力（本机 `/proxy` 搬媒体文件用；M06b 的流式转发）。
+///
+/// 为什么不塞进 ``HTTPTransport``：站点 / 解析链要的是内存里的 `Data`，
+/// 只有 `/proxy` 这条「可能是几十 GB 的媒体文件」的路需要落盘 ——
+/// 单独一个协议 + `as?` 探测，能落盘的实现才走这条路，别的实现与测试替身不受影响。
+public protocol HTTPDownloadingTransport: HTTPTransport {
+    /// 把响应体写进 `fileURL`（覆盖已存在的文件），返回元信息与**实际写盘字节数**。
+    ///
+    /// 失败语义与 ``HTTPTransport/send(_:)`` 一致：一律抛 ``CatVodError``。
+    func download(_ request: HTTPRequest, to fileURL: URL) async throws -> HTTPDownloadedResponse
+}
+
+/// 落盘取回的结果：与 ``HTTPResponse`` 同构，只是 body 换成文件。
+public struct HTTPDownloadedResponse: Sendable {
+    public var status: Int
+    public var headers: [String: String]
+    public var fileURL: URL
+    /// 实际写盘的字节数（上游没给 Content-Length 时也能如实说）。
+    public var byteCount: Int
+
+    public init(status: Int, headers: [String: String] = [:], fileURL: URL, byteCount: Int) {
+        self.status = status
+        self.headers = headers
+        self.fileURL = fileURL
+        self.byteCount = byteCount
+    }
+
+    /// 是否 2xx。
+    public var isSuccess: Bool {
+        (200 ..< 300).contains(status)
+    }
+}
 /// 请求 header 合并工具：站点 header → 结果 header → 解析器 header，后者覆盖前者。
 public enum HTTPHeaderMerger {
     public static func merge(_ sources: [[String: String]]) -> [String: String] {

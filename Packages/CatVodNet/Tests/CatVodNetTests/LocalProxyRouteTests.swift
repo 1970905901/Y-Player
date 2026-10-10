@@ -170,6 +170,38 @@ struct LocalProxyRouteTests {
         #expect(partial.headers[HTTPHeader("Content-Range")] == "bytes 0-99/1000")
     }
 
+    @Test("落盘转发：传输层带落盘能力时，超过缓冲上限的响应照常回（M06b 流式转发）")
+    func downloadingTransportBypassesBufferLimit() async throws {
+        let payload = Data(repeating: 0x44, count: 4096)
+        let upstream = StubDownloadingTransport(body: payload)
+        // 上限故意压到 1KB：缓冲那条会 502，落盘这条必须照常回。
+        let handler = LocalProxyHandler(
+            upstream: LocalProxyUpstreamClient(transport: upstream, maximumBodyBytes: 1024)
+        )
+        let response = try await handler.handleRequest(makeRequest(query: query(target)))
+        #expect(response.statusCode == .ok)
+        let body = try await response.bodyData
+        #expect(body.count == 4096)
+        let count = await upstream.requestCount
+        #expect(count == 1)
+    }
+
+    @Test("落盘文件清扫：超过宽限期的清掉、新的留着（M06b）")
+    func tempFileSweep() throws {
+        let fresh = try LocalProxyTempFiles.makeFileURL()
+        try Data([1, 2, 3]).write(to: fresh)
+        defer { try? FileManager.default.removeItem(at: fresh) }
+        let old = try LocalProxyTempFiles.makeFileURL()
+        try Data([4, 5, 6]).write(to: old)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-LocalProxyTempFiles.maximumAge - 60)],
+            ofItemAtPath: old.path
+        )
+        LocalProxyTempFiles.sweep()
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+        #expect(FileManager.default.fileExists(atPath: fresh.path))
+    }
+
     @Test("响应体超过上限 → 502，而不是静默截断")
     func bodyLimit() async throws {
         let upstream = StubUpstreamTransport(body: Data(repeating: 0x43, count: 4096))
