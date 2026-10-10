@@ -20,8 +20,7 @@ struct LibavAudioSampleBufferTests {
             frameCount: frames,
             sampleRate: 44100,
             channels: channels,
-            presentationSeconds: 2.5,
-            durationSeconds: Double(frames) / 44100
+            presentationSeconds: 2.5
         ))
         #expect(CMSampleBufferGetNumSamples(sample) == frames)
         #expect(abs(CMSampleBufferGetPresentationTimeStamp(sample).seconds - 2.5) < 0.0001)
@@ -44,8 +43,7 @@ struct LibavAudioSampleBufferTests {
             frameCount: 0,
             sampleRate: 44100,
             channels: 2,
-            presentationSeconds: 0,
-            durationSeconds: 0
+            presentationSeconds: 0
         )
         #expect(sample == nil)
     }

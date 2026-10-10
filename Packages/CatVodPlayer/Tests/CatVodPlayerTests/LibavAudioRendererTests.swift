@@ -23,8 +23,7 @@ struct LibavAudioRendererTests {
             frameCount: frames,
             sampleRate: 44100,
             channels: 2,
-            presentationSeconds: 0,
-            durationSeconds: Double(frames) / 44100
+            presentationSeconds: 0
         ))
 
         renderer.enqueue(sample)

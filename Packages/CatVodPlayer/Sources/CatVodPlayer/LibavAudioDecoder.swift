@@ -176,8 +176,7 @@ final class LibavAudioDecoder: @unchecked Sendable {
             frameCount: Int(produced),
             sampleRate: Double(outputSampleRate),
             channels: outputChannels,
-            presentationSeconds: seconds,
-            durationSeconds: Double(produced) / Double(outputSampleRate)
+            presentationSeconds: seconds
         )
     }
 

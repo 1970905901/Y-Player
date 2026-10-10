@@ -121,8 +121,7 @@ enum TinyMP4Fixture {
                 frameCount: frames,
                 sampleRate: sampleRate,
                 channels: channels,
-                presentationSeconds: Double(written) / sampleRate,
-                durationSeconds: Double(frames) / sampleRate
+                presentationSeconds: Double(written) / sampleRate
             ), input.append(sample) else {
                 throw FixtureError.appendFailed
             }

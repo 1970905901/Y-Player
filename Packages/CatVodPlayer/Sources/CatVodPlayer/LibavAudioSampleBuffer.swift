@@ -14,13 +14,17 @@ enum LibavAudioSampleBuffer {
     ///
     /// 格式固定 **Float32 交错**：`AVSampleBufferAudioRenderer` 接受它，
     /// 且交错数据一个 block buffer 就能装下（平面式要给每声道一个 block，复杂得多）。
+    ///
+    /// **timing 语义（M04P10 首轮实测校准）**：只给一条 timing entry 时，它的 `duration`
+    /// 是**每个样本**的时长，CMSampleBuffer 按样本数复制并求和 —— 所以这里填
+    /// `1/采样率`，总时长自然 = 样本数/采样率。时基直接拿采样率当刻度（整数赫兹），
+    /// 免得微秒截断在 1024 个样本上放大成毫秒级漂移。
     static func make(
         ownedPCM: UnsafeMutableRawPointer,
         frameCount: Int,
         sampleRate: Double,
         channels: Int,
-        presentationSeconds: Double,
-        durationSeconds: Double
+        presentationSeconds: Double
     ) -> CMSampleBuffer? {
         guard frameCount > 0, sampleRate > 0, channels > 0 else {
             free(ownedPCM)
@@ -71,7 +75,7 @@ enum LibavAudioSampleBuffer {
         }
 
         var timing = CMSampleTimingInfo(
-            duration: CMTime(seconds: durationSeconds, preferredTimescale: 1_000_000),
+            duration: CMTime(value: 1, timescale: CMTimeScale(sampleRate)),
             presentationTimeStamp: CMTime(seconds: presentationSeconds, preferredTimescale: 1_000_000),
             decodeTimeStamp: .invalid
         )
